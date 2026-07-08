@@ -61,7 +61,7 @@ The registry is Tony Alpha's first database; everything eventually registers its
 - ☐ **AI-101 — Live status ingestion.** Integrate so `last_run`/`status` update automatically instead of manually. *(Phase 2 — deferred.)*
 - ☐ **AI-102 — Auto-generate daily/weekly.** Script that reads the registry and writes `daily_status.md` / `weekly_status.md`. *(Phase 2 — deferred.)*
 - ☐ **AI-103 — Alerting.** Notify when an agent goes `broken` or misses its schedule. *(Phase 2 — deferred.)*
-- ☐ **AI-104 — Windows desktop launch.** Wrap the core so it opens from a desktop icon. *(Phase 3 — deferred. Core kept UI-agnostic to allow this.)*
+- ◐ **AI-104 — Windows desktop launch.** First working desktop app built in `dashboard/` (PowerShell + WPF, `launch-tony.bat`). Remaining: real desktop-icon shortcut + wire placeholder panels to live data. *(Phase 3 — started in Sprint Alpha.)*
 - ☐ **AI-105 — Mobile/web access.** Web dashboard and/or Android app reading the same registry. *(Phase 4 — deferred.)*
 
 ---
@@ -70,3 +70,4 @@ The registry is Tony Alpha's first database; everything eventually registers its
 
 - ☑ **AI-000 — Stand up Tony Alpha command center.** Created registry + tracking + reporting files (2026-07-08).
 - ☑ **AR-001 — Architecture Review 001 registry improvements.** Added stable IDs (AG-###), owner/department, priority, dependencies, health_score (null), and the "everything registers" scaffolding (departments seeded; modules/integrations/memory/skills/workflows scaffolded). Registry v2.0.0 (2026-07-08).
+- ☑ **SPRINT-ALPHA — Dashboard build.** First working desktop app (`dashboard/`, PowerShell + WPF) that launches in a window and renders the registry live. Business logic (`core/`) separated from UI (`ui/`). No integrations, placeholders labelled (2026-07-08).

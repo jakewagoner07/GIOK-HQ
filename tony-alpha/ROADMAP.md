@@ -13,8 +13,15 @@ Plain files in `tony-alpha/`. No integrations, no UI, no agent rebuilds.
 ## Phase 2 — Automation (deferred)
 Scripts that read `agents_registry.json` and regenerate the markdown views; live ingestion of `last_run`/`status` from the real scheduled tasks. Still no UI. (See `action_items.md` AI-101–103.)
 
-## Phase 3 — Desktop launch (deferred)
-Easy launch from a **Windows desktop icon**. Likely a thin shell (shortcut → script, or a lightweight local app) that opens the dashboard. No rewrite of the core — it points at the same files/JSON.
+## Phase 3 — Desktop launch (STARTED — Sprint Alpha)
+Easy launch from a **Windows desktop icon**. First working desktop app delivered in
+`dashboard/` (PowerShell + WPF; launched via `launch-tony.bat`). It reads
+`agents_registry.json` live and renders the command center — proving Tony launches as a
+real desktop application. Remaining for this phase: a real desktop-icon shortcut and
+wiring the placeholder panels (issues/actions/sprint) to live data.
+
+> Note: Sprint Alpha jumped ahead to this desktop proof before Phase 2 automation, at the
+> owner's direction. Phase 2 (auto-regenerating views, live status ingestion) is still open.
 
 ## Phase 4 — Mobile / web access (deferred)
 A **web dashboard** and/or **Android app** for on-the-go access. Reads the same core data over a small local API or synced store.

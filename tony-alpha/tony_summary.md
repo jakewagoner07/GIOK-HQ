@@ -55,7 +55,7 @@ ID scheme: agents `AG-###` · departments `DEPT-###` · modules `MOD-###` · int
   - *`unknown` is honest:* Tony Alpha cannot yet observe real runs. Status stays `unknown` until either integrations are added or a status is set manually.
 - **Health scores:** all `null` (not yet measurable).
 - **By owner (provisional):** Operations 8 · Marketing 4 · Sales 4 · Communications 4 · Security 1 · Admin 1 · Finance 0
-- **By priority (provisional):** Critical 1 · High 6 · Normal 12 · Low 3
+- **By priority (provisional):** Critical 1 · High 7 · Normal 11 · Low 3
 - **Open flags:** 6 overlap candidates + 1 provisional-metadata flag (see `issues_log.md`)
 
 ### By category
