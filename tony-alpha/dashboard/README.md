@@ -40,16 +40,36 @@ which is why WPF was chosen over Electron.)
 
 ---
 
-## What it shows
-- **Good Morning, Jake** — greeting adapts to time of day (Morning/Afternoon/Evening).
-- **Current Date & Time** — live, updates every second.
-- **Agent Summary** — total agents, status breakdown, priority breakdown *(LIVE from registry)*.
-- **Registry Health** — version, verified-vs-scheduler flag, health-score coverage, source, last updated *(LIVE)*.
-- **Open Issues** — flags from the issues log *(PLACEHOLDER this build)*.
-- **Action Items** — open + done items *(PLACEHOLDER this build)*.
-- **Current Sprint** — the active sprint *(PLACEHOLDER this build)*.
+## Hub navigation (Sprint Charlie)
 
-Panels sourced from live data vs. placeholder are labelled in the UI (see the **Data Sources** card).
+Tony Alpha is now a **command hub**, not a single screen. A persistent top bar (brand +
+live clock) and a nav bar sit above a swappable body. Six views:
+
+| Tab | Reads from | Shows |
+|-----|-----------|-------|
+| **Dashboard** | agents_registry.json (+ the .md files, for summaries) | Greeting, clock, clickable summary cards |
+| **Agents** | `agents_registry.json` | Every registered agent with all fields |
+| **Issues** | `issues_log.md` | The full issues log |
+| **Action Items** | `action_items.md` | The full action-items list |
+| **Weekly Review** | `weekly_status.md` | The weekly status |
+| **Roadmap** | `ROADMAP.md` | The roadmap |
+
+**Clickable cards:** on the Dashboard, the summary cards are clickable — *Agents* opens the
+Agents view, *Open Issues* → Issues, *Action Items* → Action Items, *Current Sprint* →
+Weekly Review, plus quick links to Weekly Review / Roadmap.
+
+**Agents view** shows, per agent: ID (`AG-###`), name, owner/department, priority, status,
+last run, health score, schedule, dependencies, issues, and notes/report.
+
+![Agents view](docs/agents-view.png)
+
+### What's live vs placeholder
+- **Live from files:** Agent Summary, Registry Health, and the Agents view (registry);
+  Issues / Action Items / Weekly Review / Roadmap (their `.md` files, read on each navigation).
+- **Placeholder:** only *Current Sprint* (no backing file yet).
+
+Every navigation re-reads the source files, so the hub always reflects the latest content —
+`agents_registry.json` stays the single source of truth and nothing is duplicated.
 
 ---
 
