@@ -6,6 +6,24 @@ Open decisions and to-dos. Most are driven by `issues_log.md` and by gaps in `ag
 
 ---
 
+## Manual reconciliation needed
+
+The live CoWork scheduled tasks are not reachable from Claude Code (see `issues_log.md → Reconciliation status`), so the registry cannot be auto-verified against the real scheduler. Until that happens, treat all schedules/last-run/status as **unconfirmed** (`meta.verified_against_scheduler = false`).
+
+**To reconcile (pick one, read-only — do not modify/delete any task):**
+- ☐ **AI-R1 — Pull the list from CoWork.** In the interactive CoWork session where the tasks live, run `list_scheduled_tasks`; paste the output (name, schedule, taskId, lastRunAt) back here.
+- ☐ **AI-R2 — Or export/paste manually.** Provide each task's name + schedule (+ last run if shown).
+
+**Then, once real data is in hand:**
+- ☐ **AI-R3 — Diff for MISSING agents.** Any live task not among the registry's 22 → add it.
+- ☐ **AI-R4 — Diff for DUPLICATES.** Any two live tasks doing the same job → flag in `issues_log.md`.
+- ☐ **AI-R5 — Fix INCORRECT schedules.** Replace each `"schedule": "unknown"` with the real cadence.
+- ☐ **AI-R6 — Link source_task_id.** Set each agent's `source_task_id` from the real taskId.
+- ☐ **AI-R7 — Populate last_run/status.** Only from observed data. Keep `unknown` otherwise.
+- ☐ **AI-R8 — Flip the trust flag.** Set `meta.verified_against_scheduler = true` once the diff is complete.
+
+---
+
 ## Needs your decision
 
 - ☐ **AI-001 — Confirm schedules.** Fill in the real `schedule` for each of the 22 agents (all currently `unknown`). Priority: the daily-critical ones (GHL SMS Monitor, Email Triage, Upwork, Morning Digest).

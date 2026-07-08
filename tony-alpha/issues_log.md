@@ -40,6 +40,18 @@ Four weekly agents run in the same window: Weekly Status Draft, Sunday Weekly Pl
 
 ---
 
+## Reconciliation status
+
+> ⚠️ **Live CoWork scheduled tasks were NOT accessible from Claude Code (2026-07-08).**
+> A read-only reconcile was attempted against the real scheduler and came up empty from this environment:
+> - `scheduled-tasks` MCP (`list_scheduled_tasks`) → "No scheduled tasks found"
+> - `CronList` (cron jobs) → "No scheduled jobs"
+> - Disk (`~/.claude/`, Claude app data) → no readable task/`SKILL.md` definitions; app state is in opaque Electron/IndexedDB stores.
+>
+> The 22 agents in `agents_registry.json` are catalogued from the owner-provided list, **not** confirmed against the live scheduler. Because of this, `meta.verified_against_scheduler` is `false` and every `source_task_id` is `null`.
+>
+> **Consequence:** the findings below that depend on live data — *missing*, *duplicate*, and *incorrect-schedule* — cannot be confirmed yet. Only overlap flags (derived from stated purpose) are reliable. See `action_items.md → Manual reconciliation needed`.
+
 ## Broken / missing
 
 - 🔴 None confirmed broken. *(Cannot yet verify — all statuses `unknown` until runs are observed.)*

@@ -3,11 +3,12 @@
     "name": "Tony Alpha Agent Registry",
     "owner": "GIOK",
     "description": "Single source of truth for every scheduled task/agent Tony Alpha oversees. Tony Alpha is the command center; it does NOT replace or rebuild these agents.",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "created": "2026-07-08",
     "last_updated": "2026-07-08",
     "status_values": ["healthy", "warning", "broken", "unknown", "paused"],
-    "notes": "last_run, status, and issues are tracked here manually until integrations are added. 'unknown' is the honest default before Tony Alpha can observe a real run."
+    "verified_against_scheduler": false,
+    "notes": "last_run, status, and issues are tracked here manually until integrations are added. 'unknown' is the honest default before Tony Alpha can observe a real run. verified_against_scheduler is false because the live CoWork scheduled tasks were not accessible from Claude Code — schedules/last_run/status are NOT confirmed against the real scheduler. source_task_id is null on every agent until a live reconcile links each to its real CoWork task."
   },
   "categories": {
     "comms": "Inbound/outbound messaging (SMS, DMs, marketplace inboxes)",
@@ -22,6 +23,7 @@
   "agents": [
     {
       "id": "ghl-sms-monitor",
+      "source_task_id": null,
       "name": "GoHighLevel SMS Reply Monitor",
       "category": "comms",
       "purpose": "Watch GoHighLevel for inbound SMS replies so no lead/customer text goes unanswered.",
@@ -35,6 +37,7 @@
     },
     {
       "id": "social-media-scan",
+      "source_task_id": null,
       "name": "Social Media Scan",
       "category": "social",
       "purpose": "Scan social channels for mentions, engagement, and items needing a response.",
@@ -48,6 +51,7 @@
     },
     {
       "id": "training-scanner",
+      "source_task_id": null,
       "name": "Training Scanner",
       "category": "system",
       "purpose": "Scan for new training material / learning opportunities.",
@@ -61,6 +65,7 @@
     },
     {
       "id": "yahoo-reader",
+      "source_task_id": null,
       "name": "Yahoo Reader",
       "category": "email",
       "purpose": "Read the Yahoo inbox and surface items of interest.",
@@ -74,6 +79,7 @@
     },
     {
       "id": "email-triage-digest",
+      "source_task_id": null,
       "name": "Email Triage Digest",
       "category": "email",
       "purpose": "Triage inbound email into a digest of what needs attention.",
@@ -87,6 +93,7 @@
     },
     {
       "id": "lead-research-referral",
+      "source_task_id": null,
       "name": "Lead Research / Referral Partners",
       "category": "leads",
       "purpose": "Research leads and identify/nurture referral partners.",
@@ -100,6 +107,7 @@
     },
     {
       "id": "gmail-junk-labeler",
+      "source_task_id": null,
       "name": "Gmail Junk Labeler",
       "category": "email",
       "purpose": "Auto-label junk/low-value email in Gmail to keep the inbox clean.",
@@ -113,6 +121,7 @@
     },
     {
       "id": "upwork-message-check",
+      "source_task_id": null,
       "name": "Upwork Message Check",
       "category": "comms",
       "purpose": "Check the Upwork inbox for new client/prospect messages.",
@@ -126,6 +135,7 @@
     },
     {
       "id": "agent-health-check",
+      "source_task_id": null,
       "name": "Agent Health Check",
       "category": "system",
       "purpose": "Check that the scheduled agents are running and healthy.",
@@ -139,6 +149,7 @@
     },
     {
       "id": "engagement-leads",
+      "source_task_id": null,
       "name": "Engagement Leads",
       "category": "leads",
       "purpose": "Engage / follow up with leads to drive responses.",
@@ -152,6 +163,7 @@
     },
     {
       "id": "morning-digest",
+      "source_task_id": null,
       "name": "Morning Digest",
       "category": "reporting",
       "purpose": "Produce a morning summary of what happened / what needs attention.",
@@ -165,6 +177,7 @@
     },
     {
       "id": "buffer-connection-check",
+      "source_task_id": null,
       "name": "Buffer Connection Check",
       "category": "system",
       "purpose": "Verify the Buffer integration/connection is live so social publishing doesn't silently fail.",
@@ -178,6 +191,7 @@
     },
     {
       "id": "weekly-status-draft",
+      "source_task_id": null,
       "name": "Weekly Status Draft",
       "category": "reporting",
       "purpose": "Draft the weekly status update.",
@@ -191,6 +205,7 @@
     },
     {
       "id": "log-hours-reminder",
+      "source_task_id": null,
       "name": "Log Hours Reminder",
       "category": "admin",
       "purpose": "Remind to log billable/work hours.",
@@ -204,6 +219,7 @@
     },
     {
       "id": "weekly-social-plans",
+      "source_task_id": null,
       "name": "Weekly Social Plans",
       "category": "social",
       "purpose": "Plan the week's social content/schedule.",
@@ -217,6 +233,7 @@
     },
     {
       "id": "weekly-command-center-reminder",
+      "source_task_id": null,
       "name": "Weekly Command Center Reminder",
       "category": "system",
       "purpose": "Weekly reminder to review the command center (now Tony Alpha).",
@@ -230,6 +247,7 @@
     },
     {
       "id": "sunday-weekly-planning",
+      "source_task_id": null,
       "name": "Sunday Weekly Planning",
       "category": "planning",
       "purpose": "Plan the upcoming week each Sunday.",
@@ -243,6 +261,7 @@
     },
     {
       "id": "sunday-evening-recap",
+      "source_task_id": null,
       "name": "Sunday Evening Recap",
       "category": "reporting",
       "purpose": "Recap the past week on Sunday evening.",
@@ -256,6 +275,7 @@
     },
     {
       "id": "content-batch-socials",
+      "source_task_id": null,
       "name": "Content Batch for Socials",
       "category": "social",
       "purpose": "Batch-create social content for publishing.",
@@ -269,6 +289,7 @@
     },
     {
       "id": "malwarebytes-scan",
+      "source_task_id": null,
       "name": "Malwarebytes Scan",
       "category": "system",
       "purpose": "Run/verify an antivirus (Malwarebytes) scan on the machine.",
@@ -282,6 +303,7 @@
     },
     {
       "id": "performance-review-agents",
+      "source_task_id": null,
       "name": "Performance Review on Agents",
       "category": "system",
       "purpose": "Review the quality/output of the agents (not just uptime).",
@@ -295,6 +317,7 @@
     },
     {
       "id": "ghl-lead-text-batch",
+      "source_task_id": null,
       "name": "GHL Lead Text Batch Reminder",
       "category": "leads",
       "purpose": "Remind to send the batch of lead texts through GoHighLevel.",
