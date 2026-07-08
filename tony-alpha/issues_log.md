@@ -2,11 +2,20 @@
 
 Tracks agents that are **broken**, **missing**, **duplicate**, or **overlapping**. Each entry is a flag for review — an overlap flag is *not* an accusation that an agent is wrong, just a "confirm these are distinct on purpose."
 
-**Legend:** 🔴 broken · 🟠 missing · 🟡 duplicate · 🔵 overlap · ✅ resolved
+**Legend:** 🔴 broken · 🟠 missing · 🟡 duplicate · 🔵 overlap · 🟣 metadata-to-confirm · ✅ resolved
 
 ---
 
 ## Open flags
+
+### 🟣 META-001 — Provisional owner / priority / dependencies (Architecture Review 001)
+Architecture Review 001 added `owner`, `priority`, and `dependencies` to all 22 agents. These were **assigned by the review, not confirmed by GIOK**, so they are best-effort until verified.
+**Scope:** all 22 agents.
+**Notable calls to confirm:**
+- `AG-014` Log Hours Reminder → owned by **Admin**, but may belong to **Finance** if tied to invoicing/billable hours.
+- Priority tiers: only `AG-001` (GHL SMS Monitor) is **Critical** — confirm nothing else is truly can't-fail.
+- Dependency lists are the seed for the future `integrations` registry — confirm the real systems each agent touches.
+**Action:** see `action_items.md` → AI-A1..A4. Clear this flag once owners/priorities/dependencies are confirmed.
 
 ### 🔵 OVERLAP-001 — GHL SMS Monitor ↔ GHL Lead Text Batch Reminder
 Both touch GoHighLevel texting. Likely fine (inbound monitor vs. outbound batch reminder), but confirm they don't both react to the same events.

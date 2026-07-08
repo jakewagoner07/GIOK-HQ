@@ -26,7 +26,7 @@ Open action items live in [`action_items.md`](action_items.md).
 
 | File | Purpose |
 |------|---------|
-| `agents_registry.json` | Source of truth: all agents, purpose, schedule, last run, status, issues. |
+| `agents_registry.json` | Tony Alpha's **first database** and source of truth: all agents (stable ID, owner, priority, dependencies, health score, purpose, schedule, last run, status, issues) + scaffolded registries for departments/modules/integrations/memory/skills/workflows. |
 | `daily_status.md` | Morning Briefing + "what matters today." Refreshed each day. |
 | `weekly_status.md` | Weekly Review. Refreshed weekly. |
 | `issues_log.md` | Broken / missing / duplicate / overlapping agent flags. |
@@ -36,12 +36,27 @@ Open action items live in [`action_items.md`](action_items.md).
 
 ---
 
+## Registry principle (Architecture Review 001)
+
+**The registry is Tony Alpha's first database.** Everything eventually **registers itself** here — agents, modules, departments, integrations, memory, skills, and workflows — each with a **stable ID** so nothing is referenced by name alone. Agents and departments are populated now; the other registries are scaffolded (empty arrays) and filled in later sprints.
+
+ID scheme: agents `AG-###` · departments `DEPT-###` · modules `MOD-###` · integrations `INT-###` · memory `MEM-###` · skills `SK-###` · workflows `WF-###`.
+
+**Every agent now carries:** `stable_id`, `owner` (department), `priority` (Critical/High/Normal/Low), `dependencies` (upstream systems), `health_score` (null until measurable), plus the existing purpose/schedule/status fields.
+
+**Dependencies → downstream impact.** `dependencies` lists what an agent needs *upstream*. To see what a failure hits *downstream*, invert the graph: if a shared dependency (e.g. GoHighLevel, Gmail) breaks, every agent listing it is affected. Example: **Morning Digest** depends on Calendar, Email, Tasks — if Email fails, the Morning Digest is degraded.
+
+> ⚠️ `owner`, `priority`, and `dependencies` were assigned by the architecture review and are **provisional** until GIOK confirms them (see `action_items.md`). `health_score` is null and `status`/`last_run` remain unverified.
+
 ## Fleet snapshot (2026-07-08)
 
-- **Total agents tracked:** 22
+- **Total agents tracked:** 22 (`AG-001`–`AG-022`)
 - **Status breakdown:** 22 `unknown` · 0 healthy · 0 warning · 0 broken · 0 paused
   - *`unknown` is honest:* Tony Alpha cannot yet observe real runs. Status stays `unknown` until either integrations are added or a status is set manually.
-- **Open flags:** 6 overlap candidates (see `issues_log.md`)
+- **Health scores:** all `null` (not yet measurable).
+- **By owner (provisional):** Operations 8 · Marketing 4 · Sales 4 · Communications 4 · Security 1 · Admin 1 · Finance 0
+- **By priority (provisional):** Critical 1 · High 6 · Normal 12 · Low 3
+- **Open flags:** 6 overlap candidates + 1 provisional-metadata flag (see `issues_log.md`)
 
 ### By category
 - **comms (2):** GHL SMS Monitor, Upwork Message Check

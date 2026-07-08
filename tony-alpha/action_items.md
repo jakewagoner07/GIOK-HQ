@@ -24,6 +24,25 @@ The live CoWork scheduled tasks are not reachable from Claude Code (see `issues_
 
 ---
 
+## Confirm Architecture Review 001 metadata (provisional → confirmed)
+
+`owner`, `priority`, and `dependencies` are populated but were assigned by the review, not by GIOK (flag META-001).
+
+- ☐ **AI-A1 — Confirm owners.** Verify each agent's department. Open question: `AG-014` Log Hours Reminder — Admin or Finance? (Finance currently has 0 agents.)
+- ☐ **AI-A2 — Confirm priorities.** Verify the tiers, esp. what is truly **Critical** (only AG-001 today) vs High.
+- ☐ **AI-A3 — Confirm dependencies.** Verify the upstream systems per agent; these seed the future `integrations` registry.
+- ☐ **AI-A4 — Confirm downstream-impact map.** Once dependencies are trusted, sanity-check which agents share a dependency (e.g. GoHighLevel → AG-001/010/022) so a single outage's blast radius is known.
+
+## Future registries (Registry Principle — later sprints, not now)
+
+The registry is Tony Alpha's first database; everything eventually registers itself. Scaffolded arrays exist and are empty for now.
+
+- ☐ **AI-G1 — Register departments' detail.** (Seeded: 7 departments DEPT-001..007.) Expand with leads/notes when useful.
+- ☐ **AI-G2 — Register integrations** (`INT-###`) — derived from agent `dependencies`. *(Deferred — do not build integrations yet, just catalog.)*
+- ☐ **AI-G3 — Register modules** (`MOD-###`), **memory** (`MEM-###`), **skills** (`SK-###`), **workflows** (`WF-###`) as those pieces come online.
+
+---
+
 ## Needs your decision
 
 - ☐ **AI-001 — Confirm schedules.** Fill in the real `schedule` for each of the 22 agents (all currently `unknown`). Priority: the daily-critical ones (GHL SMS Monitor, Email Triage, Upwork, Morning Digest).
@@ -50,3 +69,4 @@ The live CoWork scheduled tasks are not reachable from Claude Code (see `issues_
 ## Done
 
 - ☑ **AI-000 — Stand up Tony Alpha command center.** Created registry + tracking + reporting files (2026-07-08).
+- ☑ **AR-001 — Architecture Review 001 registry improvements.** Added stable IDs (AG-###), owner/department, priority, dependencies, health_score (null), and the "everything registers" scaffolding (departments seeded; modules/integrations/memory/skills/workflows scaffolded). Registry v2.0.0 (2026-07-08).
