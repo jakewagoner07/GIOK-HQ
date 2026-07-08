@@ -1,0 +1,36 @@
+{
+  "$schema_note": "Tony Alpha theme. Branding is a layer ON TOP of the app; functionality never depends on it. Swap these values (or drop in a different theme.json) to re-brand without touching code. Missing values fall back to the built-in default theme in theme-loader.ps1.",
+  "themeId": "giok",
+  "companyName": "GIOK",
+  "companyWordmark": "GIOK Agency",
+  "workspaceName": "GIOK HQ",
+  "assistantName": "Tony AI Assistant",
+  "version": "0.4 Alpha",
+  "tagline": "Protection for people who take ownership.",
+
+  "logo": "assets/giok-logo.png",
+  "profilePicture": "assets/giok-profile.jpg",
+  "profileName": "Jake Wagoner",
+  "icon": "assets/giok.ico",
+
+  "colors": {
+    "primary": "#0a1f44",
+    "primaryDark": "#071530",
+    "primaryMid": "#122454",
+    "accent": "#C85A00",
+    "accentLight": "#E8732A",
+    "accentDark": "#8B3E00",
+    "accentSoft": "#F6E7DA",
+    "background": "#f7f8fc",
+    "surface": "#ffffff",
+    "text": "#1f2937",
+    "textMuted": "#6b7280",
+    "textOnPrimary": "#ffffff",
+    "line": "#e5e7eb"
+  },
+
+  "typography": {
+    "fontFamily": "Inter, Segoe UI",
+    "headingFamily": "Inter, Segoe UI"
+  }
+}

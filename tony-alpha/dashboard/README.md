@@ -1,7 +1,8 @@
-# Tony Alpha — Desktop Dashboard (Sprint Alpha)
+# Tony Alpha — Desktop Dashboard
 
-The first working Tony Alpha desktop application. It proves Tony can launch as a real
-desktop window that reads the registry and shows the command-center at a glance.
+A local desktop command center that reads the registry and shows everything at a glance.
+Branded via a swappable **theme layer** (currently GIOK) — see [THEME.md](THEME.md).
+Branding never affects functionality; it's pure presentation on top of the app.
 
 ![Dashboard preview](docs/dashboard-preview.png)
 
@@ -9,7 +10,7 @@ desktop window that reads the registry and shows the command-center at a glance.
 
 ## How to launch
 
-**Normal use — the "Tony Alpha" desktop icon**, or double-click **`launch-tony.vbs`**.
+**Normal use — the "GIOK" desktop icon**, or double-click **`launch-tony.vbs`**.
 This is the **silent launcher**: no PowerShell or command-prompt window ever appears —
 only the Tony Alpha application window, so it feels like a native Windows app.
 

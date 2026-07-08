@@ -26,10 +26,12 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 try {
 
 . (Join-Path $PSScriptRoot 'core\tony-core.ps1')
+. (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 
+$theme = Get-Theme
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }
-$shell = New-TonyShell -InitialView $View -Now $startNow
+$shell = New-TonyShell -InitialView $View -Now $startNow -Theme $theme
 $rootVisual = $shell.Root
 
 if ($Screenshot) {
@@ -55,11 +57,16 @@ if ($Screenshot) {
 
 # ---- interactive desktop window ----
 $window = New-Object Windows.Window
-$window.Title = 'Tony Alpha - Command Center'
+$window.Title = $theme.companyName        # taskbar/title bar shows the brand (e.g. "GIOK")
 $window.Width = $Width; $window.Height = $Height
 $window.MinWidth = 980; $window.MinHeight = 680
 $window.WindowStartupLocation = 'CenterScreen'
-$window.Background = (New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString('#F3F5F9')))
+$window.Background = (New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($theme.colors.background)))
+if ($theme.logoPath -and (Test-Path $theme.logoPath)) {
+    $ico = New-Object Windows.Media.Imaging.BitmapImage
+    $ico.BeginInit(); $ico.CacheOption = 'OnLoad'; $ico.UriSource = New-Object Uri($theme.logoPath); $ico.EndInit()
+    $window.Icon = $ico
+}
 $window.Content = $rootVisual
 
 # live clock in the top bar
