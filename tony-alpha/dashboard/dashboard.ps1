@@ -20,6 +20,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
+# Because the app launches with no console (silent launcher), any startup
+# failure would otherwise be invisible. Surface it in a native dialog.
+try {
+
 . (Join-Path $PSScriptRoot 'core\tony-core.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 
@@ -75,3 +79,10 @@ $timer.Add_Tick({
 $timer.Start()
 
 $null = $window.ShowDialog()
+
+}
+catch {
+    $msg = "Tony Alpha could not start.`n`n" + $_.Exception.Message
+    [System.Windows.MessageBox]::Show($msg, 'Tony Alpha', 'OK', 'Error') | Out-Null
+    exit 1
+}

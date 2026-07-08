@@ -9,17 +9,29 @@ desktop window that reads the registry and shows the command-center at a glance.
 
 ## How to launch
 
-**Easiest:** double-click **`launch-tony.bat`**.
+**Normal use — the "Tony Alpha" desktop icon**, or double-click **`launch-tony.vbs`**.
+This is the **silent launcher**: no PowerShell or command-prompt window ever appears —
+only the Tony Alpha application window, so it feels like a native Windows app.
 
-**Or from a terminal:**
+**Debug / see output — `launch-tony.bat`.** Same app, but runs in a visible console so
+you can read errors. Handy when something isn't working.
+
+**From a terminal:**
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File dashboard.ps1
 ```
 
 A window titled *Tony Alpha – Command Center* opens, centered, with a live clock.
 
-> Later (Phase 3), `launch-tony.bat` becomes the target of a Windows desktop-icon
-> shortcut — no code change needed.
+### Launchers at a glance
+| File | Console window? | Use |
+|------|-----------------|-----|
+| `launch-tony.vbs` | none (silent) | everyday launch / desktop icon |
+| `launch-tony.bat` | yes (visible) | debugging, seeing errors |
+
+> The desktop "Tony Alpha" icon runs `wscript.exe "launch-tony.vbs"`, which starts
+> PowerShell hidden (`-WindowStyle Hidden`, window style 0). If startup ever fails, a
+> native error dialog is shown instead of failing silently.
 
 ### Requirements
 Nothing to install. Uses **Windows PowerShell 5.1** + **.NET WPF**, both built into
