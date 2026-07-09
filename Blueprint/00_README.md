@@ -48,6 +48,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | 13 | [Project Diamond](13_Project_Diamond.md) | The standard for building GIOK — quality over quantity |
 | — | [Tony's Brain](Tony_Brain.md) | Tony's reasoning architecture; the AI provider seam |
 | — | [Tony's AI Provider Contract](Tony_AI_Provider_Contract.md) | The model-agnostic request/response language |
+| — | [Tony Is an Operating System](Tony_Is_An_Operating_System.md) | Why Tony isn't a chatbot; connecting the first provider (Claude) |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |

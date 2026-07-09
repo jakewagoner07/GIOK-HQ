@@ -36,6 +36,17 @@ that's the point. Severity: 🔴 blocks daily use · 🟠 friction · 🟡 cosme
   Overview (they're trimmed for display; full text is kept).
 - 🟡 **Fonts:** the theme prefers **Inter**; if Inter isn't installed, GIOK falls back to Segoe UI.
 
+## AI provider (Claude) — connection notes
+- 🟡 **Claude is connected but gated on a key.** Set `ANTHROPIC_API_KEY` (env var) or copy
+  `dashboard/providers/claude.config.example.json` to `claude.config.json` (git-ignored) and add
+  your key. With no key, Tony makes **no network call** and says he isn't fully connected yet.
+- 🟠 **The "Ask Tony" call is synchronous.** When a key is configured, typing a free-text question
+  in the command bar calls the provider on the UI thread, which will briefly block the window while
+  it responds. Making this asynchronous is a planned follow-up.
+- 🟡 **The live Claude round-trip was not exercised here** (no key in the build environment). The
+  provider, contract mapping, fallback, and scope/model-hiding prompt were verified without any
+  network call; the live call should be confirmed on the real machine once a key is set.
+
 ## Not yet verified end-to-end (environment limits)
 - 🟠 Live click/keyboard interactions (checkboxes, steppers, typing, window pop-outs, Ctrl+K) were
   validated by driving the underlying functions and by inspection; they should be exercised by hand

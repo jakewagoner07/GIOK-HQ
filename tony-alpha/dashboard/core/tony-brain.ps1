@@ -165,7 +165,7 @@ function Invoke-TonyFutureIntegration { param([string]$Name) return (New-TonyAct
 #    in so the brain works without any AI.
 # ---------------------------------------------------------------------
 $script:TonyProviders = @{}
-$script:TonyActiveProvider = 'local-stub'
+$script:TonyActiveProvider = 'auto'   # 'auto' picks a configured real provider, else the local stub
 
 function Get-TonyProviderContract {
     # The shape every provider must implement.
@@ -184,14 +184,29 @@ function Register-TonyProvider {
 }
 
 function Get-TonyProviders { return @($script:TonyProviders.Values) }
-function Set-TonyActiveProvider { param([string]$Name) if ($script:TonyProviders.ContainsKey($Name)) { $script:TonyActiveProvider = $Name } }
+function Set-TonyActiveProvider { param([string]$Name) if ($Name -eq 'auto' -or $script:TonyProviders.ContainsKey($Name)) { $script:TonyActiveProvider = $Name } }
+
+# Resolve which provider actually answers. 'auto' prefers the first
+# registered real (non-stub) provider that reports it is configured;
+# otherwise it falls back to the local stub. The brain never names a model.
+function Resolve-TonyProvider {
+    if ($script:TonyActiveProvider -ne 'auto') { return $script:TonyActiveProvider }
+    foreach ($p in $script:TonyProviders.Values) {
+        if ($p.name -eq 'local-stub') { continue }
+        $ok = $true
+        if (($p.PSObject.Properties.Name -contains 'isConfigured') -and $p.isConfigured) { $ok = [bool](& $p.isConfigured) }
+        if ($ok) { return $p.name }
+    }
+    return 'local-stub'
+}
 
 # The brain calls THIS. It does not know or name any model - it only asks
-# the active provider to respond to a request.
+# the resolved provider to respond to a request.
 function Invoke-TonyProvider {
     param([Parameter(Mandatory)] $Request)
-    $p = $script:TonyProviders[$script:TonyActiveProvider]
-    if (-not $p) { return 'No AI provider is connected.' }
+    $name = Resolve-TonyProvider
+    $p = $script:TonyProviders[$name]
+    if (-not $p) { return (New-TonyResponse -Answer 'No AI provider is connected.' -ProviderName 'none' -Confidence 0.0) }
     return (& $p.invoke $Request)
 }
 

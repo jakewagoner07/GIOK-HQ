@@ -1,0 +1,3 @@
+# Secrets — never commit provider keys.
+tony-alpha/dashboard/providers/claude.config.json
+**/claude.config.json

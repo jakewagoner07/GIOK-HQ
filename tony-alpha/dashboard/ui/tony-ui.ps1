@@ -176,7 +176,14 @@ function New-CommandBar {
             'navigate' { Set-ActiveView $res.target }
             'addtask'  { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $res.title | Out-Null; Save-ActionItemsData $d; $script:CommandResult = ("Added task: {0}" -f $res.title); Set-ActiveView 'Home' }
             'capture'  { $d = Get-CaptureData; Add-Capture -Data $d -Text $res.text -CreatedFrom 'command-bar' | Out-Null; Save-CaptureData $d; $script:CommandResult = ("Captured to Inbox: {0}" -f $res.text); Set-ActiveView 'Home' }
-            'unknown'  { $script:CommandResult = $res.message; Set-ActiveView 'Home' }
+            'unknown'  {
+                # Not a local command -> ask Tony (routes through Tony Brain -> Provider Contract -> provider).
+                if (Get-Command Invoke-TonyBrain -ErrorAction SilentlyContinue) {
+                    $brain = Invoke-TonyBrain -UserInput $s.Text -CurrentWorkspace $script:TonyActiveView
+                    $script:CommandResult = ("Tony: {0}" -f $brain.message)
+                } else { $script:CommandResult = $res.message }
+                Set-ActiveView 'Home'
+            }
             default    { }
         }
         $e.Handled = $true

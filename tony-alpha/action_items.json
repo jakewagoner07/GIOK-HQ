@@ -1,7 +1,7 @@
 ﻿{
     "meta":  {
                  "version":  "1.0.0",
-                 "updated":  "2026-07-09 12:38:08",
+                 "updated":  "2026-07-09 13:03:16",
                  "source":  "seeded from action_items.md"
              },
     "items":  [
@@ -280,6 +280,14 @@
                   {
                       "id":  "SPRINT",
                       "title":  "Interactive Action Items.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D4 — Connect Tony to Claude Provider.",
                       "done":  true,
                       "archived":  false,
                       "created":  "2026-07-08 08:00:00",
