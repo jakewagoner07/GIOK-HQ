@@ -192,6 +192,97 @@ function Focus-CommandBar {
     if ($script:CommandBox) { $script:CommandBox.Focus() | Out-Null }
 }
 
+# =====================  MORNING BRIEFING  =====================
+# Renders ONLY from the Morning Brief model (core/morning-brief.ps1). No
+# dashboard logic here - purely presentation of Tony's prepared briefing.
+function New-MorningBriefing {
+    param([Parameter(Mandatory)] $Model)
+    $m = $Model
+    $wrap = New-Object Windows.Controls.StackPanel; $wrap.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+
+    # ---- header: briefing tag + greeting + date  |  weather + prepared-by ----
+    $hdr = New-Object Windows.Controls.DockPanel
+    $right = New-Object Windows.Controls.StackPanel; $right.HorizontalAlignment = 'Right'
+    $w = $m.weather
+    $wbox = New-Object Windows.Controls.Border; $wbox.Background = New-Brush $script:Col.AccentSoft; $wbox.CornerRadius = New-Object Windows.CornerRadius 8; $wbox.Padding = New-Object Windows.Thickness (10, 6, 10, 6); $wbox.HorizontalAlignment = 'Right'
+    $wbox.Child = (New-Text -Text ("{0}   {1}   -   {2}" -f $w.temp, $w.condition, $w.location) -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk)
+    $right.Children.Add($wbox) | Out-Null
+    $pb = New-Text -Text ("Prepared by {0} - {1}" -f $m.preparedBy, $m.timeText) -Size 10.5 -Color $script:Col.Muted; $pb.HorizontalAlignment = 'Right'; $pb.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
+    $right.Children.Add($pb) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($right, 'Right'); $hdr.Children.Add($right) | Out-Null
+    $left = New-Object Windows.Controls.StackPanel
+    $left.Children.Add((New-Text -Text "TONY'S MORNING BRIEFING" -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $left.Children.Add((New-Text -Text $m.greeting -Size 30 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $left.Children.Add((New-Text -Text $m.dateText -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $hdr.Children.Add($left) | Out-Null
+    $wrap.Children.Add($hdr) | Out-Null
+
+    # ---- daily principle ----
+    $pr = New-Object Windows.Controls.Border; $pr.Background = New-Brush $script:Col.AccentSoft; $pr.CornerRadius = New-Object Windows.CornerRadius 8; $pr.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $pr.Margin = New-Object Windows.Thickness (0, 10, 0, 12)
+    $prSp = New-Object Windows.Controls.StackPanel
+    $prSp.Children.Add((New-Text -Text "TODAY'S PRINCIPLE" -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted)) | Out-Null
+    $prSp.Children.Add((New-Text -Text ('"{0}"' -f $m.dailyPrinciple) -Size 15 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)) | Out-Null
+    $pr.Child = $prSp
+    $wrap.Children.Add($pr) | Out-Null
+
+    # ---- briefing grid: Today's Priorities | Tony Recommends | Snapshot ----
+    $g = New-Object Windows.Controls.Grid
+    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $g.ColumnDefinitions.Add($cd) | Out-Null }
+
+    # Today's Priorities
+    $tp = New-Object Windows.Controls.StackPanel
+    if (@($m.topPriorities).Count -eq 0) { $tp.Children.Add((New-Text -Text 'All clear - no open priorities.' -Size 13 -Color $script:Col.Muted)) | Out-Null }
+    else {
+        $i = 1
+        foreach ($p in $m.topPriorities) {
+            $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+            $badge = New-NumBadge -N $i; [Windows.Controls.DockPanel]::SetDock($badge, 'Left'); $row.Children.Add($badge) | Out-Null
+            $iw = New-Object Windows.Controls.StackPanel
+            $iw.Children.Add((New-Text -Text $p.title -Size 13.5 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+            $iw.Children.Add((New-Text -Text $p.id -Size 10.5 -Color $script:Col.Muted)) | Out-Null
+            $row.Children.Add($iw) | Out-Null; $tp.Children.Add($row) | Out-Null; $i++
+        }
+    }
+    $tp.Children.Add((New-Text -Text ("{0} open action items  -  {1} unprocessed captures" -f $m.openActionCount, $m.captureUnprocessed) -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    $g.Children.Add((New-Card -Title "Today's Priorities" -Body $tp -Col 0 -NavTo 'Action Items')) | Out-Null
+
+    # Tony Recommends
+    $tr = New-Object Windows.Controls.StackPanel
+    foreach ($r in $m.tonyRecommendations) {
+        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 7)
+        $dot = New-Text -Text '*' -Size 15 -Weight 'Bold' -Color $script:Col.Accent; $dot.Margin = New-Object Windows.Thickness (0, 0, 8, 0); $dot.VerticalAlignment = 'Top'
+        [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $row.Children.Add($dot) | Out-Null
+        $txt = New-Text -Text $r.text -Size 12 -Wrap $true
+        if ($r.source -in @('goals', 'placeholder')) { $txt.Text = $r.text + '  (sample)' }
+        $row.Children.Add($txt) | Out-Null; $tr.Children.Add($row) | Out-Null
+    }
+    $g.Children.Add((New-Card -Title 'Tony Recommends' -Body $tr -Col 1 -NavTo 'Recommendations')) | Out-Null
+
+    # Snapshot: scores + notifications
+    $sn = New-Object Windows.Controls.StackPanel
+    foreach ($sc in @(@('Life Score', $m.lifeScore), @('Business Score', $m.businessScore))) {
+        $dp = New-Object Windows.Controls.DockPanel; $dp.Margin = New-Object Windows.Thickness (0, 0, 0, 5)
+        [Windows.Controls.DockPanel]::SetDock(($k = New-Text -Text $sc[0] -Size 12.5 -Color $script:Col.Muted), 'Left'); $dp.Children.Add($k) | Out-Null
+        $vwrap = New-Object Windows.Controls.StackPanel; $vwrap.Orientation = 'Horizontal'; $vwrap.HorizontalAlignment = 'Right'
+        $vwrap.Children.Add((New-Text -Text ([string]$sc[1].value) -Size 18 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+        $arrow = switch ($sc[1].trend) { 'up' { @('^', '#34D399') } 'down' { @('v', '#F87171') } default { @('-', $script:Col.Muted) } }
+        $vwrap.Children.Add((New-Text -Text (' ' + $arrow[0]) -Size 14 -Weight 'Bold' -Color $arrow[1] -Margin (New-Object Windows.Thickness (4, 2, 0, 0)))) | Out-Null
+        $dp.Children.Add($vwrap) | Out-Null; $sn.Children.Add($dp) | Out-Null
+    }
+    $sn.Children.Add((New-Text -Text 'NOTIFICATIONS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 3)))) | Out-Null
+    foreach ($n in (@($m.notifications) | Select-Object -First 4)) {
+        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 3)
+        $dot = New-Text -Text '-' -Size 12 -Weight 'Bold' -Color $script:Col.Accent; $dot.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $dot.VerticalAlignment = 'Top'
+        [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $row.Children.Add($dot) | Out-Null
+        $txt = New-Text -Text $n.text -Size 11.5 -Wrap $true; if ($n.source -eq 'placeholder') { $txt.Text = $n.text + '  (sample)' }
+        $row.Children.Add($txt) | Out-Null; $sn.Children.Add($row) | Out-Null
+    }
+    $g.Children.Add((New-Card -Title "Today's Snapshot" -Body $sn -Tag 'SAMPLE' -Col 2 -NavTo 'Mission Control')) | Out-Null
+
+    $wrap.Children.Add($g) | Out-Null
+    return $wrap
+}
+
 # =====================  VIEW: HOME (executive)  =====================
 function New-HomeView {
     param([Parameter(Mandatory)] $Model)
@@ -204,13 +295,8 @@ function New-HomeView {
         $script:CommandResult = $null
     }
 
-    # greeting + brand quote
-    $stack.Children.Add((New-Text -Text $Model.greeting -Size 30 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
-    $rule = New-Object Windows.Controls.Border; $rule.Background = New-Brush $script:Col.Accent; $rule.Height = 3; $rule.Width = 66
-    $rule.HorizontalAlignment = 'Left'; $rule.CornerRadius = New-Object Windows.CornerRadius 2; $rule.Margin = New-Object Windows.Thickness (0, 5, 0, 8)
-    $stack.Children.Add($rule) | Out-Null
-    $stack.Children.Add((New-Text -Text ('"{0}"' -f $Model.brandQuote) -Size 17 -Weight 'SemiBold' -Color $script:Col.AccentInk)) | Out-Null
-    $stack.Children.Add((New-Text -Text $Model.dateText -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 12)))) | Out-Null
+    # Morning Briefing (replaces the greeting) - renders ONLY from the Morning Brief model
+    $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null
 
     # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
     $cap = Get-CaptureStats
@@ -247,41 +333,7 @@ function New-HomeView {
     $capB.Child = $capDock
     $stack.Children.Add($capB) | Out-Null
 
-    # ---- Row A: Top 3 Priorities | Tony Recommends ----
-    $gA = New-Object Windows.Controls.Grid
-    $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = [Windows.GridLength]::new(3, 'Star'); $gA.ColumnDefinitions.Add($c0) | Out-Null
-    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = [Windows.GridLength]::new(2, 'Star'); $gA.ColumnDefinitions.Add($c1) | Out-Null
-
-    $topBody = New-Object Windows.Controls.StackPanel
-    if (@($Model.top3).Count -eq 0) {
-        $topBody.Children.Add((New-Text -Text 'All clear - no open priorities right now.' -Size 13 -Color $script:Col.Muted)) | Out-Null
-    } else {
-        $i = 1
-        foreach ($p in $Model.top3) {
-            $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
-            $badge = New-NumBadge -N $i; [Windows.Controls.DockPanel]::SetDock($badge, 'Left'); $row.Children.Add($badge) | Out-Null
-            $wrap = New-Object Windows.Controls.StackPanel
-            $wrap.Children.Add((New-Text -Text $p.title -Size 14 -Weight 'SemiBold' -Wrap $true)) | Out-Null
-            $wrap.Children.Add((New-Text -Text $p.id -Size 11 -Color $script:Col.Muted)) | Out-Null
-            $row.Children.Add($wrap) | Out-Null
-            $topBody.Children.Add($row) | Out-Null
-            $i++
-        }
-    }
-    $gA.Children.Add((New-Card -Title "Today's Top 3 Priorities" -Body $topBody -Col 0 -NavTo 'Action Items')) | Out-Null
-
-    $recBody = New-Object Windows.Controls.StackPanel
-    foreach ($r in $Model.tonyRecommends) {
-        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
-        $dot = New-Text -Text "*" -Size 15 -Weight 'Bold' -Color $script:Col.Accent; $dot.Margin = New-Object Windows.Thickness (0, 0, 8, 0); $dot.VerticalAlignment = 'Top'
-        [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $row.Children.Add($dot) | Out-Null
-        $txt = New-Text -Text $r.text -Size 12.5 -Wrap $true
-        if ($r.source -eq 'placeholder') { $txt.Text = $r.text + '  (sample)' }
-        $row.Children.Add($txt) | Out-Null
-        $recBody.Children.Add($row) | Out-Null
-    }
-    $gA.Children.Add((New-Card -Title 'Tony Recommends' -Body $recBody -Col 1 -NavTo 'Recommendations')) | Out-Null
-    $stack.Children.Add($gA) | Out-Null
+    # (Today's Priorities + Tony Recommends now live inside the Morning Briefing above.)
 
     # ---- Row B: Agency Overview | Upcoming Appointments | Agent Health ----
     $gB = New-Object Windows.Controls.Grid

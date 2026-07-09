@@ -26,6 +26,12 @@ Non-Negotiables, Tony Recommendations, Potential Risks, Big Opportunities, and a
 Business Score snapshot. Full spec in [Continuous_Improvement.md](Continuous_Improvement.md). This
 is the first thing Jake reads each morning.
 
+*Status: a first Morning Briefing is built (Sprint Kilo) — it replaces the greeting on Home and
+renders from a dedicated Morning Brief model in core (`morning-brief.ps1`), with live priorities /
+recommendations / notifications and clearly-labelled placeholders (scores, weather). A rotating
+Daily Principle and a recommendation-engine placeholder (open action items → captures → issues →
+goals) are in place. It reads "Prepared by Tony," so the day feels set up before Jake arrives.*
+
 ### End of Day Audit
 The **AUDIT → IMPROVE** step, and one of GIOK's signature experiences. A guided, honest review of
 the day: day scores, wins, incomplete items (with Tony's move/reschedule/delete/delegate

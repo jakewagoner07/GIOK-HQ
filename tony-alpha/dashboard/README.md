@@ -41,6 +41,23 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Morning Briefing (Sprint Kilo)
+
+The Home greeting is replaced by **Tony's Morning Briefing** — his executive briefing that
+prepares Jake for the day and answers *"What should Jake focus on today?"* It renders **only**
+from a dedicated model in `core/morning-brief.ps1` (no dashboard logic in the UI):
+- **Greeting, date, weather** (placeholder), and a "Prepared by Tony" stamp.
+- **Daily Principle** — rotates through GIOK principles by date.
+- **Today's Priorities** — live from action items (+ open/unprocessed counts).
+- **Tony Recommends** — a recommendation-engine placeholder that prioritizes open action items →
+  unprocessed captures → open issues → goals (future).
+- **Today's Snapshot** — Life Score / Business Score (placeholder) + live Notifications.
+
+The model also carries Open Action Items, Recent Captures, Agent Health, and Upcoming
+Appointments for future expansion. Dark executive branding throughout.
+
+![Morning Briefing](docs/dashboard-preview.png)
+
 ## Capture & Tony Memory (Sprint Juliet)
 
 **Capture** is GIOK's front door — *your brain is for thinking, not remembering.*

@@ -1,7 +1,7 @@
 ﻿{
     "meta":  {
                  "version":  "1.0.0",
-                 "updated":  "2026-07-09 08:28:54",
+                 "updated":  "2026-07-09 09:00:22",
                  "source":  "seeded from action_items.md"
              },
     "items":  [
@@ -280,6 +280,14 @@
                   {
                       "id":  "SPRINT",
                       "title":  "Interactive Action Items.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-KILO",
+                      "title":  "Morning Briefing.",
                       "done":  true,
                       "archived":  false,
                       "created":  "2026-07-08 08:00:00",
