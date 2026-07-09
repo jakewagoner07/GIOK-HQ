@@ -1215,7 +1215,249 @@ function New-TonyMemoryView {
     return $outer
 }
 
+# =====================  IDENTITY WORKSPACE  =====================
+$script:IdentitySection = 'Overview'
+
+function New-ProgressBar {
+    param([int]$Pct, [double]$Height = 8)
+    $Pct = [math]::Max(0, [math]::Min(100, $Pct))
+    $track = New-Object Windows.Controls.Border
+    $track.Background = New-Brush $script:Col.PrimaryMid; $track.CornerRadius = New-Object Windows.CornerRadius ($Height / 2); $track.Height = $Height; $track.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
+    $g = New-Object Windows.Controls.Grid
+    $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = [Windows.GridLength]::new($Pct, 'Star'); $g.ColumnDefinitions.Add($c0) | Out-Null
+    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = [Windows.GridLength]::new((100 - $Pct), 'Star'); $g.ColumnDefinitions.Add($c1) | Out-Null
+    $fill = New-Object Windows.Controls.Border; $fill.Background = New-Brush $script:Col.Accent; $fill.CornerRadius = New-Object Windows.CornerRadius ($Height / 2)
+    [Windows.Controls.Grid]::SetColumn($fill, 0); $g.Children.Add($fill) | Out-Null
+    $track.Child = $g
+    return $track
+}
+
+function Refresh-Identity { $script:TonyBody.Child = New-IdentityView }
+
+function New-IdentityOverviewSection {
+    $o = Get-IdentityOverview
+    $grid = New-Object Windows.Controls.Grid
+    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $grid.ColumnDefinitions.Add($cd) | Out-Null }
+    foreach ($i in 0..2) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $grid.RowDefinitions.Add($rd) | Out-Null }
+
+    # Identity Score
+    $b = New-Object Windows.Controls.StackPanel
+    $sr = New-Object Windows.Controls.StackPanel; $sr.Orientation = 'Horizontal'
+    $sr.Children.Add((New-Text -Text ([string]$o.identityScore.value) -Size 34 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $ar = switch ($o.identityScore.trend) { 'up' { @('^', '#34D399') } 'down' { @('v', '#F87171') } default { @('-', $script:Col.Muted) } }
+    $sr.Children.Add((New-Text -Text (' ' + $ar[0]) -Size 16 -Weight 'Bold' -Color $ar[1] -Margin (New-Object Windows.Thickness (4, 6, 0, 0)))) | Out-Null
+    $b.Children.Add($sr) | Out-Null
+    $b.Children.Add((New-Text -Text 'who you are becoming' -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+    $grid.Children.Add((New-Card -Title 'Identity Score' -Body $b -Tag 'SAMPLE' -Col 0 -Row 0)) | Out-Null
+
+    # Vision Progress
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-Text -Text ("{0}%" -f $o.visionProgress) -Size 26 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $b.Children.Add((New-ProgressBar -Pct $o.visionProgress)) | Out-Null
+    $grid.Children.Add((New-Card -Title 'Vision Progress' -Body $b -Col 1 -Row 0 -NavTo 'Identity')) | Out-Null
+
+    # Goal Progress
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-Text -Text ("{0}%" -f $o.goalProgress) -Size 26 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $b.Children.Add((New-ProgressBar -Pct $o.goalProgress)) | Out-Null
+    $grid.Children.Add((New-Card -Title 'Goal Progress' -Body $b -Col 2 -Row 0)) | Out-Null
+
+    # Current Annual Theme
+    $b = New-Object Windows.Controls.StackPanel
+    if ($o.annualTheme) {
+        $b.Children.Add((New-Text -Text $o.annualTheme.theme -Size 15 -Weight 'Bold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+        $b.Children.Add((New-Text -Text $o.annualTheme.description -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null
+    }
+    $grid.Children.Add((New-Card -Title 'Current Annual Theme' -Body $b -Col 0 -Row 1)) | Out-Null
+
+    # Core Values
+    $b = New-Object Windows.Controls.WrapPanel
+    foreach ($v in $o.values) { $b.Children.Add((New-Chip -Text $v.name -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null }
+    $grid.Children.Add((New-Card -Title 'Core Values' -Body $b -Col 1 -Row 1)) | Out-Null
+
+    # Tony's Reflection
+    $b = New-Object Windows.Controls.StackPanel
+    if ($o.tonyReflection) { $b.Children.Add((New-Text -Text $o.tonyReflection.text -Size 12.5 -Color $script:Col.Ink -Wrap $true)) | Out-Null }
+    $grid.Children.Add((New-Card -Title "Tony's Reflection" -Body $b -Tag 'SAMPLE' -Col 2 -Row 1)) | Out-Null
+
+    # Latest Journal Entry
+    $b = New-Object Windows.Controls.StackPanel
+    if ($o.latestJournal) {
+        $b.Children.Add((New-Text -Text $o.latestJournal.date -Size 11 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
+        $b.Children.Add((New-Text -Text $o.latestJournal.text -Size 12.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+    }
+    $grid.Children.Add((New-Card -Title 'Latest Journal Entry' -Body $b -Col 0 -Row 2)) | Out-Null
+
+    # Recent Wins
+    $b = New-Object Windows.Controls.StackPanel
+    foreach ($w in $o.recentWins) {
+        $row = New-Object Windows.Controls.DockPanel
+        $dot = New-Text -Text '+' -Size 13 -Weight 'Bold' -Color '#34D399'; $dot.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $dot.VerticalAlignment = 'Top'
+        [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $row.Children.Add($dot) | Out-Null
+        $row.Children.Add((New-Text -Text $w -Size 12 -Wrap $true)) | Out-Null
+        $b.Children.Add($row) | Out-Null
+    }
+    $grid.Children.Add((New-Card -Title 'Recent Wins' -Body $b -Col 1 -Row 2)) | Out-Null
+
+    return $grid
+}
+
+function New-IdentityVisionSection {
+    $v = Get-IdentityVision
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($v) {
+        $sp.Children.Add((New-Text -Text $v.statement -Size 18 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+        $sp.Children.Add((New-Text -Text ("Horizon: {0}" -f $v.horizon) -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
+        $sp.Children.Add((New-Text -Text ("Vision progress: {0}%" -f $v.progress) -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk)) | Out-Null
+        $sp.Children.Add((New-ProgressBar -Pct $v.progress)) | Out-Null
+    }
+    return $sp
+}
+
+function New-IdentityGoalsSection {
+    $g = Get-IdentityGoals
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($g) {
+        foreach ($goal in $g.goals) {
+            $card = New-Object Windows.Controls.Border
+            $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 10; $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+            $card.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+            $b = New-Object Windows.Controls.StackPanel
+            $top = New-Object Windows.Controls.DockPanel
+            $tgt = New-Text -Text ("Target: {0}   ({1}%)" -f $goal.target, $goal.progress) -Size 11.5 -Color $script:Col.Muted; $tgt.HorizontalAlignment = 'Right'; [Windows.Controls.DockPanel]::SetDock($tgt, 'Right'); $top.Children.Add($tgt) | Out-Null
+            $top.Children.Add((New-Text -Text $goal.title -Size 14 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+            $b.Children.Add($top) | Out-Null
+            $b.Children.Add((New-ProgressBar -Pct $goal.progress)) | Out-Null
+            $card.Child = $b; $sp.Children.Add($card) | Out-Null
+        }
+    }
+    return $sp
+}
+
+function New-IdentityValuesSection {
+    $v = Get-IdentityValues
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($v) {
+        foreach ($val in $v.values) {
+            $sp.Children.Add((New-Text -Text $val.name -Size 15 -Weight 'Bold' -Color $script:Col.Heading -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+            $sp.Children.Add((New-Text -Text $val.desc -Size 12.5 -Color $script:Col.Muted -Wrap $true)) | Out-Null
+        }
+    }
+    return $sp
+}
+
+function New-IdentityStatementSection {
+    param([string]$Statement)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text $Statement -Size 18 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+    return $sp
+}
+
+function New-IdentityThemeSection {
+    $t = Get-IdentityAnnualTheme
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($t) {
+        $sp.Children.Add((New-Text -Text ([string]$t.year) -Size 13 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
+        $sp.Children.Add((New-Text -Text $t.theme -Size 22 -Weight 'Bold' -Color $script:Col.Heading -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 6)))) | Out-Null
+        $sp.Children.Add((New-Text -Text $t.description -Size 13 -Color $script:Col.Muted -Wrap $true)) | Out-Null
+    }
+    return $sp
+}
+
+function New-IdentityJournalSection {
+    $j = Get-IdentityJournal
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($j) {
+        foreach ($e in $j.entries) {
+            $card = New-Object Windows.Controls.Border
+            $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 10; $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+            $card.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+            $b = New-Object Windows.Controls.StackPanel
+            $b.Children.Add((New-Text -Text $e.date -Size 11 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
+            $b.Children.Add((New-Text -Text $e.text -Size 13 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+            $card.Child = $b; $sp.Children.Add($card) | Out-Null
+        }
+    }
+    return $sp
+}
+
+function New-IdentityTimelineSection {
+    $t = Get-IdentityTimeline
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($t) {
+        foreach ($m in $t.milestones) {
+            $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+            $date = New-Text -Text ([string]$m.date) -Size 13 -Weight 'Bold' -Color $script:Col.AccentInk; $date.Width = 70
+            [Windows.Controls.DockPanel]::SetDock($date, 'Left'); $row.Children.Add($date) | Out-Null
+            $row.Children.Add((New-Text -Text $m.title -Size 13 -Wrap $true)) | Out-Null
+            $sp.Children.Add($row) | Out-Null
+        }
+    }
+    return $sp
+}
+
+function New-IdentityView {
+    $sec = $script:IdentitySection
+    $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+    $head.Children.Add((New-Text -Text 'Identity' -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $head.Children.Add((New-Text -Text "Your personal operating system - who you're becoming. Vision and Goals live here." -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $tabs = New-Object Windows.Controls.WrapPanel; $tabs.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+    foreach ($s in (Get-IdentitySections)) {
+        $active = ($s -eq $sec)
+        $btn = New-MiniButton -Text $s -Bg $(if ($active) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($active) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -Tag $s -OnClick { param($s2, $e); $script:IdentitySection = $s2.Tag; Refresh-Identity }
+        $tabs.Children.Add($btn) | Out-Null
+    }
+    $head.Children.Add($tabs) | Out-Null
+
+    $content = switch ($sec) {
+        'Overview'     { New-IdentityOverviewSection }
+        'Vision'       { New-IdentityVisionSection }
+        'Goals'        { New-IdentityGoalsSection }
+        'Core Values'  { New-IdentityValuesSection }
+        'Mission'      { $mn = Get-IdentityMission; New-IdentityStatementSection -Statement $(if ($mn) { $mn.statement } else { '' }) }
+        'Legacy'       { $lg = Get-IdentityLegacy;  New-IdentityStatementSection -Statement $(if ($lg) { $lg.statement } else { '' }) }
+        'Annual Theme' { New-IdentityThemeSection }
+        'Journal'      { New-IdentityJournalSection }
+        'Timeline'     { New-IdentityTimelineSection }
+        default        { New-IdentityOverviewSection }
+    }
+    $body = New-Object Windows.Controls.StackPanel; $body.Margin = New-Object Windows.Thickness (4, 8, 4, 0); $body.Children.Add($content) | Out-Null
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $body
+    $outer = New-Object Windows.Controls.DockPanel
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null; $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
+# ---- generic "coming soon" workspace placeholder (for not-yet-built workspaces) ----
+function New-WorkspacePlaceholder {
+    param([Parameter(Mandatory)][string]$Title, [string]$Belongs)
+    $sp = New-Object Windows.Controls.StackPanel; $sp.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
+    $sp.Children.Add((New-Text -Text $Title -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $sp.Children.Add((New-Text -Text 'Workspace' -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 12)))) | Out-Null
+    $banner = New-Object Windows.Controls.Border; $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8; $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (0, 0, 0, 12)
+    $banner.Child = (New-Text -Text 'Coming soon - this workspace is scaffolded and will be built in a future sprint.' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)
+    $sp.Children.Add($banner) | Out-Null
+    if ($Belongs) {
+        $card = New-Object Windows.Controls.StackPanel
+        $card.Children.Add((New-Text -Text 'WHAT BELONGS HERE' -Size 10.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null
+        $card.Children.Add((New-Text -Text $Belongs -Size 13 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+        $sp.Children.Add((New-Card -Title $Title -Body $card)) | Out-Null
+    }
+    return $sp
+}
+
+$script:WorkspaceBelongs = @{
+    'Non-Negotiables' = 'The bright lines you refuse to cross - your daily disciplines (training, Checkups, family time, honesty) and their streaks.'
+    'Family'          = 'The people who matter most - commitments, dates, shared logistics, and memories.'
+    'Health'          = 'Training, sleep, nutrition, recovery, and medical upkeep.'
+    'Financial'       = 'Budgets, cash flow, targets, and obligations - personal and business.'
+    'Home Projects'   = 'The house and physical life admin - projects, maintenance, and purchases.'
+    'Learning'        = 'Deliberate growth - courses, books, skills, and industry study.'
+}
+
 # =====================  NAV + SHELL  =====================
+function New-Emoji { param([int[]]$Cp) return (-join ($Cp | ForEach-Object { [char]::ConvertFromUtf32($_) })) }
+
 function Set-ActiveView {
     param([Parameter(Mandatory)][string]$Name)
     $script:TonyActiveView = $Name
@@ -1238,20 +1480,27 @@ function Set-ActiveView {
         'Mission Control'{ New-MissionControlView }
         'Capture'        { New-CaptureView }
         'Tony Memory'    { New-TonyMemoryView }
+        'Identity'       { New-IdentityView }
+        'Non-Negotiables'{ New-WorkspacePlaceholder -Title 'Non-Negotiables' -Belongs $script:WorkspaceBelongs['Non-Negotiables'] }
+        'Family'         { New-WorkspacePlaceholder -Title 'Family' -Belongs $script:WorkspaceBelongs['Family'] }
+        'Health'         { New-WorkspacePlaceholder -Title 'Health' -Belongs $script:WorkspaceBelongs['Health'] }
+        'Financial'      { New-WorkspacePlaceholder -Title 'Financial' -Belongs $script:WorkspaceBelongs['Financial'] }
+        'Home Projects'  { New-WorkspacePlaceholder -Title 'Home Projects' -Belongs $script:WorkspaceBelongs['Home Projects'] }
+        'Learning'       { New-WorkspacePlaceholder -Title 'Learning' -Belongs $script:WorkspaceBelongs['Learning'] }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
 }
 
 function New-SidebarNavItem {
-    param([string]$Name)
+    param([string]$Label, [string]$Key)
     $b = New-Object Windows.Controls.Border
-    $b.CornerRadius = New-Object Windows.CornerRadius 8; $b.Padding = New-Object Windows.Thickness (12, 9, 12, 9)
-    $b.Margin = New-Object Windows.Thickness (0, 0, 0, 4); $b.Cursor = 'Hand'; $b.Tag = $Name; $b.HorizontalAlignment = 'Stretch'
-    $t = New-Text -Text $Name -Size 13 -Weight 'SemiBold' -Color $script:Col.OnPrimaryMuted
+    $b.CornerRadius = New-Object Windows.CornerRadius 8; $b.Padding = New-Object Windows.Thickness (12, 8, 12, 8)
+    $b.Margin = New-Object Windows.Thickness (0, 0, 0, 3); $b.Cursor = 'Hand'; $b.Tag = $Key; $b.HorizontalAlignment = 'Stretch'
+    $t = New-Text -Text $Label -Size 13 -Weight 'SemiBold' -Color $script:Col.OnPrimaryMuted
     $b.Child = $t
     $b.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
-    return [pscustomobject]@{ Name = $Name; Border = $b; Text = $t }
+    return [pscustomobject]@{ Name = $Key; Border = $b; Text = $t }
 }
 
 function New-TonyShell {
@@ -1307,15 +1556,31 @@ function New-TonyShell {
     $prof.Children.Add((New-Text -Text $Theme.companyWordmark -Size 11 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 1, 0, 0)))) | Out-Null
     [Windows.Controls.Grid]::SetRow($prof, 1); $sideGrid.Children.Add($prof) | Out-Null
 
-    # nav
+    # nav (emoji built at runtime to keep the source ASCII-safe)
+    $navDefs = @(
+        [pscustomobject]@{ cp = @(0x1F3E0); label = 'Home'; key = 'Home' }
+        [pscustomobject]@{ cp = @(0x1F9ED); label = 'Identity'; key = 'Identity' }
+        [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables' }
+        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family' }
+        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health' }
+        [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial' }
+        [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency' }
+        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home'; key = 'Home Projects' }
+        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning' }
+        [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents' }
+        [pscustomobject]@{ cp = @(0x1F680); label = 'Mission Control'; key = 'Mission Control' }
+        [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory' }
+    )
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
-    foreach ($name in @('Morning Experience', 'Home', 'Mission Control', 'Capture', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap', 'Tony Memory')) {
-        $item = New-SidebarNavItem -Name $name; $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
+    foreach ($d in $navDefs) {
+        $item = New-SidebarNavItem -Label ((New-Emoji $d.cp) + '   ' + $d.label) -Key $d.key
+        $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
     }
-    [Windows.Controls.Grid]::SetRow($nav, 2); $sideGrid.Children.Add($nav) | Out-Null
+    $navScroll = New-Object Windows.Controls.ScrollViewer; $navScroll.VerticalScrollBarVisibility = 'Auto'; $navScroll.HorizontalScrollBarVisibility = 'Disabled'; $navScroll.Content = $nav
+    [Windows.Controls.Grid]::SetRow($navScroll, 2); $sideGrid.Children.Add($navScroll) | Out-Null
 
     # settings (row 3)
-    $setItem = New-SidebarNavItem -Name 'Settings'; $script:TonyNav += $setItem
+    $setItem = New-SidebarNavItem -Label ((New-Emoji @(0x2699, 0xFE0F)) + '   Settings') -Key 'Settings'; $script:TonyNav += $setItem
     [Windows.Controls.Grid]::SetRow($setItem.Border, 3); $sideGrid.Children.Add($setItem.Border) | Out-Null
 
     # clock (row 4)

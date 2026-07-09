@@ -13,12 +13,12 @@ The hierarchy:
 
 ```
 Home
-├─ Goals
+├─ Identity            (Overview · Vision · Goals · Core Values · Mission · Legacy · Annual Theme · Journal · Timeline)
 ├─ Non-Negotiables
-├─ Agency
+├─ Family
 ├─ Health
 ├─ Financial
-├─ Family
+├─ Agency
 ├─ Home Projects
 ├─ Learning
 ├─ AI Workforce
@@ -26,6 +26,9 @@ Home
 ├─ Tony
 └─ Settings
 ```
+
+> **Update (Sprint Mike):** **Vision** and **Goals** are no longer separate top-level
+> workspaces — they are **sections inside Identity**. See [Identity.md](Identity.md).
 
 ---
 
@@ -39,13 +42,20 @@ Home
 - **What does NOT belong:** Deep editing, settings, raw lists, anything that isn't "today."
 - **Future integrations:** Calendar, email, GHL — feeding the brief and priorities.
 
-## Goals
-- **Purpose:** Where long-horizon intentions live and are kept alive across quarters and years.
-- **Problems it solves:** Goals set once and forgotten; no line from a daily task to a yearly aim.
-- **What belongs:** Annual/quarterly goals, milestones, the "why," progress toward each.
-- **What does NOT belong:** Day-to-day tasks (those are action items linked *to* a goal), vague
-  wishes with no owner or measure.
-- **Future integrations:** Life Score trends, calendar milestones, coaching from Tony.
+## Identity *(foundation)*
+- **Purpose:** The user's personal operating system — who Jake is becoming. The anchor the rest
+  of GIOK serves. Full spec in [Identity.md](Identity.md).
+- **Problems it solves:** A life run only by to-do lists; losing sight of vision, values, and
+  legacy under daily pressure; Vision and Goals scattered instead of unified.
+- **What belongs:** Overview, **Vision**, **Goals**, Core Values, Mission, Legacy, Annual Theme,
+  Journal, Timeline — each backed by a file in `identity/`.
+- **What does NOT belong:** Day-to-day tasks (those are action items linked to a goal), transient
+  captures, other workspaces' data. Identity owns identity; it isn't a catch-all.
+- **Future integrations:** Life Score, Morning Experience/Briefing, End of Day Audit, and Tony's
+  identity-aware coaching all *reference* Identity (never duplicate it).
+
+> **Vision** and **Goals** are sections of Identity, not separate workspaces. Vision = who you're
+> becoming; Goals = what you're working toward — both belong to identity.
 
 ## Non-Negotiables
 - **Purpose:** The bright lines Jake refuses to cross — the disciplines that define him (5am

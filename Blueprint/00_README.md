@@ -42,6 +42,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | 10 | [Design System](10_Design_System.md) | Branding, color, type, components |
 | 11 | [Mobile Vision](11_Mobile_Vision.md) | The future mobile experience |
 | 12 | [Future Architecture](12_Future_Architecture.md) | Long-horizon architectural concepts |
+| — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
 | — | [Capture](Capture.md) | How Capture is built, version by version (companion to 05) |
 | — | [Tony Memory](Tony_Memory.md) | How Tony's structured memory evolves through V3 |

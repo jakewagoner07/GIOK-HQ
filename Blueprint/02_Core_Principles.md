@@ -61,6 +61,15 @@ If a feature doesn't give Jake back time or attention, it doesn't ship. "Cool" i
 The test for any addition: *does this reduce the mental tax of running a life and a business?*
 If the honest answer is no, cut it.
 
+### 11. Every Workspace Is Self-Contained
+Each workspace owns its own data, sections, and logic, and can evolve without redesigning the
+rest of GIOK. A workspace **owns** its source-of-truth files; other workspaces may **reference**
+that data but never **duplicate** it (this is Single Source of Truth applied at the workspace
+level). Concretely: **Identity** owns `identity/*.json` (vision, goals, values, mission, legacy,
+theme, journal, timeline); the Home dashboard and Life Score read it but keep no copy. Building a
+new workspace should never require touching another. Self-contained workspaces are how GIOK grows
+wide without becoming tangled.
+
 ### 10. Improve Continuously (Better, Not Busy)
 Every meaningful area of life runs the same loop — **Plan → Execute → Audit → Improve** — and
 GIOK exists to guide Jake around it, repeatedly. *GIOK is not designed to help people become

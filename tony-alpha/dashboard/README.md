@@ -41,6 +41,25 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Identity Workspace (Sprint Mike)
+
+**Identity** is the foundation of GIOK — the user's personal operating system. **Vision and Goals
+are now sections inside Identity**, not separate workspaces. It expands into nine sections:
+Overview, Vision, Goals, Core Values, Mission, Legacy, Annual Theme, Journal, Timeline. The
+**Overview** is an executive summary (Identity Score, Vision/Goal Progress, Annual Theme, Core
+Values, Latest Journal, Recent Wins, Tony's Reflection).
+
+- **Source of truth:** `identity/*.json` (overview, vision, goals, values, mission, legacy,
+  annual_theme, journal, timeline). Identity **owns** this data; other workspaces reference it,
+  never duplicate it (`core/identity.ps1`).
+- **Sidebar redesign:** an icon sidebar (Home · Identity · Non-Negotiables · Family · Health ·
+  Financial · Agency · Home · Learning · AI Workforce · Mission Control · Tony · Settings), with
+  placeholder "coming soon" workspaces for the not-yet-built areas.
+
+Blueprint: `Identity.md`, plus the new principle **"Every Workspace Is Self-Contained."**
+
+![Identity](docs/identity.png)
+
 ## Morning Experience (Sprint Lima)
 
 GIOK now **opens on the Morning Experience** — the premium "first minute": a calm, centered

@@ -1,0 +1,8 @@
+{
+  "meta": { "version": "1.0.0", "source": "placeholder" },
+  "goals": [
+    { "id": "G-001", "title": "Reach 150 active clients", "progress": 85, "target": "2026" },
+    { "id": "G-002", "title": "Run the annual Giok Checkup for every active client", "progress": 40, "target": "2026" },
+    { "id": "G-003", "title": "Build 20 founding-member referral partners", "progress": 55, "target": "2026" }
+  ]
+}
