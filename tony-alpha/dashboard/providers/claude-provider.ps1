@@ -70,6 +70,13 @@ function Get-ClaudeUserContent {
     if (@($Request.todaysPriorities).Count -gt 0) { $lines += "Today's priorities: " + (@($Request.todaysPriorities) -join '; ') }
     if (@($Request.openTasks).Count -gt 0) { $lines += ("Open action items ({0}): {1}" -f @($Request.openTasks).Count, ((@($Request.openTasks) | Select-Object -First 8) -join '; ')) }
     if ($Request.reasoningHint) { $lines += "Intent: $($Request.reasoningHint)" }
+    # Tony's judgment-layer guidance (evaluated before this call) - honor it in the recommendation.
+    if ($Request.guidance) {
+        $g = $Request.guidance
+        $lines += ("Tony's judgment: alignment {0}/100, priority {1}." -f $g.alignmentScore, $g.priority)
+        if (@($g.conflicts).Count -gt 0) { $lines += ("Conflicts to respect: " + (@($g.conflicts) -join ' | ')) }
+        if (@($g.clarifyingQuestions).Count -gt 0) { $lines += ("Consider asking: " + (@($g.clarifyingQuestions) -join ' | ')) }
+    }
     return ($lines -join "`n")
 }
 

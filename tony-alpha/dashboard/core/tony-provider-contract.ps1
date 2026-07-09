@@ -17,7 +17,8 @@
 $ErrorActionPreference = 'Stop'
 
 # Bump the minor for additive fields; bump the major only for breaking changes.
-$script:TonyContractVersion = '1.0'
+# 1.1 adds the optional 'guidance' field (Tony's judgment-layer evaluation).
+$script:TonyContractVersion = '1.1'
 function Get-TonyContractVersion { return $script:TonyContractVersion }
 function Get-TonyContractMajor { param([string]$V = $script:TonyContractVersion) return ($V -split '\.')[0] }
 
@@ -37,6 +38,7 @@ function New-TonyRequest {
         $TonyPersona,
         [string]$ReasoningHint,
         $RequestedAction,
+        $Guidance,                # v1.1: Tony's judgment-layer evaluation (guidance for the provider)
         [datetime]$Timestamp = (Get-Date)
     )
     return [pscustomobject]@{
@@ -54,6 +56,7 @@ function New-TonyRequest {
         tonyPersona         = $TonyPersona
         reasoningHint       = $ReasoningHint
         requestedAction     = $RequestedAction
+        guidance            = $Guidance
     }
 }
 

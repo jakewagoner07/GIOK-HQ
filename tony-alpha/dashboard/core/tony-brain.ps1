@@ -254,13 +254,26 @@ function Invoke-TonyBrain {
     $mission    = if ($context.identity -and $context.identity.mission) { $context.identity.mission.statement } else { '' }
     $openTasks  = if ($context.actions)  { @($context.actions.open | ForEach-Object { $_.title }) } else { @() }
     $priorities = if ($context.briefing) { @($context.briefing.topPriorities | ForEach-Object { $_.title }) } else { @() }
+    $values     = if ($context.identity -and $context.identity.values) { @($context.identity.values.values) } else { @() }
+    $annualTheme= if (Get-Command Get-IdentityAnnualTheme -ErrorAction SilentlyContinue) { Get-IdentityAnnualTheme } else { $null }
+    $vision     = if ($context.identity -and $context.identity.vision) { $context.identity.vision } else { $null }
+
+    # JUDGMENT LAYER: evaluate the decision BEFORE any provider is asked (Tony's judgment, not AI)
+    $guidance = $null
+    if (Get-Command Evaluate-TonyDecision -ErrorAction SilentlyContinue) {
+        $nonNeg = if (Get-Command Get-NonNegotiableDefs -ErrorAction SilentlyContinue) { Get-NonNegotiableDefs } else { @() }
+        $guidance = Evaluate-TonyDecision -Identity $identity -Vision $vision -Goals $goals -Mission $mission -CoreValues $values `
+            -AnnualTheme $annualTheme -NonNegotiables $nonNeg `
+            -Family $null -Health $null -Financial $null -CurrentWorkspace $CurrentWorkspace -CurrentQuestion $UserInput `
+            -OpenTasks $openTasks -RecentAudits $context.audits
+    }
 
     # compact context summary (the detailed fields are carried separately - no duplication in the message)
     $ctxSummary = [pscustomobject]@{ source = 'unified-context'; generatedAt = $context.generatedAt; registry = $context.registry; capture = $context.capture; openTaskCount = @($openTasks).Count; auditCount = @($context.audits).Count }
 
     $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxSummary -Identity $identity -Goals $goals -Mission $mission `
         -CurrentWorkspace $CurrentWorkspace -OpenTasks $openTasks -TodaysPriorities $priorities -ConversationHistory @() `
-        -TonyPersona (Get-TonyPersona) -ReasoningHint $decision.type -RequestedAction $decision -Timestamp $Now
+        -TonyPersona (Get-TonyPersona) -ReasoningHint $decision.type -RequestedAction $decision -Guidance $guidance -Timestamp $Now
 
     $reqCheck = Test-TonyRequest -Request $request
     if (-not $reqCheck.valid) {
@@ -280,6 +293,7 @@ function Invoke-TonyBrain {
     return [pscustomobject]@{
         input         = $UserInput
         decision      = $decision
+        guidance      = $guidance                # Tony's judgment-layer evaluation (used before responding)
         request       = $request
         response      = $response
         responseValid = $respCheck.valid
