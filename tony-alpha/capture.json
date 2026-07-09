@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "updated": "2026-07-09 08:00:00",
+    "note": "GIOK Capture inbox - source of truth. Everything captured lands here first; nothing is auto-deleted."
+  },
+  "items": [
+    {
+      "id": "CAP-001",
+      "timestamp": "2026-07-09 07:42:00",
+      "text": "Call Steve Tuesday about the group policy quote",
+      "category": "Business",
+      "status": "new",
+      "createdFrom": "seed",
+      "processed": false,
+      "convertedTo": null,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "CAP-002",
+      "timestamp": "2026-07-09 07:55:00",
+      "text": "Idea: refresh the booth banner before the fall fair",
+      "category": "Idea",
+      "status": "new",
+      "createdFrom": "seed",
+      "processed": false,
+      "convertedTo": null,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "CAP-003",
+      "timestamp": "2026-07-09 08:00:00",
+      "text": "Buy a new furnace filter",
+      "category": "Shopping",
+      "status": "new",
+      "createdFrom": "seed",
+      "processed": false,
+      "convertedTo": null,
+      "notes": "",
+      "tags": []
+    }
+  ]
+}

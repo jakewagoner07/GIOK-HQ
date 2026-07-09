@@ -27,6 +27,8 @@ try {
 
 . (Join-Path $PSScriptRoot 'core\tony-core.ps1')
 . (Join-Path $PSScriptRoot 'core\action-items.ps1')
+. (Join-Path $PSScriptRoot 'core\capture.ps1')
+. (Join-Path $PSScriptRoot 'core\tony-memory.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')

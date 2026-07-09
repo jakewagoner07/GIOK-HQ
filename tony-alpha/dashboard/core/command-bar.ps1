@@ -31,6 +31,11 @@ function Get-TonyCommandTargets {
         'appointments'    = 'Appointments'
         'calendar'        = 'Appointments'
         'recommendations' = 'Recommendations'
+        'capture'         = 'Capture'
+        'inbox'           = 'Capture'
+        'tony memory'     = 'Tony Memory'
+        'memory'          = 'Tony Memory'
+        'mission control' = 'Mission Control'
         'settings'        = 'Settings'
     }
 }
@@ -41,6 +46,12 @@ function Invoke-TonyCommand {
     if ($t -eq '') { return [pscustomobject]@{ type = 'none' } }
     $lower = $t.ToLower()
     $map = Get-TonyCommandTargets
+
+    # capture: <text>   -> drop straight into the Capture inbox
+    if ($lower -match '^(capture|capture note|note)\s*:\s*(.+)$') {
+        $text = $t.Substring($t.IndexOf(':') + 1).Trim()
+        if ($text) { return [pscustomobject]@{ type = 'capture'; text = $text } }
+    }
 
     # add task: <text>   (also "new task:", "add:")
     if ($lower -match '^(add task|new task|add|create task)\s*:\s*(.+)$') {

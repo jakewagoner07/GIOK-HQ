@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "version": "0.1.0",
+    "framework": true,
+    "updated": "2026-07-09 08:00:00",
+    "note": "Tony's STRUCTURED memory (framework only). Not conversation memory. Categories exist; population comes in later versions. This is a lens on GIOK's data, never a rival copy."
+  },
+  "categories": {
+    "people": [],
+    "ideas": [],
+    "preferences": [],
+    "business": [],
+    "family": [],
+    "goals": [],
+    "relationships": [],
+    "lessons": [],
+    "patterns": []
+  }
+}

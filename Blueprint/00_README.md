@@ -39,6 +39,8 @@ no matter how clever it is.
 | 10 | [Design System](10_Design_System.md) | Branding, color, type, components |
 | 11 | [Mobile Vision](11_Mobile_Vision.md) | The future mobile experience |
 | 12 | [Future Architecture](12_Future_Architecture.md) | Long-horizon architectural concepts |
+| — | [Capture](Capture.md) | How Capture is built, version by version (companion to 05) |
+| — | [Tony Memory](Tony_Memory.md) | How Tony's structured memory evolves through V3 |
 
 ## Status of the product today (context, not constitution)
 

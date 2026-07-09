@@ -41,6 +41,27 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Capture & Tony Memory (Sprint Juliet)
+
+**Capture** is GIOK's front door — *your brain is for thinking, not remembering.*
+- **`+ Capture Something`** — a prominent button on Home and in the Capture workspace opens a
+  dedicated **Capture window**: free text + optional category (12 categories), no required fields.
+- **`capture: <text>`** in the command bar drops straight into the Inbox.
+- **`capture.json`** is the source of truth (separate from Action Items). Everything lands in the
+  **Inbox** first; nothing is auto-deleted.
+- **Processing:** Mark Processed, Convert to Action Item (real), Convert to Goal / Reminder
+  (placeholder destinations), Archive, Delete, Restore.
+- **Home** shows Today's / Unprocessed / Recent captures.
+
+**Tony Memory** — structured memory (not conversation memory). A framework workspace with nine
+categories (People, Ideas, Preferences, Business, Family, Goals, Relationships, Lessons,
+Patterns) backed by `tony_memory.json`. Framework only for now; Tony populates it over time.
+
+See `Blueprint/Capture.md` and `Blueprint/Tony_Memory.md` for how these evolve through Version 3.
+
+![Capture Inbox](docs/capture-view.png)
+![Capture window](docs/capture-window.png)
+
 ## Multi-window & Mission Control (Sprint Hotel)
 
 **Open in New Window** — a persistent toolbar (top-right of the body) pops the current view

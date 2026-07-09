@@ -175,6 +175,7 @@ function New-CommandBar {
         switch ($res.type) {
             'navigate' { Set-ActiveView $res.target }
             'addtask'  { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $res.title | Out-Null; Save-ActionItemsData $d; $script:CommandResult = ("Added task: {0}" -f $res.title); Set-ActiveView 'Home' }
+            'capture'  { $d = Get-CaptureData; Add-Capture -Data $d -Text $res.text -CreatedFrom 'command-bar' | Out-Null; Save-CaptureData $d; $script:CommandResult = ("Captured to Inbox: {0}" -f $res.text); Set-ActiveView 'Home' }
             'unknown'  { $script:CommandResult = $res.message; Set-ActiveView 'Home' }
             default    { }
         }
@@ -209,7 +210,42 @@ function New-HomeView {
     $rule.HorizontalAlignment = 'Left'; $rule.CornerRadius = New-Object Windows.CornerRadius 2; $rule.Margin = New-Object Windows.Thickness (0, 5, 0, 8)
     $stack.Children.Add($rule) | Out-Null
     $stack.Children.Add((New-Text -Text ('"{0}"' -f $Model.brandQuote) -Size 17 -Weight 'SemiBold' -Color $script:Col.AccentInk)) | Out-Null
-    $stack.Children.Add((New-Text -Text $Model.dateText -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 14)))) | Out-Null
+    $stack.Children.Add((New-Text -Text $Model.dateText -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 12)))) | Out-Null
+
+    # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
+    $cap = Get-CaptureStats
+    $capB = New-Object Windows.Controls.Border
+    $capB.Background = New-Brush $script:Col.CardBg; $capB.BorderBrush = New-Brush $script:Col.Accent; $capB.BorderThickness = New-Object Windows.Thickness 1
+    $capB.CornerRadius = New-Object Windows.CornerRadius 12; $capB.Padding = New-Object Windows.Thickness (16, 14, 16, 14); $capB.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+    $capDock = New-Object Windows.Controls.DockPanel
+    # left: big button + subtitle
+    $capLeft = New-Object Windows.Controls.StackPanel; $capLeft.VerticalAlignment = 'Center'
+    $capLeft.Children.Add((New-PrimaryButton -Text '+ Capture Something' -Size 15 -OnClick { param($s, $e) Open-CaptureWindow | Out-Null })) | Out-Null
+    $capLeft.Children.Add((New-Text -Text 'Capture first, organize later - your brain is for thinking, not remembering.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (2, 8, 0, 0)))) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($capLeft, 'Left'); $capDock.Children.Add($capLeft) | Out-Null
+    # right: stats + recent + open inbox
+    $capRight = New-Object Windows.Controls.StackPanel; $capRight.HorizontalAlignment = 'Right'; $capRight.VerticalAlignment = 'Center'; $capRight.Margin = New-Object Windows.Thickness (16, 0, 0, 0)
+    $statsRow = New-Object Windows.Controls.StackPanel; $statsRow.Orientation = 'Horizontal'; $statsRow.HorizontalAlignment = 'Right'
+    foreach ($pair in @(@('Today', $cap.today), @('Unprocessed', $cap.unprocessed))) {
+        $st = New-Object Windows.Controls.StackPanel; $st.Margin = New-Object Windows.Thickness (16, 0, 0, 0)
+        $st.Children.Add((New-Text -Text ([string]$pair[1]) -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+        $st.Children.Add((New-Text -Text $pair[0] -Size 10.5 -Color $script:Col.Muted)) | Out-Null
+        $statsRow.Children.Add($st) | Out-Null
+    }
+    $capRight.Children.Add($statsRow) | Out-Null
+    if (@($cap.recent).Count -gt 0) {
+        $capRight.Children.Add((New-Text -Text 'RECENT' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 2)))) | Out-Null
+        foreach ($rc in (@($cap.recent) | Select-Object -First 2)) {
+            $rt = New-Text -Text $rc.text -Size 11 -Color $script:Col.Ink -Margin (New-Object Windows.Thickness (0, 0, 0, 1)); $rt.HorizontalAlignment = 'Right'; $rt.TextTrimming = 'CharacterEllipsis'; $rt.MaxWidth = 260
+            $capRight.Children.Add($rt) | Out-Null
+        }
+    }
+    $openInbox = New-Text -Text 'Open Inbox >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 6, 0, 0))
+    $openInbox.HorizontalAlignment = 'Right'; $openInbox.Cursor = 'Hand'; $openInbox.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView 'Capture' }) | Out-Null
+    $capRight.Children.Add($openInbox) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($capRight, 'Right'); $capDock.Children.Add($capRight) | Out-Null
+    $capB.Child = $capDock
+    $stack.Children.Add($capB) | Out-Null
 
     # ---- Row A: Top 3 Priorities | Tony Recommends ----
     $gA = New-Object Windows.Controls.Grid
@@ -789,6 +825,228 @@ function Open-TonyWindow {
     return $win
 }
 
+# =====================  CAPTURE + TONY MEMORY  =====================
+$script:CaptureTextBox  = $null
+$script:CaptureCategory = 'Note'
+$script:CaptureCatChips = @()
+$script:CaptureFilter   = 'Unprocessed'
+$script:CaptureWindow   = $null
+
+function New-PrimaryButton {
+    param([string]$Text, [scriptblock]$OnClick, [string]$Bg, [string]$Fg, [double]$Size = 14)
+    if (-not $Bg) { $Bg = $script:Col.Accent }; if (-not $Fg) { $Fg = $script:Col.OnPrimary }
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush $Bg; $b.CornerRadius = New-Object Windows.CornerRadius 9
+    $b.Padding = New-Object Windows.Thickness (18, 11, 18, 11); $b.Cursor = 'Hand'; $b.HorizontalAlignment = 'Left'
+    $b.Child = (New-Text -Text $Text -Size $Size -Weight 'Bold' -Color $Fg)
+    if ($OnClick) { $b.Add_MouseLeftButtonUp($OnClick) | Out-Null }
+    return $b
+}
+
+function Set-CaptureCategory {
+    param([string]$Name)
+    $script:CaptureCategory = $Name
+    foreach ($c in $script:CaptureCatChips) {
+        if ($c.Name -eq $Name) { $c.Border.Background = New-Brush $script:Col.Accent; $c.Text.Foreground = New-Brush $script:Col.OnPrimary }
+        else { $c.Border.Background = New-Brush $script:Col.AccentSoft; $c.Text.Foreground = New-Brush $script:Col.AccentInk }
+    }
+}
+
+function New-CaptureForm {
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text "What's on your mind?" -Size 14 -Weight 'SemiBold' -Color $script:Col.Heading -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
+
+    $tb = New-Object Windows.Controls.TextBox
+    $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 14
+    $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.Height = 140; $tb.VerticalScrollBarVisibility = 'Auto'
+    $tb.Padding = New-Object Windows.Thickness (10, 8, 10, 8)
+    $tb.Background = New-Brush $script:Col.PrimaryMid; $tb.Foreground = New-Brush $script:Col.Ink
+    $tb.BorderBrush = New-Brush $script:Col.Line; $tb.CaretBrush = New-Brush $script:Col.Accent
+    $sp.Children.Add($tb) | Out-Null
+    $script:CaptureTextBox = $tb
+
+    $sp.Children.Add((New-Text -Text 'Category (optional)' -Size 11.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 12, 0, 5)))) | Out-Null
+    $wrap = New-Object Windows.Controls.WrapPanel
+    $script:CaptureCatChips = @()
+    foreach ($cat in (Get-CaptureCategories)) {
+        $b = New-Object Windows.Controls.Border
+        $b.CornerRadius = New-Object Windows.CornerRadius 9; $b.Padding = New-Object Windows.Thickness (10, 4, 10, 4); $b.Margin = New-Object Windows.Thickness (0, 0, 6, 6); $b.Cursor = 'Hand'; $b.Tag = $cat
+        $t = New-Text -Text $cat -Size 11.5 -Weight 'SemiBold' -Color $script:Col.AccentInk
+        $b.Background = New-Brush $script:Col.AccentSoft; $b.Child = $t
+        $b.Add_MouseLeftButtonUp({ param($s, $e) Set-CaptureCategory $s.Tag }) | Out-Null
+        $wrap.Children.Add($b) | Out-Null
+        $script:CaptureCatChips += [pscustomobject]@{ Name = $cat; Border = $b; Text = $t }
+    }
+    $sp.Children.Add($wrap) | Out-Null
+    Set-CaptureCategory $script:CaptureCategory
+
+    $btns = New-Object Windows.Controls.StackPanel; $btns.Orientation = 'Horizontal'; $btns.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    $save = New-PrimaryButton -Text 'Save to Inbox' -OnClick {
+        param($s, $e)
+        $txt = $script:CaptureTextBox.Text
+        if (-not [string]::IsNullOrWhiteSpace($txt)) {
+            $d = Get-CaptureData; Add-Capture -Data $d -Text $txt -Category $script:CaptureCategory -CreatedFrom 'capture-window' | Out-Null; Save-CaptureData $d
+            Update-AfterCapture
+        }
+        if ($script:CaptureWindow) { $script:CaptureWindow.Close() }
+    }
+    $btns.Children.Add($save) | Out-Null
+    $cancel = New-MiniButton -Text 'Cancel' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if ($script:CaptureWindow) { $script:CaptureWindow.Close() } }
+    $cancel.Padding = New-Object Windows.Thickness (16, 10, 16, 10); $btns.Children.Add($cancel) | Out-Null
+    $sp.Children.Add($btns) | Out-Null
+    $sp.Children.Add((New-Text -Text 'No required fields. Type anything - Tony will help organize it later.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 10, 0, 0)))) | Out-Null
+    return $sp
+}
+
+function New-CaptureWindowContent {
+    $root = New-Object Windows.Controls.DockPanel
+    $hdr = New-Object Windows.Controls.Border; $hdr.Background = New-Brush $script:Col.Primary; $hdr.Padding = New-Object Windows.Thickness (18, 12, 18, 12)
+    $hd = New-Object Windows.Controls.StackPanel; $hd.Orientation = 'Horizontal'
+    $logoSrc = New-ImageSource $script:Theme.logoPath
+    if ($logoSrc) { $img = New-Object Windows.Controls.Image; $img.Source = $logoSrc; $img.Height = 24; $img.Width = 24; $img.Margin = New-Object Windows.Thickness (0, 0, 10, 0); $lb = New-Object Windows.Controls.Border; $lb.CornerRadius = New-Object Windows.CornerRadius 6; $lb.ClipToBounds = $true; $lb.Child = $img; $lb.VerticalAlignment = 'Center'; $hd.Children.Add($lb) | Out-Null }
+    $hd.Children.Add((New-Text -Text 'Capture Something' -Size 15 -Weight 'Bold' -Color $script:Col.OnPrimary)) | Out-Null
+    $hdr.Child = $hd
+    [Windows.Controls.DockPanel]::SetDock($hdr, 'Top'); $root.Children.Add($hdr) | Out-Null
+    $body = New-Object Windows.Controls.Border; $body.Background = New-Brush $script:Col.AppBg; $body.Padding = New-Object Windows.Thickness (20, 16, 20, 18)
+    $body.Child = (New-CaptureForm)
+    $root.Children.Add($body) | Out-Null
+    return $root
+}
+
+function Open-CaptureWindow {
+    $win = New-Object Windows.Window
+    $win.Title = 'GIOK - Capture'; $win.Width = 560; $win.Height = 580; $win.WindowStartupLocation = 'CenterScreen'
+    $win.Background = New-Brush $script:Col.AppBg
+    if ($script:Theme.logoPath -and (Test-Path $script:Theme.logoPath)) { $ico = New-Object Windows.Media.Imaging.BitmapImage; $ico.BeginInit(); $ico.CacheOption = 'OnLoad'; $ico.UriSource = New-Object Uri($script:Theme.logoPath); $ico.EndInit(); $win.Icon = $ico }
+    $script:CaptureWindow = $win
+    $win.Content = New-CaptureWindowContent
+    $script:OpenWindows += $win
+    $win.Add_ContentRendered({ if ($script:CaptureTextBox) { $script:CaptureTextBox.Focus() | Out-Null } }) | Out-Null
+    $win.Add_Closed({ param($s, $e) $script:OpenWindows = @($script:OpenWindows | Where-Object { $_ -ne $s }) }) | Out-Null
+    $null = $win.Show()
+    return $win
+}
+
+function Update-AfterCapture {
+    if ($script:TonyActiveView -eq 'Capture') { $script:TonyBody.Child = New-CaptureView }
+    elseif ($script:TonyActiveView -eq 'Home') { $script:TonyBody.Child = New-HomeView -Model (Get-HomeModel -Now $script:TonyNow) }
+}
+function Refresh-Capture { $script:TonyBody.Child = New-CaptureView }
+
+function New-CaptureCard {
+    param([Parameter(Mandatory)] $Item)
+    $c = $Item
+    $card = New-Object Windows.Controls.Border
+    $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 10
+    $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+    $card.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $sp = New-Object Windows.Controls.StackPanel
+
+    $top = New-Object Windows.Controls.DockPanel
+    $meta = New-Text -Text ("{0}  -  {1}" -f $c.timestamp, $c.createdFrom) -Size 10.5 -Color $script:Col.Muted
+    $meta.HorizontalAlignment = 'Right'; [Windows.Controls.DockPanel]::SetDock($meta, 'Right'); $top.Children.Add($meta) | Out-Null
+    $chips = New-Object Windows.Controls.StackPanel; $chips.Orientation = 'Horizontal'
+    $chips.Children.Add((New-Chip -Text $c.id -Bg $script:Col.Primary -Fg $script:Col.OnPrimary)) | Out-Null
+    $chips.Children.Add((New-Chip -Text $c.category -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+    $stColors = switch ($c.status) { 'processed' { @('#DEF7EC', '#03543F') } 'archived' { @('#E5E7EB', '#374151') } default { @('#FDF6B2', '#8E4B10') } }
+    $chips.Children.Add((New-Chip -Text $c.status -Bg $stColors[0] -Fg $stColors[1])) | Out-Null
+    $top.Children.Add($chips) | Out-Null
+    $sp.Children.Add($top) | Out-Null
+
+    $sp.Children.Add((New-Text -Text $c.text -Size 13.5 -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 2)))) | Out-Null
+    if (-not [string]::IsNullOrWhiteSpace($c.notes)) { $sp.Children.Add((New-Text -Text $c.notes -Size 11 -Color $script:Col.Muted -Wrap $true)) | Out-Null }
+
+    $acts = New-Object Windows.Controls.WrapPanel; $acts.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+    $soft = $script:Col.AccentSoft; $softInk = $script:Col.AccentInk
+    if ($c.status -eq 'new') {
+        $acts.Children.Add((New-MiniButton -Text 'Mark Processed' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Set-CaptureProcessed -Data $d -Id $s.Tag -Processed $true | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+        $acts.Children.Add((New-MiniButton -Text '-> Action Item' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Convert-Capture -Data $d -Id $s.Tag -To 'action-item' | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+        $acts.Children.Add((New-MiniButton -Text '-> Goal' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Convert-Capture -Data $d -Id $s.Tag -To 'goal' | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+        $acts.Children.Add((New-MiniButton -Text '-> Reminder' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Convert-Capture -Data $d -Id $s.Tag -To 'reminder' | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+        $acts.Children.Add((New-MiniButton -Text 'Archive' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Set-CaptureArchived -Data $d -Id $s.Tag | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+    } elseif ($c.status -eq 'processed') {
+        $acts.Children.Add((New-MiniButton -Text 'Restore' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Set-CaptureProcessed -Data $d -Id $s.Tag -Processed $false | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+        $acts.Children.Add((New-MiniButton -Text 'Archive' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Set-CaptureArchived -Data $d -Id $s.Tag | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+    } else {
+        $acts.Children.Add((New-MiniButton -Text 'Restore' -Bg $soft -Fg $softInk -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Restore-Capture -Data $d -Id $s.Tag | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+    }
+    $acts.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -Tag $c.id -OnClick { param($s, $e); $d = Get-CaptureData; Remove-Capture -Data $d -Id $s.Tag | Out-Null; Save-CaptureData $d; Refresh-Capture })) | Out-Null
+    $sp.Children.Add($acts) | Out-Null
+
+    $card.Child = $sp
+    return $card
+}
+
+function New-CaptureView {
+    $items = @((Get-CaptureData).items)
+    $filter = $script:CaptureFilter
+    $sel = switch ($filter) {
+        'Processed' { @($items | Where-Object { $_.status -eq 'processed' }) }
+        'Archived'  { @($items | Where-Object { $_.status -eq 'archived' }) }
+        'All'       { @($items) }
+        default     { @($items | Where-Object { $_.status -eq 'new' }) }
+    }
+    $sel = @($sel | Sort-Object { $_.id } -Descending)
+    $counts = @{ Unprocessed = @($items | Where-Object { $_.status -eq 'new' }).Count; Processed = @($items | Where-Object { $_.status -eq 'processed' }).Count; Archived = @($items | Where-Object { $_.status -eq 'archived' }).Count; All = $items.Count }
+
+    $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+    $head.Children.Add((New-Text -Text 'Capture - Inbox' -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $head.Children.Add((New-Text -Text 'Everything lands here first. Capture first, organize later - nothing is auto-deleted.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $bigBtn = New-PrimaryButton -Text '+ Capture Something' -OnClick { param($s, $e) Open-CaptureWindow | Out-Null }
+    $bigBtn.Margin = New-Object Windows.Thickness (0, 10, 0, 8); $head.Children.Add($bigBtn) | Out-Null
+    $filt = New-Object Windows.Controls.StackPanel; $filt.Orientation = 'Horizontal'
+    foreach ($f in @('Unprocessed', 'Processed', 'Archived', 'All')) {
+        $active = ($f -eq $filter)
+        $btn = New-MiniButton -Text ("{0} ({1})" -f $f, $counts[$f]) -Bg $(if ($active) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($active) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -Tag $f -OnClick { param($s, $e); $script:CaptureFilter = $s.Tag; Refresh-Capture }
+        if ($f -eq 'Unprocessed') { $btn.Margin = New-Object Windows.Thickness (0, 0, 0, 0) }
+        $filt.Children.Add($btn) | Out-Null
+    }
+    $head.Children.Add($filt) | Out-Null
+
+    $list = New-Object Windows.Controls.StackPanel; $list.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
+    if ($sel.Count -eq 0) { $list.Children.Add((New-Text -Text 'Nothing here. Capture something above.' -Size 13 -Color $script:Col.Muted)) | Out-Null }
+    else { foreach ($it in $sel) { $list.Children.Add((New-CaptureCard -Item $it)) | Out-Null } }
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $list
+
+    $outer = New-Object Windows.Controls.DockPanel
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null; $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
+function New-TonyMemoryView {
+    $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+    $head.Children.Add((New-Text -Text 'Tony Memory' -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $head.Children.Add((New-Text -Text 'Structured memory - NOT conversation memory. What Tony durably knows about your world.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+
+    $banner = New-Object Windows.Controls.Border; $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8
+    $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (0, 8, 0, 12)
+    $banner.Child = (New-Text -Text 'Framework only for now. The categories exist; Tony builds this memory over time as you capture and work. Nothing is populated yet.' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)
+
+    $grid = New-Object Windows.Controls.Grid
+    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $grid.ColumnDefinitions.Add($cd) | Out-Null }
+    $cats = Get-TonyMemoryCategories
+    for ($i = 0; $i -lt $cats.Count; $i++) {
+        $col = $i % 3
+        if ($col -eq 0) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $grid.RowDefinitions.Add($rd) | Out-Null }
+        $cat = $cats[$i]
+        $body = New-Object Windows.Controls.StackPanel
+        $countRow = New-Object Windows.Controls.StackPanel; $countRow.Orientation = 'Horizontal'
+        $countRow.Children.Add((New-Text -Text ([string](Get-TonyMemoryCount -Key $cat.key)) -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+        $countRow.Children.Add((New-Text -Text 'entries' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 10, 0, 0)))) | Out-Null
+        $body.Children.Add($countRow) | Out-Null
+        $body.Children.Add((New-Text -Text $cat.desc -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+        $card = New-Card -Title $cat.name -Body $body -Tag 'FRAMEWORK'
+        [Windows.Controls.Grid]::SetColumn($card, $col); [Windows.Controls.Grid]::SetRow($card, [int][math]::Floor($i / 3)); $grid.Children.Add($card) | Out-Null
+    }
+
+    $outerStack = New-Object Windows.Controls.StackPanel
+    $outerStack.Children.Add($banner) | Out-Null; $outerStack.Children.Add($grid) | Out-Null
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $outerStack
+    $outer = New-Object Windows.Controls.DockPanel
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null; $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
 # =====================  NAV + SHELL  =====================
 function Set-ActiveView {
     param([Parameter(Mandatory)][string]$Name)
@@ -809,6 +1067,8 @@ function Set-ActiveView {
         'Appointments'   { New-AppointmentsView }
         'Recommendations'{ New-RecommendationsView }
         'Mission Control'{ New-MissionControlView }
+        'Capture'        { New-CaptureView }
+        'Tony Memory'    { New-TonyMemoryView }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
@@ -880,7 +1140,7 @@ function New-TonyShell {
 
     # nav
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
-    foreach ($name in @('Home', 'Mission Control', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
+    foreach ($name in @('Home', 'Mission Control', 'Capture', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap', 'Tony Memory')) {
         $item = New-SidebarNavItem -Name $name; $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
     }
     [Windows.Controls.Grid]::SetRow($nav, 2); $sideGrid.Children.Add($nav) | Out-Null
