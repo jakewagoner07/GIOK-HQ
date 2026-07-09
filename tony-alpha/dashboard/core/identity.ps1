@@ -84,6 +84,18 @@ function Set-IdentityGoalsFromText {
     $i = 1; $goals = $items | ForEach-Object { $g = [pscustomobject]@{ id = ('G-{0:000}' -f $i); title = $_; progress = 0; target = ([string](Get-Date).Year) }; $i++; $g }
     Save-IdentityFile -Name 'goals.json' -Object ([pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; goals = @($goals) })
 }
+function Add-IdentityGoal {
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
+    $g = Get-IdentityGoals
+    if (-not $g) { $g = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'document-intelligence' }; goals = @() } }
+    $max = 0; foreach ($x in @($g.goals)) { if ($x.id -match '^G-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
+    $new = [pscustomobject]@{ id = ('G-{0:000}' -f ($max + 1)); title = $Title.Trim(); progress = 0; target = ([string](Get-Date).Year) }
+    $g.goals = @($g.goals) + $new
+    Save-IdentityFile -Name 'goals.json' -Object $g
+    return $new
+}
+
 function Set-IdentityAnnualThemeFromText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return }

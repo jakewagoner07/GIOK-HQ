@@ -50,6 +50,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Tony's AI Provider Contract](Tony_AI_Provider_Contract.md) | The model-agnostic request/response language |
 | — | [Tony Is an Operating System](Tony_Is_An_Operating_System.md) | Why Tony isn't a chatbot; connecting the first provider (Claude) |
 | — | [Tony's Decision Framework](Tony_Decision_Framework.md) | Tony's judgment layer — evaluate before responding |
+| — | [Document Intelligence](Document_Intelligence.md) | How Tony reads documents for meaning and connects them to the OS — with approval |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
