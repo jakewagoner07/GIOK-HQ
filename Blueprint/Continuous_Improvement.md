@@ -27,7 +27,38 @@ Tony exists to run this loop with Jake — never to add motion, always to add pr
 cycle should become part of every future workspace** (see *Future* below).
 
 The two daily anchors of the cycle are the **Morning Briefing** (PLAN) and the **End of Day
-Audit** (AUDIT → IMPROVE). Execution is the day in between.
+Audit** (AUDIT → IMPROVE). Execution is the day in between. The whole day opens with the
+**Morning Experience** — the premium first minute that sets the tone before planning begins.
+
+**The executive daily workflow:**
+
+```
+Morning Experience  ─►  Begin My Day  ─►  Morning Briefing  ─►  Execute  ─►  End of Day Audit  ─►  (tomorrow)
+   (welcome, first minute)                    (PLAN)                              (AUDIT → IMPROVE)
+```
+
+---
+
+## Morning Experience
+
+The **first minute inside GIOK** — a calm, premium, centered welcome that grounds Jake before the
+work. It is deliberately *not* a dense dashboard; it is a moment. Built from independent,
+replaceable components so any section can evolve on its own:
+
+- **Greeting** — personalized (Good Morning / Afternoon / Evening, Jake); future personalization.
+- **Morning Thought** — a quote from a local library, with full attribution (quote, author,
+  theme, category, source). No internet retrieval.
+- **Why This Today** — Tony explains why this thought was chosen (placeholder reasoning now;
+  future: goals, health, Life/Business Score, patterns, capture history, End of Day Audits).
+- **Daily Principle** — a rotating GIOK principle.
+- **Today's Focus** — one sentence (future AI-generated).
+- **Today's Priorities** — live from action items.
+- **Tony Recommendation** — the single most important next move.
+- **Begin My Day** — a prominent button that transitions into today's dashboard (today it
+  acknowledges by opening Home).
+
+The Morning Experience is where the day *starts as a person*; the Morning Briefing is where it
+*starts as an operator*. Together they open the improvement loop each day.
 
 ---
 

@@ -41,6 +41,24 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Morning Experience (Sprint Lima)
+
+GIOK now **opens on the Morning Experience** — the premium "first minute": a calm, centered
+welcome that grounds Jake before the dashboard. Built from independent, replaceable components
+(each a `New-ME*` function) rendered from a dedicated model in `core/morning-experience.ps1`:
+- **Greeting** (personalized) + date
+- **Daily Principle** (rotating pill)
+- **Morning Thought** — a quote from a **local library** with full attribution (quote, author,
+  theme, category, source). No internet retrieval.
+- **Why This Today** — Tony's reasoning (placeholder now; future: goals, scores, patterns, audits)
+- **Today's Focus** — one sentence (future AI-generated)
+- **Today's Priorities** (live) + **Tony Recommendation**
+- **Begin My Day** — prominent button that transitions into the Home dashboard.
+
+`Begin My Day` → Home, whose greeting is Tony's Morning Briefing (below).
+
+![Morning Experience](docs/morning-experience.png)
+
 ## Morning Briefing (Sprint Kilo)
 
 The Home greeting is replaced by **Tony's Morning Briefing** — his executive briefing that

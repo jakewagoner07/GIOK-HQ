@@ -192,6 +192,122 @@ function Focus-CommandBar {
     if ($script:CommandBox) { $script:CommandBox.Focus() | Out-Null }
 }
 
+# =====================  MORNING EXPERIENCE (the "first minute")  =====================
+# Built from independent, replaceable section components. Each New-ME* function
+# renders one section from the model; New-MorningExperience composes them. Any
+# section can be swapped without touching the others.
+function New-MECenteredText {
+    param([string]$Text, [double]$Size = 13, [string]$Weight = 'Normal', [string]$Color = $null, [bool]$Wrap = $true, [Windows.Thickness]$Margin = (New-Object Windows.Thickness 0))
+    $t = New-Text -Text $Text -Size $Size -Weight $Weight -Color $Color -Wrap $Wrap -Margin $Margin
+    $t.TextAlignment = 'Center'; $t.HorizontalAlignment = 'Center'
+    return $t
+}
+function New-MELabel { param([string]$Text) return (New-MECenteredText -Text $Text -Size 10 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 3))) }
+
+function New-MEGreeting {
+    param($M)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-MECenteredText -Text $M.greeting -Size 34 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text $M.dateText -Size 13 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+    return $sp
+}
+
+function New-MEPrinciple {
+    param($M)
+    $sp = New-Object Windows.Controls.StackPanel; $sp.HorizontalAlignment = 'Center'
+    $pill = New-Object Windows.Controls.Border; $pill.Background = New-Brush $script:Col.AccentSoft; $pill.CornerRadius = New-Object Windows.CornerRadius 20; $pill.Padding = New-Object Windows.Thickness (16, 6, 16, 6); $pill.HorizontalAlignment = 'Center'
+    $pill.Child = (New-MECenteredText -Text $M.dailyPrinciple -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk)
+    $sp.Children.Add((New-MELabel -Text "TODAY'S PRINCIPLE")) | Out-Null
+    $sp.Children.Add($pill) | Out-Null
+    return $sp
+}
+
+function New-METhought {
+    param($M)
+    $t = $M.thought
+    $card = New-Object Windows.Controls.Border
+    $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 14
+    $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+    $card.Padding = New-Object Windows.Thickness (28, 22, 28, 22)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-MECenteredText -Text '"' -Size 34 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, -6, 0, 0)))) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text $t.quote -Size 20 -Weight 'SemiBold' -Color $script:Col.Heading)) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text ("- {0}" -f $t.author) -Size 13.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Margin (New-Object Windows.Thickness (0, 10, 0, 0)))) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text ("{0}  -  {1}  -  {2}" -f $t.theme, $t.category, $t.source) -Size 10.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    $card.Child = $sp
+    return $card
+}
+
+function New-MEWhy {
+    param($M)
+    $sp = New-Object Windows.Controls.StackPanel; $sp.HorizontalAlignment = 'Center'
+    $sp.Children.Add((New-MELabel -Text 'WHY THIS TODAY')) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text $M.whyThisToday.text -Size 13 -Color $script:Col.Ink)) | Out-Null
+    return $sp
+}
+
+function New-MEFocus {
+    param($M)
+    $sp = New-Object Windows.Controls.StackPanel; $sp.HorizontalAlignment = 'Center'
+    $sp.Children.Add((New-MELabel -Text "TODAY'S FOCUS")) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text $M.todaysFocus.text -Size 17 -Weight 'SemiBold' -Color $script:Col.Heading)) | Out-Null
+    return $sp
+}
+
+function New-MEPriorities {
+    param($M)
+    $sp = New-Object Windows.Controls.StackPanel; $sp.HorizontalAlignment = 'Center'
+    $sp.Children.Add((New-MELabel -Text "TODAY'S PRIORITIES")) | Out-Null
+    if (@($M.topPriorities).Count -eq 0) { $sp.Children.Add((New-MECenteredText -Text 'All clear - no open priorities.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null }
+    else {
+        $i = 1
+        foreach ($p in $M.topPriorities) {
+            $sp.Children.Add((New-MECenteredText -Text ("{0}.  {1}" -f $i, $p.title) -Size 13 -Color $script:Col.Ink -Margin (New-Object Windows.Thickness (0, 1, 0, 1)))) | Out-Null
+            $i++
+        }
+    }
+    return $sp
+}
+
+function New-MERecommendation {
+    param($M)
+    if (-not $M.recommendation) { return (New-Object Windows.Controls.StackPanel) }
+    $sp = New-Object Windows.Controls.StackPanel; $sp.HorizontalAlignment = 'Center'
+    $sp.Children.Add((New-MELabel -Text 'TONY RECOMMENDS')) | Out-Null
+    $sp.Children.Add((New-MECenteredText -Text $M.recommendation.text -Size 13.5 -Weight 'SemiBold' -Color $script:Col.AccentInk)) | Out-Null
+    return $sp
+}
+
+function New-MEBeginButton {
+    $b = New-PrimaryButton -Text 'Begin My Day' -Size 16 -OnClick { param($s, $e) Set-ActiveView 'Home' }
+    $b.HorizontalAlignment = 'Center'; $b.Padding = New-Object Windows.Thickness (30, 13, 30, 13)
+    return $b
+}
+
+function New-MorningExperience {
+    param([Parameter(Mandatory)] $Model)
+    $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 720; $col.HorizontalAlignment = 'Center'; $col.Margin = New-Object Windows.Thickness (0, 24, 0, 24)
+
+    # each section is an independent component with its own spacing
+    $sections = @(
+        @{ el = (New-MEGreeting -M $Model);       gap = 18 }
+        @{ el = (New-MEPrinciple -M $Model);      gap = 22 }
+        @{ el = (New-METhought -M $Model);        gap = 20 }
+        @{ el = (New-MEWhy -M $Model);            gap = 22 }
+        @{ el = (New-MEFocus -M $Model);          gap = 22 }
+        @{ el = (New-MEPriorities -M $Model);     gap = 22 }
+        @{ el = (New-MERecommendation -M $Model); gap = 26 }
+        @{ el = (New-MEBeginButton);              gap = 0  }
+    )
+    foreach ($s in $sections) {
+        $s.el.Margin = New-Object Windows.Thickness (0, 0, 0, $s.gap)
+        $col.Children.Add($s.el) | Out-Null
+    }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $col
+    return $scroll
+}
+
 # =====================  MORNING BRIEFING  =====================
 # Renders ONLY from the Morning Brief model (core/morning-brief.ps1). No
 # dashboard logic here - purely presentation of Tony's prepared briefing.
@@ -1108,6 +1224,7 @@ function Set-ActiveView {
         else { $n.Border.Background = New-Brush $script:Col.Primary; $n.Text.Foreground = New-Brush $script:Col.OnPrimaryMuted }
     }
     $body = switch ($Name) {
+        'Morning Experience' { New-MorningExperience -Model (Get-MorningExperience -Now $script:TonyNow) }
         'Home'         { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
         'Agents'       { New-AgentsView     -Agents (Get-AgentsList) }
         'Issues'       { New-MarkdownView   -Title 'Open Issues'   -Text (Get-DocText 'issues_log.md') }
@@ -1138,7 +1255,7 @@ function New-SidebarNavItem {
 }
 
 function New-TonyShell {
-    param([string]$InitialView = 'Home', [datetime]$Now = (Get-Date), [Parameter(Mandatory)] $Theme)
+    param([string]$InitialView = 'Morning Experience', [datetime]$Now = (Get-Date), [Parameter(Mandatory)] $Theme)
     Initialize-TonyTheme -Theme $Theme
     $script:TonyNow = $Now
     $script:TonyNav = @()
@@ -1192,7 +1309,7 @@ function New-TonyShell {
 
     # nav
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
-    foreach ($name in @('Home', 'Mission Control', 'Capture', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap', 'Tony Memory')) {
+    foreach ($name in @('Morning Experience', 'Home', 'Mission Control', 'Capture', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap', 'Tony Memory')) {
         $item = New-SidebarNavItem -Name $name; $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
     }
     [Windows.Controls.Grid]::SetRow($nav, 2); $sideGrid.Children.Add($nav) | Out-Null
