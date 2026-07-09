@@ -145,7 +145,7 @@ function New-NumBadge {
 # =====================  GLOBAL COMMAND BAR ("Ask Tony")  =====================
 $script:CommandBox = $null
 $script:CommandResult = $null
-$script:CmdPlaceholder = 'Ask Tony...   try:  open agents   -   add task: call the Millers   (Ctrl+K)'
+$script:CmdPlaceholder = 'Quick command...   open agents   -   add task: call the Millers   -   press Ctrl+K to Talk with Tony'
 
 function New-CommandBar {
     $wrap = New-Object Windows.Controls.Border
@@ -154,9 +154,9 @@ function New-CommandBar {
     $wrap.Padding = New-Object Windows.Thickness (14, 9, 14, 9); $wrap.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
 
     $dp = New-Object Windows.Controls.DockPanel
-    $label = New-Text -Text 'Ask Tony' -Size 13 -Weight 'Bold' -Color $script:Col.Accent; $label.VerticalAlignment = 'Center'; $label.Margin = New-Object Windows.Thickness (0, 0, 12, 0)
+    $label = New-Text -Text 'Quick Command' -Size 13 -Weight 'Bold' -Color $script:Col.Accent; $label.VerticalAlignment = 'Center'; $label.Margin = New-Object Windows.Thickness (0, 0, 12, 0)
     [Windows.Controls.DockPanel]::SetDock($label, 'Left'); $dp.Children.Add($label) | Out-Null
-    $hint = New-Text -Text 'Ctrl+K' -Size 11 -Weight 'SemiBold' -Color $script:Col.Muted; $hint.VerticalAlignment = 'Center'; $hint.Margin = New-Object Windows.Thickness (10, 0, 0, 0)
+    $hint = New-Text -Text 'Ctrl+K  Talk with Tony' -Size 11 -Weight 'SemiBold' -Color $script:Col.Muted; $hint.VerticalAlignment = 'Center'; $hint.Margin = New-Object Windows.Thickness (10, 0, 0, 0)
     [Windows.Controls.DockPanel]::SetDock($hint, 'Right'); $dp.Children.Add($hint) | Out-Null
 
     $tb = New-Object Windows.Controls.TextBox
@@ -177,12 +177,12 @@ function New-CommandBar {
             'addtask'  { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $res.title | Out-Null; Save-ActionItemsData $d; $script:CommandResult = ("Added task: {0}" -f $res.title); Set-ActiveView 'Home' }
             'capture'  { $d = Get-CaptureData; Add-Capture -Data $d -Text $res.text -CreatedFrom 'command-bar' | Out-Null; Save-CaptureData $d; $script:CommandResult = ("Captured to Inbox: {0}" -f $res.text); Set-ActiveView 'Home' }
             'unknown'  {
-                # Not a local command -> ask Tony (routes through Tony Brain -> Provider Contract -> provider).
-                if (Get-Command Invoke-TonyBrain -ErrorAction SilentlyContinue) {
-                    $brain = Invoke-TonyBrain -UserInput $s.Text -CurrentWorkspace $script:TonyActiveView
-                    $script:CommandResult = ("Tony: {0}" -f $brain.message)
-                } else { $script:CommandResult = $res.message }
-                Set-ActiveView 'Home'
+                # Not a quick command -> a general question. Open the conversation
+                # window and let Tony answer there (a real conversation, not a one-off).
+                $q = $s.Text
+                $s.Text = $script:CmdPlaceholder; $s.Foreground = New-Brush $script:Col.Muted; $s.Tag = 'placeholder'
+                if (Get-Command Open-TonyConversation -ErrorAction SilentlyContinue) { Open-TonyConversation -Seed $q | Out-Null }
+                elseif (Get-Command Invoke-TonyBrain -ErrorAction SilentlyContinue) { $brain = Invoke-TonyBrain -UserInput $q -CurrentWorkspace $script:TonyActiveView; $script:CommandResult = ("Tony: {0}" -f $brain.message); Set-ActiveView 'Home' }
             }
             default    { }
         }
@@ -197,6 +197,255 @@ function New-CommandBar {
 function Focus-CommandBar {
     if ($script:TonyActiveView -ne 'Home') { Set-ActiveView 'Home' }
     if ($script:CommandBox) { $script:CommandBox.Focus() | Out-Null }
+}
+
+# =====================  TALK WITH TONY (conversation window)  =====================
+# The primary AI interaction: a dedicated window that feels like messaging
+# your Chief of Staff, not a search box. History persists (conversation.json);
+# closing the window never erases it. Quick commands still execute instantly;
+# general questions go to Tony Brain.
+$script:TonyActiveProject = $null   # current project context (future); null until projects exist
+$script:ConvWindow        = $null
+$script:ConvMessagesPanel = $null
+$script:ConvScroll        = $null
+$script:ConvInput         = $null
+$script:ConvThinkingRow   = $null
+$script:ConvInputPlaceholder = 'Message Tony...   (Enter to send, Shift+Enter for a new line)'
+
+# One chat bubble: user (accent, right) or Tony (card, left). New bubbles
+# fade + slide in for a calm, executive feel.
+function New-ConvBubble {
+    param([ValidateSet('user', 'tony')][string]$Role, [string]$Text, [string]$Time = '', [bool]$Animate = $false)
+    $isUser = ($Role -eq 'user')
+    $bubble = New-Object Windows.Controls.Border
+    $bubble.CornerRadius = New-Object Windows.CornerRadius 14
+    $bubble.Padding = New-Object Windows.Thickness (14, 10, 14, 10)
+    $bubble.MaxWidth = 430
+    if ($isUser) { $bubble.Background = New-Brush $script:Col.Accent }
+    else { $bubble.Background = New-Brush $script:Col.CardBg; $bubble.BorderBrush = New-Brush $script:Col.Line; $bubble.BorderThickness = New-Object Windows.Thickness 1 }
+
+    $inner = New-Object Windows.Controls.StackPanel
+    if (-not $isUser) { $inner.Children.Add((New-Text -Text 'TONY' -Size 9.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null }
+    $fg = if ($isUser) { $script:Col.OnPrimary } else { $script:Col.Ink }
+    $inner.Children.Add((New-Text -Text $Text -Size 13.5 -Color $fg -Wrap $true)) | Out-Null
+    if ($Time) {
+        $tcol = if ($isUser) { $script:Col.OnPrimaryMuted } else { $script:Col.Muted }
+        $inner.Children.Add((New-Text -Text $Time -Size 9.5 -Color $tcol -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    }
+    $bubble.Child = $inner
+
+    $row = New-Object Windows.Controls.StackPanel
+    $row.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+    $row.HorizontalAlignment = if ($isUser) { 'Right' } else { 'Left' }
+    $row.Children.Add($bubble) | Out-Null
+
+    if ($Animate) {
+        $row.Opacity = 0
+        $tt = New-Object Windows.Media.TranslateTransform; $tt.Y = 10; $row.RenderTransform = $tt
+        $ease = New-Object Windows.Media.Animation.CubicEase; $ease.EasingMode = 'EaseOut'
+        $fade = New-Object Windows.Media.Animation.DoubleAnimation(0, 1, (New-Object Windows.Duration ([TimeSpan]::FromMilliseconds(260)))); $fade.EasingFunction = $ease
+        $slide = New-Object Windows.Media.Animation.DoubleAnimation(10, 0, (New-Object Windows.Duration ([TimeSpan]::FromMilliseconds(260)))); $slide.EasingFunction = $ease
+        $row.BeginAnimation([Windows.UIElement]::OpacityProperty, $fade)
+        $tt.BeginAnimation([Windows.Media.TranslateTransform]::YProperty, $slide)
+    }
+    return $row
+}
+
+function Add-ConvBubble {
+    param([string]$Role, [string]$Text, [string]$Time = '', [bool]$Animate = $true)
+    if (-not $script:ConvMessagesPanel) { return }
+    $script:ConvMessagesPanel.Children.Add((New-ConvBubble -Role $Role -Text $Text -Time $Time -Animate $Animate)) | Out-Null
+    if ($script:ConvScroll) { $script:ConvScroll.ScrollToEnd() }
+}
+
+function Show-ConvThinking {
+    if (-not $script:ConvMessagesPanel) { return }
+    $bubble = New-Object Windows.Controls.Border
+    $bubble.CornerRadius = New-Object Windows.CornerRadius 14; $bubble.Padding = New-Object Windows.Thickness (14, 10, 14, 10)
+    $bubble.Background = New-Brush $script:Col.CardBg; $bubble.BorderBrush = New-Brush $script:Col.Line; $bubble.BorderThickness = New-Object Windows.Thickness 1
+    $bubble.Child = (New-Text -Text 'Tony is thinking...' -Size 13 -Color $script:Col.Muted)
+    $row = New-Object Windows.Controls.StackPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 10); $row.HorizontalAlignment = 'Left'
+    $row.Children.Add($bubble) | Out-Null
+    $pulse = New-Object Windows.Media.Animation.DoubleAnimation(0.45, 1.0, (New-Object Windows.Duration ([TimeSpan]::FromMilliseconds(700))))
+    $pulse.AutoReverse = $true; $pulse.RepeatBehavior = [Windows.Media.Animation.RepeatBehavior]::Forever
+    $bubble.BeginAnimation([Windows.UIElement]::OpacityProperty, $pulse)
+    $script:ConvThinkingRow = $row
+    $script:ConvMessagesPanel.Children.Add($row) | Out-Null
+    if ($script:ConvScroll) { $script:ConvScroll.ScrollToEnd() }
+}
+
+function Hide-ConvThinking {
+    if ($script:ConvThinkingRow -and $script:ConvMessagesPanel) {
+        $script:ConvMessagesPanel.Children.Remove($script:ConvThinkingRow) | Out-Null
+    }
+    $script:ConvThinkingRow = $null
+}
+
+# Send a turn: persist + show the user bubble, execute quick commands
+# instantly, otherwise ask Tony Brain (deferred so the thinking indicator
+# paints before any blocking call).
+function Send-TonyMessage {
+    param([string]$Text)
+    $t = ''; if ($null -ne $Text) { $t = $Text.Trim() }
+    if ($t -eq '') { return }
+
+    $data = Get-ConversationLog
+    Add-ConversationMessage -Data $data -Role 'user' -Text $t | Out-Null
+    Save-ConversationLog -Data $data
+    Add-ConvBubble -Role 'user' -Text $t -Time (Get-Date).ToString('h:mm tt') -Animate $true
+    if ($script:ConvInput) { $script:ConvInput.Text = ''; $script:ConvInput.Tag = '' }
+
+    # Quick commands still execute instantly - Tony confirms in a bubble.
+    $reply = $null
+    $cmd = Invoke-TonyCommand -Text $t
+    switch ($cmd.type) {
+        'navigate' { Set-ActiveView $cmd.target; $reply = "Opening $($cmd.target) in your dashboard." }
+        'addtask'  { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $cmd.title | Out-Null; Save-ActionItemsData $d; $reply = "Added to your Action Items: ""$($cmd.title)""." }
+        'capture'  { $d = Get-CaptureData; Add-Capture -Data $d -Text $cmd.text -CreatedFrom 'talk-with-tony' | Out-Null; Save-CaptureData $d; $reply = "Captured to your inbox: ""$($cmd.text)""." }
+    }
+    if ($reply) {
+        $rd = Get-ConversationLog; Add-ConversationMessage -Data $rd -Role 'tony' -Text $reply -Provider 'quick-command' | Out-Null; Save-ConversationLog -Data $rd
+        Add-ConvBubble -Role 'tony' -Text $reply -Time (Get-Date).ToString('h:mm tt') -Animate $true
+        return
+    }
+
+    # General question -> Tony Brain (context: workspace + recent conversation).
+    Show-ConvThinking
+    $work = $script:TonyActiveView
+    $respond = {
+        $msg = 'I hear you.'; $provider = 'tony'
+        if (Get-Command Invoke-TonyBrain -ErrorAction SilentlyContinue) {
+            try {
+                $brain = Invoke-TonyBrain -UserInput $t -CurrentWorkspace $work -History (Get-RecentConversation -Count 8)
+                if ($brain.message) { $msg = $brain.message }
+                if ($brain.provider) { $provider = $brain.provider }
+            } catch { $msg = 'Something went sideways on my end - give me another try.' }
+        }
+        Hide-ConvThinking
+        $rd = Get-ConversationLog; Add-ConversationMessage -Data $rd -Role 'tony' -Text $msg -Provider $provider | Out-Null; Save-ConversationLog -Data $rd
+        Add-ConvBubble -Role 'tony' -Text $msg -Time (Get-Date).ToString('h:mm tt') -Animate $true
+    }.GetNewClosure()
+
+    if ($script:ConvWindow) { $script:ConvWindow.Dispatcher.BeginInvoke([Action]$respond, [Windows.Threading.DispatcherPriority]::Background) | Out-Null }
+    else { & $respond }
+}
+
+function New-ConvStarterChip {
+    param([string]$Text)
+    $b = New-Object Windows.Controls.Border
+    $b.CornerRadius = New-Object Windows.CornerRadius 9; $b.Padding = New-Object Windows.Thickness (11, 6, 11, 6); $b.Margin = New-Object Windows.Thickness (0, 0, 7, 7); $b.Cursor = 'Hand'; $b.Tag = $Text
+    $b.Background = New-Brush $script:Col.AccentSoft
+    $b.Child = (New-Text -Text $Text -Size 12 -Weight 'SemiBold' -Color $script:Col.AccentInk)
+    $b.Add_MouseLeftButtonUp({ param($s, $e) Send-TonyMessage -Text $s.Tag }) | Out-Null
+    return $b
+}
+
+# Build the conversation window content: header, message history, typing area.
+function New-ConversationView {
+    $root = New-Object Windows.Controls.DockPanel; $root.LastChildFill = $true
+
+    # ---- branded header ----
+    $hdr = New-Object Windows.Controls.Border; $hdr.Background = New-Brush $script:Col.Primary; $hdr.Padding = New-Object Windows.Thickness (18, 13, 18, 13)
+    $hdrRow = New-Object Windows.Controls.StackPanel; $hdrRow.Orientation = 'Horizontal'
+    $logoSrc = New-ImageSource $script:Theme.logoPath
+    if ($logoSrc) {
+        $img = New-Object Windows.Controls.Image; $img.Source = $logoSrc; $img.Height = 30; $img.Width = 30; $img.Margin = New-Object Windows.Thickness (0, 0, 11, 0)
+        $lb = New-Object Windows.Controls.Border; $lb.CornerRadius = New-Object Windows.CornerRadius 7; $lb.ClipToBounds = $true; $lb.Child = $img; $lb.VerticalAlignment = 'Center'; $hdrRow.Children.Add($lb) | Out-Null
+    }
+    $hdrText = New-Object Windows.Controls.StackPanel; $hdrText.VerticalAlignment = 'Center'
+    $hdrText.Children.Add((New-Text -Text 'Talk with Tony' -Size 16 -Weight 'Bold' -Color $script:Col.OnPrimary)) | Out-Null
+    $hdrText.Children.Add((New-Text -Text 'Your AI Chief of Staff' -Size 11 -Color $script:Col.Accent)) | Out-Null
+    $hdrRow.Children.Add($hdrText) | Out-Null
+    $hdr.Child = $hdrRow
+    [Windows.Controls.DockPanel]::SetDock($hdr, 'Top'); $root.Children.Add($hdr) | Out-Null
+
+    # ---- typing area (docked bottom) ----
+    $inputWrap = New-Object Windows.Controls.Border; $inputWrap.Background = New-Brush $script:Col.Primary; $inputWrap.Padding = New-Object Windows.Thickness (14, 12, 14, 14)
+    $inputDock = New-Object Windows.Controls.DockPanel
+    $sendBtn = New-PrimaryButton -Text 'Send' -Size 13 -OnClick { param($s, $e) if ($script:ConvInput) { Send-TonyMessage -Text $script:ConvInput.Text } }
+    $sendBtn.VerticalAlignment = 'Bottom'; $sendBtn.Margin = New-Object Windows.Thickness (10, 0, 0, 0)
+    [Windows.Controls.DockPanel]::SetDock($sendBtn, 'Right'); $inputDock.Children.Add($sendBtn) | Out-Null
+
+    $tb = New-Object Windows.Controls.TextBox
+    $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 13.5
+    $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.MaxHeight = 120; $tb.MinHeight = 40; $tb.VerticalScrollBarVisibility = 'Auto'
+    $tb.Padding = New-Object Windows.Thickness (11, 9, 11, 9)
+    $tb.Background = New-Brush $script:Col.PrimaryMid; $tb.BorderBrush = New-Brush $script:Col.Line; $tb.BorderThickness = New-Object Windows.Thickness 1
+    $tb.CaretBrush = New-Brush $script:Col.Accent
+    $tb.Text = $script:ConvInputPlaceholder; $tb.Foreground = New-Brush $script:Col.Muted; $tb.Tag = 'placeholder'
+    $tb.Add_GotFocus({ param($s, $e) if ($s.Tag -eq 'placeholder') { $s.Text = ''; $s.Foreground = New-Brush $script:Col.Ink; $s.Tag = '' } }) | Out-Null
+    $tb.Add_LostFocus({ param($s, $e) if ([string]::IsNullOrEmpty($s.Text)) { $s.Text = $script:ConvInputPlaceholder; $s.Foreground = New-Brush $script:Col.Muted; $s.Tag = 'placeholder' } }) | Out-Null
+    $tb.Add_PreviewKeyDown({
+        param($s, $e)
+        if ($e.Key -eq [System.Windows.Input.Key]::Return -and -not ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Shift)) {
+            if ($s.Tag -ne 'placeholder') { Send-TonyMessage -Text $s.Text }
+            $e.Handled = $true
+        }
+    }) | Out-Null
+    $script:ConvInput = $tb
+    $inputDock.Children.Add($tb) | Out-Null
+    $inputWrap.Child = $inputDock
+    [Windows.Controls.DockPanel]::SetDock($inputWrap, 'Bottom'); $root.Children.Add($inputWrap) | Out-Null
+
+    # ---- message history (fills the middle) ----
+    $panel = New-Object Windows.Controls.StackPanel; $panel.Margin = New-Object Windows.Thickness (16, 16, 16, 8)
+    $script:ConvMessagesPanel = $panel
+
+    # greeting is chrome, not a stored message
+    $projName = if ($script:TonyActiveProject) { $script:TonyActiveProject } else { '' }
+    $greet = Get-TonyConversationGreeting -Name $script:Theme.profileName -CurrentWorkspace $script:TonyActiveView -CurrentProject $projName -Now (Get-Date)
+    $panel.Children.Add((New-ConvBubble -Role 'tony' -Text $greet -Animate $false)) | Out-Null
+
+    # persisted history
+    $log = Get-ConversationLog
+    $hist = @($log.messages)
+    if ($hist.Count -eq 0) {
+        $chips = New-Object Windows.Controls.WrapPanel; $chips.Margin = New-Object Windows.Thickness (2, 2, 0, 6)
+        foreach ($s in @('What should I focus on today?', 'Review my priorities', 'What did I capture recently?', 'Help me plan my day')) { $chips.Children.Add((New-ConvStarterChip -Text $s)) | Out-Null }
+        $panel.Children.Add($chips) | Out-Null
+    } else {
+        foreach ($m in $hist) {
+            $stamp = ''
+            if ($m.timestamp) { try { $stamp = ([datetime]$m.timestamp).ToString('h:mm tt') } catch { } }
+            $panel.Children.Add((New-ConvBubble -Role $m.role -Text $m.text -Time $stamp -Animate $false)) | Out-Null
+        }
+    }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $panel
+    $scroll.Background = New-Brush $script:Col.AppBg; $scroll.Padding = New-Object Windows.Thickness (2, 0, 2, 0)
+    $script:ConvScroll = $scroll
+    $root.Children.Add($scroll) | Out-Null   # LastChildFill -> fills remaining space
+
+    return $root
+}
+
+# Open (or focus) the dedicated Tony Conversation window. Optional -Seed
+# sends an opening message immediately (used when a general question is
+# typed into the quick-command bar).
+function Open-TonyConversation {
+    param([string]$Seed = '')
+    if ($script:ConvWindow) {
+        $script:ConvWindow.Activate() | Out-Null
+        if ($script:ConvInput) { $script:ConvInput.Focus() | Out-Null }
+        if ($Seed) { Send-TonyMessage -Text $Seed }
+        return $script:ConvWindow
+    }
+    $win = New-Object Windows.Window
+    $win.Title = 'GIOK - Talk with Tony'
+    $win.Width = 560; $win.Height = 760; $win.MinWidth = 420; $win.MinHeight = 560
+    $win.WindowStartupLocation = 'CenterScreen'
+    $win.Background = New-Brush $script:Col.AppBg
+    if ($script:Theme.logoPath -and (Test-Path $script:Theme.logoPath)) {
+        $ico = New-Object Windows.Media.Imaging.BitmapImage; $ico.BeginInit(); $ico.CacheOption = 'OnLoad'; $ico.UriSource = New-Object Uri($script:Theme.logoPath); $ico.EndInit(); $win.Icon = $ico
+    }
+    $win.Content = New-ConversationView
+    $script:ConvWindow = $win
+    $win.Add_Closed({ param($s, $e) $script:ConvWindow = $null; $script:ConvMessagesPanel = $null; $script:ConvScroll = $null; $script:ConvInput = $null; $script:ConvThinkingRow = $null }) | Out-Null
+    $null = $win.Show()
+    if ($script:ConvScroll) { $script:ConvScroll.ScrollToEnd() }
+    if ($script:ConvInput) { $script:ConvInput.Focus() | Out-Null }
+    if ($Seed) { Send-TonyMessage -Text $Seed }
+    return $win
 }
 
 # =====================  MORNING EXPERIENCE (the "first minute")  =====================
@@ -1909,7 +2158,8 @@ function New-TonyShell {
     $script:TonyToolbar = $toolbar
     $tbDock = New-Object Windows.Controls.DockPanel
     $tbBtns = New-Object Windows.Controls.StackPanel; $tbBtns.Orientation = 'Horizontal'; $tbBtns.HorizontalAlignment = 'Right'
-    $tbBtns.Children.Add((New-MiniButton -Text 'Open Mission Control' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) Open-TonyWindow -Name 'Mission Control' | Out-Null })) | Out-Null
+    $tbBtns.Children.Add((New-MiniButton -Text ((New-Emoji @(0x1F4AC)) + '  Talk with Tony') -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) Open-TonyConversation | Out-Null })) | Out-Null
+    $tbBtns.Children.Add((New-MiniButton -Text 'Open Mission Control' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) Open-TonyWindow -Name 'Mission Control' | Out-Null })) | Out-Null
     $tbBtns.Children.Add((New-MiniButton -Text 'Open in New Window' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) Open-TonyWindow -Name $script:TonyActiveView | Out-Null })) | Out-Null
     [Windows.Controls.DockPanel]::SetDock($tbBtns, 'Right'); $tbDock.Children.Add($tbBtns) | Out-Null
     $toolbar.Child = $tbDock

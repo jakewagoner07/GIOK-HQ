@@ -244,7 +244,7 @@ Register-TonyProvider -Provider ([pscustomobject]@{
 #    point a future UI/AI wires into.
 # ---------------------------------------------------------------------
 function Invoke-TonyBrain {
-    param([string]$UserInput, [string]$CurrentWorkspace = 'unknown', [datetime]$Now = (Get-Date))
+    param([string]$UserInput, [string]$CurrentWorkspace = 'unknown', [datetime]$Now = (Get-Date), $History = @())
     $context = Get-TonyContext -Now $Now
     $decision = Get-TonyDecision -UserInput $UserInput -Context $context
 
@@ -272,7 +272,7 @@ function Invoke-TonyBrain {
     $ctxSummary = [pscustomobject]@{ source = 'unified-context'; generatedAt = $context.generatedAt; registry = $context.registry; capture = $context.capture; openTaskCount = @($openTasks).Count; auditCount = @($context.audits).Count }
 
     $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxSummary -Identity $identity -Goals $goals -Mission $mission `
-        -CurrentWorkspace $CurrentWorkspace -OpenTasks $openTasks -TodaysPriorities $priorities -ConversationHistory @() `
+        -CurrentWorkspace $CurrentWorkspace -OpenTasks $openTasks -TodaysPriorities $priorities -ConversationHistory @($History) `
         -TonyPersona (Get-TonyPersona) -ReasoningHint $decision.type -RequestedAction $decision -Guidance $guidance -Timestamp $Now
 
     $reqCheck = Test-TonyRequest -Request $request

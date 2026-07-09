@@ -1,3 +1,7 @@
 # Secrets — never commit provider keys.
 tony-alpha/dashboard/providers/claude.config.json
 **/claude.config.json
+
+# Private conversation history — Talk with Tony stays local, never on GitHub.
+tony-alpha/conversation.json
+**/conversation.json

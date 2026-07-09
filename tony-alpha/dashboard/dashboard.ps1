@@ -38,6 +38,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-provider-contract.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-decision-framework.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-brain.ps1')
+. (Join-Path $PSScriptRoot 'core\tony-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\document-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'providers\claude-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
@@ -97,11 +98,12 @@ $timer.Add_Tick({
 })
 $timer.Start()
 
-# Ctrl+K opens/focuses the global "Ask Tony" command bar
+# Ctrl+K opens the dedicated "Talk with Tony" conversation window (primary AI
+# interaction). The quick-command bar remains for typed commands.
 $window.Add_PreviewKeyDown({
     param($s, $e)
     if ($e.Key -eq [System.Windows.Input.Key]::K -and ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control)) {
-        Focus-CommandBar
+        Open-TonyConversation | Out-Null
         $e.Handled = $true
     }
 })
