@@ -55,6 +55,12 @@ Priorities** (live from `action_items.json`), **Agency Overview** (placeholder m
 Placeholder groups (appointments, agency metrics, some recommendations) are clearly marked
 and structured so live integrations can replace them later.
 
+**Every Home card is clickable** (hover highlight, "open >" affordance, hand cursor): Top 3 →
+Action Items, Tony Recommends → Recommendations, Agency Overview → Agency, Upcoming
+Appointments → Appointments, Agent Health → Agents, and the system strip → Issues. Cards
+whose real tab doesn't exist yet open a focused **"Coming soon"** detail view (Agency,
+Appointments, Recommendations) with sample data and a back-to-Home button.
+
 ### Navigation (left sidebar)
 | Tab | Reads from | Shows |
 |-----|-----------|-------|

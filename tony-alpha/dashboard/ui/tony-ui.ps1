@@ -89,20 +89,20 @@ function New-Card {
 
     $stack = New-Object Windows.Controls.StackPanel
     $header = New-Object Windows.Controls.DockPanel; $header.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+    # reserve the right-side affordance first, so a long title fills the remaining space (no overlap)
+    $right = New-Object Windows.Controls.StackPanel; $right.Orientation = 'Horizontal'; $right.HorizontalAlignment = 'Right'; $right.VerticalAlignment = 'Center'
+    if ($Tag)   { $tc = New-Chip -Text $Tag -Bg '#FEF3C7' -Fg '#92400E'; $tc.Margin = New-Object Windows.Thickness (6, 0, 6, 0); $right.Children.Add($tc) | Out-Null }
+    if ($NavTo) { $right.Children.Add((New-Text -Text 'open >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent)) | Out-Null }
+    [Windows.Controls.DockPanel]::SetDock($right, 'Right'); $header.Children.Add($right) | Out-Null
     $titleBlock = New-Text -Text $Title.ToUpper() -Size 12.5 -Weight 'Bold' -Color $script:Col.Muted
-    [Windows.Controls.DockPanel]::SetDock($titleBlock, 'Left'); $header.Children.Add($titleBlock) | Out-Null
-    if ($NavTo) {
-        $go = New-Text -Text 'open >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent; $go.HorizontalAlignment = 'Right'
-        $header.Children.Add($go) | Out-Null
-    } elseif ($Tag) {
-        $tagChip = New-Chip -Text $Tag -Bg '#FEF3C7' -Fg '#92400E'; $tagChip.Margin = New-Object Windows.Thickness 0; $tagChip.HorizontalAlignment = 'Right'
-        $header.Children.Add($tagChip) | Out-Null
-    }
+    $titleBlock.TextTrimming = 'CharacterEllipsis'; $header.Children.Add($titleBlock) | Out-Null
     $stack.Children.Add($header) | Out-Null; $stack.Children.Add($Body) | Out-Null
     $border.Child = $stack
     if ($NavTo) {
         $border.Cursor = 'Hand'; $border.Tag = $NavTo
         $border.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
+        $border.Add_MouseEnter({ param($s, $e) $s.BorderBrush = (New-Brush $script:Col.Accent); $s.BorderThickness = (New-Object Windows.Thickness 2) }) | Out-Null
+        $border.Add_MouseLeave({ param($s, $e) $s.BorderBrush = (New-Brush $script:Col.Line);   $s.BorderThickness = (New-Object Windows.Thickness 1) }) | Out-Null
     }
     return $border
 }
@@ -185,7 +185,7 @@ function New-HomeView {
         $row.Children.Add($txt) | Out-Null
         $recBody.Children.Add($row) | Out-Null
     }
-    $gA.Children.Add((New-Card -Title 'Tony Recommends' -Body $recBody -Col 1)) | Out-Null
+    $gA.Children.Add((New-Card -Title 'Tony Recommends' -Body $recBody -Col 1 -NavTo 'Recommendations')) | Out-Null
     $stack.Children.Add($gA) | Out-Null
 
     # ---- Row B: Agency Overview | Upcoming Appointments | Agent Health ----
@@ -205,7 +205,7 @@ function New-HomeView {
         [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c); $agBody.Children.Add($cell) | Out-Null
         $mi++
     }
-    $gB.Children.Add((New-Card -Title 'Agency Overview' -Body $agBody -Tag 'SAMPLE' -Col 0)) | Out-Null
+    $gB.Children.Add((New-Card -Title 'Agency Overview' -Body $agBody -Tag 'SAMPLE' -Col 0 -NavTo 'Agency')) | Out-Null
 
     # Upcoming Appointments (placeholder)
     $apBody = New-Object Windows.Controls.StackPanel
@@ -216,7 +216,7 @@ function New-HomeView {
         $row.Children.Add((New-Text -Text $ap.who -Size 11.5 -Color $script:Col.Muted)) | Out-Null
         $apBody.Children.Add($row) | Out-Null
     }
-    $gB.Children.Add((New-Card -Title 'Upcoming Appointments' -Body $apBody -Tag 'SAMPLE' -Col 1)) | Out-Null
+    $gB.Children.Add((New-Card -Title 'Upcoming Appointments' -Body $apBody -Tag 'SAMPLE' -Col 1 -NavTo 'Appointments')) | Out-Null
 
     # Agent Health Summary (live)
     $h = $Model.agentHealth
@@ -246,7 +246,9 @@ function New-HomeView {
     $sys.Background = New-Brush $script:Col.AppBg; $sys.BorderBrush = New-Brush $script:Col.Line; $sys.BorderThickness = New-Object Windows.Thickness (0, 1, 0, 0)
     $sys.Margin = New-Object Windows.Thickness (8, 10, 8, 0); $sys.Padding = New-Object Windows.Thickness (0, 8, 0, 0)
     $verified = if ($h.verified) { 'verified' } else { 'unverified' }
-    $sys.Child = (New-Text -Text ("System: registry v{0} ({1}) - {2} open issues - Focus: {3}" -f $h.registryVersion, $verified, $Model.issueCount, $Model.sprint) -Size 11 -Color $script:Col.Muted -Wrap $true)
+    $sys.Child = (New-Text -Text ("System: registry v{0} ({1}) - {2} open issues - Focus: {3}    (open Issues >)" -f $h.registryVersion, $verified, $Model.issueCount, $Model.sprint) -Size 11 -Color $script:Col.Muted -Wrap $true)
+    $sys.Cursor = 'Hand'; $sys.Tag = 'Issues'
+    $sys.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
     $stack.Children.Add($sys) | Out-Null
 
     $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $stack
@@ -281,6 +283,85 @@ function New-SettingsView {
     $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
     $outer.Children.Add($card) | Out-Null
     return $outer
+}
+
+# =====================  PLACEHOLDER DETAIL VIEWS  =====================
+# Focused views for cards whose real tab doesn't exist yet. "Coming soon"
+# + sample data, clearly structured so a live integration can replace them.
+function New-ComingSoonView {
+    param([string]$Title, [string]$Subtitle, [Windows.UIElement]$Body, [string]$RelatedTab, [string]$RelatedLabel)
+    $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
+
+    $bar = New-Object Windows.Controls.StackPanel; $bar.Orientation = 'Horizontal'; $bar.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+    $back = New-MiniButton -Text '< Home' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) Set-ActiveView 'Home' }
+    $back.Margin = New-Object Windows.Thickness (0, 0, 0, 0); $bar.Children.Add($back) | Out-Null
+    if ($RelatedTab) { $bar.Children.Add((New-MiniButton -Text $RelatedLabel -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -Tag $RelatedTab -OnClick { param($s, $e) Set-ActiveView $s.Tag })) | Out-Null }
+    $outer.Children.Add($bar) | Out-Null
+
+    $outer.Children.Add((New-Text -Text $Title -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+    $outer.Children.Add((New-Text -Text $Subtitle -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 10)))) | Out-Null
+
+    $banner = New-Object Windows.Controls.Border
+    $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8
+    $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+    $banner.Child = (New-Text -Text 'Coming soon. Sample data shown below - a live integration will replace it.' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)
+    $outer.Children.Add($banner) | Out-Null
+
+    $outer.Children.Add($Body) | Out-Null
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $outer
+    return $scroll
+}
+
+function New-AgencyView {
+    $m = Get-HomeModel -Now $script:TonyNow
+    $body = New-Object Windows.Controls.WrapPanel
+    foreach ($metric in $m.agencyMetrics.items) {
+        $card = New-Object Windows.Controls.Border
+        $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 10
+        $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+        $card.Padding = New-Object Windows.Thickness (18, 14, 18, 14); $card.Margin = New-Object Windows.Thickness (0, 0, 12, 12); $card.Width = 180
+        $sp = New-Object Windows.Controls.StackPanel
+        $sp.Children.Add((New-Text -Text $metric.value -Size 28 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+        $sp.Children.Add((New-Text -Text $metric.label -Size 12 -Color $script:Col.Muted)) | Out-Null
+        $card.Child = $sp; $body.Children.Add($card) | Out-Null
+    }
+    return New-ComingSoonView -Title 'Agency Overview' -Subtitle 'Your book of business at a glance' -Body $body
+}
+
+function New-AppointmentsView {
+    $m = Get-HomeModel -Now $script:TonyNow
+    $body = New-Object Windows.Controls.StackPanel
+    foreach ($ap in $m.appointments.items) {
+        $row = New-Object Windows.Controls.Border
+        $row.Background = New-Brush $script:Col.CardBg; $row.CornerRadius = New-Object Windows.CornerRadius 10
+        $row.BorderBrush = New-Brush $script:Col.Line; $row.BorderThickness = New-Object Windows.Thickness 1
+        $row.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+        $dp = New-Object Windows.Controls.DockPanel
+        $time = New-Text -Text $ap.time -Size 13 -Weight 'Bold' -Color $script:Col.AccentInk; $time.Width = 90
+        [Windows.Controls.DockPanel]::SetDock($time, 'Left'); $dp.Children.Add($time) | Out-Null
+        $info = New-Object Windows.Controls.StackPanel
+        $info.Children.Add((New-Text -Text $ap.title -Size 13 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+        $info.Children.Add((New-Text -Text $ap.who -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+        $dp.Children.Add($info) | Out-Null; $row.Child = $dp; $body.Children.Add($row) | Out-Null
+    }
+    return New-ComingSoonView -Title 'Upcoming Appointments' -Subtitle 'Your day, from the GIOK calendar' -Body $body
+}
+
+function New-RecommendationsView {
+    $m = Get-HomeModel -Now $script:TonyNow
+    $body = New-Object Windows.Controls.StackPanel
+    foreach ($r in $m.tonyRecommends) {
+        $row = New-Object Windows.Controls.Border
+        $row.Background = New-Brush $script:Col.CardBg; $row.CornerRadius = New-Object Windows.CornerRadius 10
+        $row.BorderBrush = New-Brush $script:Col.Line; $row.BorderThickness = New-Object Windows.Thickness 1
+        $row.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+        $dp = New-Object Windows.Controls.DockPanel
+        $tag = if ($r.source -eq 'live') { New-Chip -Text 'live' -Bg '#DEF7EC' -Fg '#03543F' } else { New-Chip -Text 'sample' -Bg '#FEF3C7' -Fg '#92400E' }
+        $tag.VerticalAlignment = 'Top'; [Windows.Controls.DockPanel]::SetDock($tag, 'Left'); $dp.Children.Add($tag) | Out-Null
+        $txt = New-Text -Text $r.text -Size 13 -Wrap $true; $txt.Margin = New-Object Windows.Thickness (4, 1, 0, 0)
+        $dp.Children.Add($txt) | Out-Null; $row.Child = $dp; $body.Children.Add($row) | Out-Null
+    }
+    return New-ComingSoonView -Title 'Tony Recommends' -Subtitle "Tony's suggestions for today" -Body $body -RelatedTab 'Action Items' -RelatedLabel 'Go to Action Items'
 }
 
 # =====================  VIEW: AGENTS  =====================
@@ -474,6 +555,9 @@ function Set-ActiveView {
         'Weekly Review'{ New-MarkdownView   -Title 'Weekly Review' -Text (Get-DocText 'weekly_status.md') }
         'Roadmap'      { New-MarkdownView   -Title 'Roadmap'       -Text (Get-DocText 'ROADMAP.md') }
         'Settings'     { New-SettingsView }
+        'Agency'         { New-AgencyView }
+        'Appointments'   { New-AppointmentsView }
+        'Recommendations'{ New-RecommendationsView }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
