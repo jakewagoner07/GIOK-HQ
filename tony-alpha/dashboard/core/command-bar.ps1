@@ -35,6 +35,8 @@ function Get-TonyCommandTargets {
         'inbox'           = 'Capture'
         'identity'        = 'Identity'
         'audit'           = 'End of Day Audit'
+        'first conversation' = 'First Conversation'
+        'onboarding'      = 'First Conversation'
         'end of day audit'= 'End of Day Audit'
         'end of day'      = 'End of Day Audit'
         'day audit'       = 'End of Day Audit'

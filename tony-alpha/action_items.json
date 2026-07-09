@@ -1,7 +1,7 @@
 ﻿{
     "meta":  {
                  "version":  "1.0.0",
-                 "updated":  "2026-07-09 10:35:02",
+                 "updated":  "2026-07-09 11:17:41",
                  "source":  "seeded from action_items.md"
              },
     "items":  [
@@ -280,6 +280,14 @@
                   {
                       "id":  "SPRINT",
                       "title":  "Interactive Action Items.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D1 — Tony\u0027s First Conversation.",
                       "done":  true,
                       "archived":  false,
                       "created":  "2026-07-08 08:00:00",

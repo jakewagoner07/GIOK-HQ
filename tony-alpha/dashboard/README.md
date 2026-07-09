@@ -41,6 +41,25 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Tony's First Conversation (Project Diamond, Sprint D1)
+
+GIOK **starts with a conversation, not configuration.** Until it's completed, Tony's First
+Conversation is the landing view — it replaces onboarding. Tony asks **one question at a time**
+(Welcome + 17 questions), acknowledges each answer naturally, and shows progress (Question N of
+18, progress bar, Back / Next / Save & Exit / Resume Later).
+
+On completion Tony says *"Thank you. I know enough to begin helping. Let's build your operating
+system,"* and the **Home dashboard** opens. The answers are **distilled into Identity** (Vision,
+Goals, Mission, Core Values, Annual Theme, Identity Overview) — **not duplicated**; the working
+answers live in `first_conversation.json`, the meaning is written to `identity/*.json`.
+
+- **Engine:** `core/first-conversation.ps1` — steps, state, completion, and the **swappable
+  response generator** (`Get-TonyResponse`). A future AI replaces only that function; answers are
+  never hardcoded. UI renders from the engine.
+- **Restart** any time from **Settings → Restart First Conversation.** No cloud, no external AI.
+
+![First Conversation](docs/first-conversation.png)
+
 ## End of Day Audit (Sprint November)
 
 GIOK's signature evening ritual — the counterpart to the Morning Experience. Honest review,

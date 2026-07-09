@@ -1,0 +1,8 @@
+{
+  "meta": { "version": "1.0.0", "note": "Tony's First Conversation - progress and working answers. Distilled meaning is saved into identity/*.json on completion (not duplicated)." },
+  "completed": false,
+  "currentStep": 0,
+  "startedAt": null,
+  "completedAt": null,
+  "answers": {}
+}

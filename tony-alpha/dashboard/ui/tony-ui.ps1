@@ -404,6 +404,15 @@ function New-HomeView {
     param([Parameter(Mandatory)] $Model)
     $stack = New-Object Windows.Controls.StackPanel; $stack.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
 
+    # resume banner if the first conversation isn't finished
+    if ((Get-Command Get-ConversationState -ErrorAction SilentlyContinue) -and (-not (Get-ConversationState).completed)) {
+        $rb = New-Object Windows.Controls.Border
+        $rb.Background = New-Brush $script:Col.AccentSoft; $rb.CornerRadius = New-Object Windows.CornerRadius 10; $rb.Padding = New-Object Windows.Thickness (14, 9, 14, 9); $rb.Margin = New-Object Windows.Thickness (0, 0, 0, 12); $rb.Cursor = 'Hand'
+        $rb.Child = (New-Text -Text 'Finish your first conversation with Tony  ->' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk)
+        $rb.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView 'First Conversation' }) | Out-Null
+        $stack.Children.Add($rb) | Out-Null
+    }
+
     # global command bar ("Ask Tony")
     $stack.Children.Add((New-CommandBar)) | Out-Null
     if ($script:CommandResult) {
@@ -541,6 +550,8 @@ function New-SettingsView {
     $body.Children.Add($sw) | Out-Null
     $note = New-Text -Text 'Branding is theme-driven. Edit theme/theme.json to re-brand this workspace (logo, colors, tagline, profile) - no code change needed. See THEME.md. Per-user personalization is planned; this is not multi-user yet.' -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
     $body.Children.Add($note) | Out-Null
+    $restart = New-MiniButton -Text 'Restart First Conversation' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Reset-Conversation; Set-ActiveView 'First Conversation' }
+    $restart.Margin = New-Object Windows.Thickness (0, 14, 0, 0); $restart.HorizontalAlignment = 'Left'; $body.Children.Add($restart) | Out-Null
 
     $card = New-Card -Title 'Workspace' -Body $body
     $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
@@ -1647,6 +1658,92 @@ function New-AuditView {
     return $outer
 }
 
+# =====================  FIRST CONVERSATION (onboarding)  =====================
+$script:ConvInputBox = $null
+$script:ConvStepId = $null
+
+function Refresh-Conversation { $script:TonyBody.Child = New-FirstConversationView }
+function Save-ConvCurrentInput { if ($script:ConvInputBox -and $script:ConvStepId) { Set-ConversationAnswer -StepId $script:ConvStepId -Text $script:ConvInputBox.Text } }
+
+function New-TonyBubble {
+    param([string]$Text, [bool]$Soft = $false, [double]$Size = 17)
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush $(if ($Soft) { $script:Col.AccentSoft } else { $script:Col.CardBg })
+    $b.CornerRadius = New-Object Windows.CornerRadius 14; $b.BorderBrush = New-Brush $script:Col.Line; $b.BorderThickness = New-Object Windows.Thickness 1
+    $b.Padding = New-Object Windows.Thickness (20, 16, 20, 16); $b.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text 'TONY' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null
+    $t = New-Text -Text $Text -Size $Size -Weight 'SemiBold' -Color $(if ($Soft) { $script:Col.AccentInk } else { $script:Col.Heading }) -Wrap $true
+    $sp.Children.Add($t) | Out-Null
+    $b.Child = $sp
+    return $b
+}
+
+function New-FirstConversationView {
+    $steps = Get-ConversationSteps
+    $state = Get-ConversationState
+    $total = $steps.Count
+    $idx = [int]$state.currentStep
+
+    $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 720; $col.HorizontalAlignment = 'Center'; $col.Margin = New-Object Windows.Thickness (0, 24, 0, 24)
+    $col.Children.Add((New-Text -Text "TONY'S FIRST CONVERSATION" -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+
+    if ($idx -ge $total) {
+        # ---- closing ----
+        $col.Children.Add((New-Text -Text 'Complete' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null
+        $col.Children.Add((New-ProgressBar -Pct 100)) | Out-Null
+        $col.Children.Add((New-TonyBubble -Text (Get-ConversationClosing) -Size 20 -Margin (New-Object Windows.Thickness (0, 14, 0, 14)))) | Out-Null
+        $begin = New-PrimaryButton -Text "Let's build your operating system" -Size 15 -OnClick { param($s, $e); Complete-Conversation; Set-ActiveView 'Home' }
+        $begin.HorizontalAlignment = 'Center'; $begin.Padding = New-Object Windows.Thickness (28, 13, 28, 13)
+        $col.Children.Add($begin) | Out-Null
+        $back = New-MiniButton -Text '< Back' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Set-ConversationStep ((Get-ConversationState).currentStep - 1); Refresh-Conversation }
+        $back.HorizontalAlignment = 'Center'; $back.Margin = New-Object Windows.Thickness (0, 10, 0, 0); $col.Children.Add($back) | Out-Null
+    } else {
+        $step = $steps[$idx]
+        $script:ConvStepId = $step.id
+        $label = if ($step.type -eq 'welcome') { 'Welcome' } else { ("Question {0} of {1}" -f ($idx + 1), $total) }
+        $col.Children.Add((New-Text -Text $label -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 2)))) | Out-Null
+        $col.Children.Add((New-ProgressBar -Pct ([int](($idx + 1) / $total * 100)))) | Out-Null
+
+        # Tony's acknowledgment of the previous answer (natural "responds, then moves forward")
+        if ($idx -gt 0) {
+            $prevAns = Get-ConversationAnswer $state ($steps[$idx - 1].id)
+            $ack = Get-TonyResponse -Index ($idx - 1) -Answer $prevAns
+            if ($ack) { $col.Children.Add((New-TonyBubble -Text $ack -Soft $true -Size 13.5)) | Out-Null }
+        }
+        # Tony's question
+        $col.Children.Add((New-TonyBubble -Text $step.tony -Margin (New-Object Windows.Thickness (0, 4, 0, 12)))) | Out-Null
+
+        # input (questions only)
+        if ($step.type -eq 'question') {
+            $tb = New-AuditInput -Text (Get-ConversationAnswer $state $step.id) -Multi $true -Height 96
+            $script:ConvInputBox = $tb; $col.Children.Add($tb) | Out-Null
+        } else { $script:ConvInputBox = $null }
+
+        # Back / Next
+        $nav = New-Object Windows.Controls.DockPanel; $nav.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+        $nextText = if ($step.type -eq 'welcome') { 'Begin ->' } elseif ($idx -eq $total - 1) { 'Finish ->' } else { 'Next ->' }
+        $next = New-PrimaryButton -Text $nextText -Size 14 -OnClick { param($s, $e); Save-ConvCurrentInput; Set-ConversationStep ((Get-ConversationState).currentStep + 1); Refresh-Conversation }
+        $next.HorizontalAlignment = 'Right'; [Windows.Controls.DockPanel]::SetDock($next, 'Right'); $nav.Children.Add($next) | Out-Null
+        if ($idx -gt 0) {
+            $back = New-MiniButton -Text '< Back' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Save-ConvCurrentInput; Set-ConversationStep ((Get-ConversationState).currentStep - 1); Refresh-Conversation }
+            $back.Padding = New-Object Windows.Thickness (16, 10, 16, 10); $back.Margin = New-Object Windows.Thickness 0; [Windows.Controls.DockPanel]::SetDock($back, 'Left'); $nav.Children.Add($back) | Out-Null
+        }
+        $col.Children.Add($nav) | Out-Null
+
+        # Save & Exit / Resume Later
+        $exit = New-Object Windows.Controls.StackPanel; $exit.Orientation = 'Horizontal'; $exit.HorizontalAlignment = 'Center'; $exit.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+        $se = New-Text -Text 'Save & Exit' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Muted; $se.Cursor = 'Hand'; $se.Margin = New-Object Windows.Thickness (0, 0, 18, 0)
+        $se.Add_MouseLeftButtonUp({ param($s, $e); Save-ConvCurrentInput; Set-ActiveView 'Home' }) | Out-Null; $exit.Children.Add($se) | Out-Null
+        $rl = New-Text -Text 'Resume Later' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Muted; $rl.Cursor = 'Hand'
+        $rl.Add_MouseLeftButtonUp({ param($s, $e); Save-ConvCurrentInput; Set-ActiveView 'Home' }) | Out-Null; $exit.Children.Add($rl) | Out-Null
+        $col.Children.Add($exit) | Out-Null
+    }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $col
+    return $scroll
+}
+
 # =====================  NAV + SHELL  =====================
 function New-Emoji { param([int[]]$Cp) return (-join ($Cp | ForEach-Object { [char]::ConvertFromUtf32($_) })) }
 
@@ -1673,6 +1770,7 @@ function Set-ActiveView {
         'Capture'        { New-CaptureView }
         'Tony Memory'    { New-TonyMemoryView }
         'Identity'       { New-IdentityView }
+        'First Conversation' { New-FirstConversationView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-WorkspacePlaceholder -Title 'Non-Negotiables' -Belongs $script:WorkspaceBelongs['Non-Negotiables'] }
         'Family'         { New-WorkspacePlaceholder -Title 'Family' -Belongs $script:WorkspaceBelongs['Family'] }

@@ -38,6 +38,67 @@ function Get-IdentitySections {
     return @('Overview', 'Vision', 'Goals', 'Core Values', 'Mission', 'Legacy', 'Annual Theme', 'Journal', 'Timeline')
 }
 
+# ---- write side (Identity OWNS its data; other layers call these, never write files directly) ----
+function Save-IdentityFile {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)] $Object)
+    $dir = Get-IdentityDir
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    ($Object | ConvertTo-Json -Depth 8) | Set-Content -Path (Join-Path $dir $Name) -Encoding UTF8
+}
+
+function Split-IdentityList {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    return @($Text -split '[\r\n;,]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function Set-IdentityVision {
+    param([string]$Statement)
+    if ([string]::IsNullOrWhiteSpace($Statement)) { return }
+    $v = Get-IdentityVision; if (-not $v) { $v = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; statement = ''; horizon = '5-year'; progress = 0 } }
+    $v.statement = $Statement.Trim(); Save-IdentityFile -Name 'vision.json' -Object $v
+}
+function Set-IdentityMission {
+    param([string]$Statement)
+    if ([string]::IsNullOrWhiteSpace($Statement)) { return }
+    $m = Get-IdentityMission; if (-not $m) { $m = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; statement = '' } }
+    $m.statement = $Statement.Trim(); Save-IdentityFile -Name 'mission.json' -Object $m
+}
+function Set-IdentityLegacy {
+    param([string]$Statement)
+    if ([string]::IsNullOrWhiteSpace($Statement)) { return }
+    $l = Get-IdentityLegacy; if (-not $l) { $l = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; statement = '' } }
+    $l.statement = $Statement.Trim(); Save-IdentityFile -Name 'legacy.json' -Object $l
+}
+function Set-IdentityValuesFromText {
+    param([string]$Text)
+    $items = @(Split-IdentityList $Text | Select-Object -First 6)
+    if ($items.Count -eq 0) { return }
+    $values = $items | ForEach-Object { [pscustomobject]@{ name = ($_.Substring(0, [math]::Min(38, $_.Length))); desc = $_ } }
+    Save-IdentityFile -Name 'values.json' -Object ([pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; values = @($values) })
+}
+function Set-IdentityGoalsFromText {
+    param([string]$Text)
+    $items = @(Split-IdentityList $Text | Select-Object -First 6)
+    if ($items.Count -eq 0) { return }
+    $i = 1; $goals = $items | ForEach-Object { $g = [pscustomobject]@{ id = ('G-{0:000}' -f $i); title = $_; progress = 0; target = ([string](Get-Date).Year) }; $i++; $g }
+    Save-IdentityFile -Name 'goals.json' -Object ([pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; goals = @($goals) })
+}
+function Set-IdentityAnnualThemeFromText {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    $t = Get-IdentityAnnualTheme; if (-not $t) { $t = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; year = (Get-Date).Year; theme = ''; description = '' } }
+    $t.theme = 'Your focus for the year'; $t.description = $Text.Trim(); Save-IdentityFile -Name 'annual_theme.json' -Object $t
+}
+function Set-IdentityOverviewReflection {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    $o = Get-IdentityFile 'overview.json'
+    if (-not $o) { $o = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0' }; identityScore = [pscustomobject]@{ value = 0; trend = 'flat'; source = 'placeholder' }; tonyReflection = [pscustomobject]@{ text = ''; source = 'first-conversation' }; recentWins = @() } }
+    $o.tonyReflection.text = $Text; $o.tonyReflection.source = 'first-conversation'
+    Save-IdentityFile -Name 'overview.json' -Object $o
+}
+
 # Aggregated model for the Overview (executive summary of who Jake is becoming).
 function Get-IdentityOverview {
     $ov      = Get-IdentityFile 'overview.json'

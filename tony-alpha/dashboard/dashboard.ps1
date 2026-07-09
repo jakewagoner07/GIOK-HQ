@@ -33,13 +33,18 @@ try {
 . (Join-Path $PSScriptRoot 'core\morning-experience.ps1')
 . (Join-Path $PSScriptRoot 'core\identity.ps1')
 . (Join-Path $PSScriptRoot 'core\end-of-day-audit.ps1')
+. (Join-Path $PSScriptRoot 'core\first-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 
 $theme = Get-Theme
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }
-$shell = New-TonyShell -InitialView $View -Now $startNow -Theme $theme
+# First Conversation replaces onboarding: until it's completed, it is the landing view.
+$startView = if ($PSBoundParameters.ContainsKey('View')) { $View }
+             elseif (-not (Get-ConversationState).completed) { 'First Conversation' }
+             else { $View }
+$shell = New-TonyShell -InitialView $startView -Now $startNow -Theme $theme
 $rootVisual = $shell.Root
 
 if ($Screenshot) {
