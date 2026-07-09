@@ -97,6 +97,13 @@ day clear and intentional.
 to make him feel bad. An honest look at a hard day, delivered with encouragement and a next step,
 is the whole point.
 
+*Status: the End of Day Audit is built (Sprint November) as a first-class workspace — accessible
+from the sidebar, the Home dashboard, and the command bar (`audit`). It stores each day's audit
+by date in `end_of_day_audit.json` (nothing overwritten across days), with day scores, wins,
+incomplete-item triage (move/keep/archive/delete), non-negotiable streaks, six reflection fields,
+a placeholder Tony's Audit, and an Audit History view. Logic lives in
+`core/end-of-day-audit.ps1`; the UI renders from it.*
+
 ### Structure — Day Scores
 An honest score for the day across the same categories as the Life Score:
 - **Overall Day Score**

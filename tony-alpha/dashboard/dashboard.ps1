@@ -32,6 +32,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\morning-brief.ps1')
 . (Join-Path $PSScriptRoot 'core\morning-experience.ps1')
 . (Join-Path $PSScriptRoot 'core\identity.ps1')
+. (Join-Path $PSScriptRoot 'core\end-of-day-audit.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')

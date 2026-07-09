@@ -41,6 +41,30 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## End of Day Audit (Sprint November)
+
+GIOK's signature evening ritual — the counterpart to the Morning Experience. Honest review,
+improvement, and preparation for tomorrow; it answers *"Did today move Jake closer to the life
+he is building?"* Accessible from the **sidebar**, **Home** (quick link), and the **command bar**
+(`audit`).
+
+- **Scores** — Business, Health, Family, Financial, Learning, Consistency, Relationship (0-10
+  steppers); **Overall** is the derived average.
+- **Today's Wins** — add/remove wins.
+- **Incomplete Items** — live open action items with **Move to tomorrow / Keep open / Archive /
+  Delete**.
+- **Non-Negotiables** — checkboxes (Workout, Learning, Reading, Family Time, Prospecting, Social
+  Posting, Water, Protein, Sleep) + custom (future).
+- **Reflection** — Largest Win, Largest Lesson, What Could Have Been Better, What Are You Grateful
+  For, One Promise To Tomorrow, Tomorrow's #1 Priority.
+- **Tony's Audit** — placeholder coaching summary (AI later).
+- **History** — review past audits.
+
+**Storage:** `end_of_day_audit.json`, keyed by date — nothing is overwritten across days. Logic
+in `core/end-of-day-audit.ps1`; the UI renders from the model.
+
+![End of Day Audit](docs/end-of-day-audit.png)
+
 ## Identity Workspace (Sprint Mike)
 
 **Identity** is the foundation of GIOK — the user's personal operating system. **Vision and Goals

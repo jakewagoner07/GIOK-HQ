@@ -499,7 +499,7 @@ function New-HomeView {
     # ---- Quick links ----
     $ql = New-Object Windows.Controls.StackPanel; $ql.Orientation = 'Horizontal'; $ql.Margin = New-Object Windows.Thickness (8, 6, 0, 6)
     $ql.Children.Add((New-Text -Text 'Quick links:' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 4, 0)))) | Out-Null
-    foreach ($lnk in @('Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
+    foreach ($lnk in @('End of Day Audit', 'Action Items', 'Issues', 'Weekly Review', 'Roadmap')) {
         $ql.Children.Add((New-MiniButton -Text $lnk -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $lnk -OnClick { param($s, $e) Set-ActiveView $s.Tag })) | Out-Null
     }
     $stack.Children.Add($ql) | Out-Null
@@ -1455,6 +1455,198 @@ $script:WorkspaceBelongs = @{
     'Learning'        = 'Deliberate growth - courses, books, skills, and industry study.'
 }
 
+# =====================  END OF DAY AUDIT  =====================
+$script:AuditTab = 'Today'
+$script:AuditDate = $null
+$script:AuditWinBox = $null
+
+function Refresh-Audit { $script:TonyBody.Child = New-AuditView }
+
+function New-AuditInput {
+    param([string]$Text, [bool]$Multi = $false, [double]$Height = 46)
+    $tb = New-Object Windows.Controls.TextBox
+    $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 13
+    $tb.Padding = New-Object Windows.Thickness (8, 6, 8, 6)
+    $tb.Background = New-Brush $script:Col.PrimaryMid; $tb.Foreground = New-Brush $script:Col.Ink
+    $tb.BorderBrush = New-Brush $script:Col.Line; $tb.CaretBrush = New-Brush $script:Col.Accent
+    if ($Multi) { $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.Height = $Height; $tb.VerticalScrollBarVisibility = 'Auto' }
+    if ($Text) { $tb.Text = $Text }
+    return $tb
+}
+
+function New-AuditScoreRow {
+    param([string]$Category, [int]$Value)
+    $dp = New-Object Windows.Controls.DockPanel; $dp.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
+    $stepper = New-Object Windows.Controls.StackPanel; $stepper.Orientation = 'Horizontal'; $stepper.HorizontalAlignment = 'Right'
+    $minus = New-MiniButton -Text '-' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag ("{0}|-1" -f $Category) -OnClick { param($s, $e); $p = $s.Tag -split '\|'; Set-AuditScoreDelta -Date $script:AuditDate -Category $p[0] -Delta ([int]$p[1]); Refresh-Audit }
+    $minus.Padding = New-Object Windows.Thickness (10, 3, 10, 3); $stepper.Children.Add($minus) | Out-Null
+    $val = New-Text -Text ("{0}" -f $Value) -Size 15 -Weight 'Bold' -Color $script:Col.Heading; $val.Width = 34; $val.TextAlignment = 'Center'; $val.VerticalAlignment = 'Center'; $stepper.Children.Add($val) | Out-Null
+    $plus = New-MiniButton -Text '+' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -Tag ("{0}|1" -f $Category) -OnClick { param($s, $e); $p = $s.Tag -split '\|'; Set-AuditScoreDelta -Date $script:AuditDate -Category $p[0] -Delta ([int]$p[1]); Refresh-Audit }
+    $plus.Padding = New-Object Windows.Thickness (10, 3, 10, 3); $stepper.Children.Add($plus) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($stepper, 'Right'); $dp.Children.Add($stepper) | Out-Null
+    $lbl = New-Text -Text $Category -Size 13 -Color $script:Col.Ink; $lbl.VerticalAlignment = 'Center'; $dp.Children.Add($lbl) | Out-Null
+    return $dp
+}
+
+function New-AuditScoresCard {
+    param($A)
+    $b = New-Object Windows.Controls.StackPanel
+    $ov = New-Object Windows.Controls.StackPanel; $ov.Orientation = 'Horizontal'; $ov.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $ov.Children.Add((New-Text -Text ([string]$A.scores.overall) -Size 34 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $ov.Children.Add((New-Text -Text '/ 10  Overall Day Score (avg of categories)' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (8, 18, 0, 0)))) | Out-Null
+    $b.Children.Add($ov) | Out-Null
+    foreach ($c in (Get-AuditScoreCategories)) { $b.Children.Add((New-AuditScoreRow -Category $c -Value ([int]$A.scores.(ConvertTo-ScoreKey $c)))) | Out-Null }
+    return (New-Card -Title 'Scores' -Body $b)
+}
+
+function New-AuditWinsCard {
+    param($A)
+    $b = New-Object Windows.Controls.StackPanel
+    $bar = New-Object Windows.Controls.DockPanel; $bar.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $add = New-MiniButton -Text '+ Add win' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e); if ($script:AuditWinBox -and -not [string]::IsNullOrWhiteSpace($script:AuditWinBox.Text)) { Add-AuditWin -Date $script:AuditDate -Text $script:AuditWinBox.Text; Refresh-Audit } }
+    [Windows.Controls.DockPanel]::SetDock($add, 'Right'); $bar.Children.Add($add) | Out-Null
+    $tb = New-AuditInput; $script:AuditWinBox = $tb; $bar.Children.Add($tb) | Out-Null
+    $b.Children.Add($bar) | Out-Null
+    $wins = @($A.wins)
+    if ($wins.Count -eq 0) { $b.Children.Add((New-Text -Text 'No wins logged yet - add one above.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null }
+    else {
+        for ($i = 0; $i -lt $wins.Count; $i++) {
+            $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 4)
+            $del = New-MiniButton -Text 'x' -Bg '#FDE2E1' -Fg '#9B1C1C' -Tag ([string]$i) -OnClick { param($s, $e); Remove-AuditWin -Date $script:AuditDate -Index ([int]$s.Tag); Refresh-Audit }
+            [Windows.Controls.DockPanel]::SetDock($del, 'Right'); $row.Children.Add($del) | Out-Null
+            $dot = New-Text -Text '+' -Size 13 -Weight 'Bold' -Color '#34D399'; $dot.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $dot.VerticalAlignment = 'Top'
+            [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $row.Children.Add($dot) | Out-Null
+            $row.Children.Add((New-Text -Text $wins[$i] -Size 12.5 -Wrap $true)) | Out-Null
+            $b.Children.Add($row) | Out-Null
+        }
+    }
+    return (New-Card -Title "Today's Wins" -Body $b)
+}
+
+function New-AuditIncompleteCard {
+    param($A)
+    $b = New-Object Windows.Controls.StackPanel
+    $items = @(Get-AuditIncompleteActions)
+    $moved = @($A.movedToTomorrow)
+    if ($items.Count -eq 0) { $b.Children.Add((New-Text -Text 'Nothing incomplete - great work.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null }
+    else {
+        foreach ($it in ($items | Select-Object -First 10)) {
+            $card = New-Object Windows.Controls.Border; $card.Background = New-Brush $script:Col.PrimaryMid; $card.CornerRadius = New-Object Windows.CornerRadius 8; $card.Padding = New-Object Windows.Thickness (10, 8, 10, 8); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
+            $sp = New-Object Windows.Controls.StackPanel
+            $tl = New-Object Windows.Controls.StackPanel; $tl.Orientation = 'Horizontal'
+            $tl.Children.Add((New-Chip -Text $it.id -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+            $tl.Children.Add((New-Text -Text $it.title -Size 12.5 -Wrap $true -Margin (New-Object Windows.Thickness (2, 1, 0, 0)))) | Out-Null
+            if ($moved -contains $it.id) { $tl.Children.Add((New-Chip -Text '-> tomorrow' -Bg '#DEF7EC' -Fg '#03543F')) | Out-Null }
+            $sp.Children.Add($tl) | Out-Null
+            $acts = New-Object Windows.Controls.WrapPanel; $acts.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
+            $acts.Children.Add((New-MiniButton -Text 'Move to tomorrow' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $it.id -OnClick { param($s, $e); Add-AuditMovedToTomorrow -Date $script:AuditDate -ActionId $s.Tag; Refresh-Audit })) | Out-Null
+            $acts.Children.Add((New-MiniButton -Text 'Keep open' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $it.id -OnClick { param($s, $e); Refresh-Audit })) | Out-Null
+            $acts.Children.Add((New-MiniButton -Text 'Archive' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $it.id -OnClick { param($s, $e); $d = Get-ActionItemsData; Set-ActionItemArchived -Data $d -Id $s.Tag | Out-Null; Save-ActionItemsData $d; Refresh-Audit })) | Out-Null
+            $acts.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -Tag $it.id -OnClick { param($s, $e); $d = Get-ActionItemsData; Remove-ActionItem -Data $d -Id $s.Tag | Out-Null; Save-ActionItemsData $d; Refresh-Audit })) | Out-Null
+            $sp.Children.Add($acts) | Out-Null
+            $card.Child = $sp; $b.Children.Add($card) | Out-Null
+        }
+        if ($items.Count -gt 10) { $b.Children.Add((New-Text -Text ("+ {0} more in Action Items" -f ($items.Count - 10)) -Size 11.5 -Color $script:Col.Muted)) | Out-Null }
+    }
+    return (New-Card -Title 'Incomplete Items' -Body $b)
+}
+
+function New-AuditNonNegotiablesCard {
+    param($A)
+    $b = New-Object Windows.Controls.WrapPanel
+    foreach ($nn in (Get-NonNegotiableDefs)) {
+        $cb = New-Object Windows.Controls.CheckBox
+        $cb.Content = $nn.name; $cb.Foreground = New-Brush $script:Col.Ink; $cb.IsChecked = [bool]$A.nonNegotiables.($nn.key); $cb.Tag = $nn.key
+        $cb.Margin = New-Object Windows.Thickness (0, 0, 18, 8); $cb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $cb.FontSize = 12.5
+        $cb.Add_Click({ param($s, $e); Set-NonNegotiable -Date $script:AuditDate -Key $s.Tag -Done ([bool]$s.IsChecked) }) | Out-Null
+        $b.Children.Add($cb) | Out-Null
+    }
+    $wrap = New-Object Windows.Controls.StackPanel
+    $wrap.Children.Add($b) | Out-Null
+    $wrap.Children.Add((New-Text -Text '+ Custom non-negotiables (coming soon)' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+    return (New-Card -Title 'Non-Negotiables' -Body $wrap)
+}
+
+function New-AuditReflectionCard {
+    param($A)
+    $b = New-Object Windows.Controls.StackPanel
+    foreach ($r in (Get-ReflectionDefs)) {
+        $b.Children.Add((New-Text -Text $r.label -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 3)))) | Out-Null
+        $tb = New-AuditInput -Text ([string]$A.reflection.($r.key)) -Multi $true -Height 44
+        $tb.Tag = $r.key
+        $tb.Add_LostFocus({ param($s, $e); Set-AuditReflection -Date $script:AuditDate -Field $s.Tag -Value $s.Text }) | Out-Null
+        $b.Children.Add($tb) | Out-Null
+    }
+    return (New-Card -Title 'Reflection' -Body $b)
+}
+
+function New-AuditTonyCard {
+    param($A)
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-Text -Text $A.tonyAudit -Size 13 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+    return (New-Card -Title "Tony's Audit" -Body $b -Tag 'SAMPLE')
+}
+
+function New-AuditHistorySection {
+    $hist = @(Get-AuditHistory)
+    $sp = New-Object Windows.Controls.StackPanel
+    if ($hist.Count -eq 0) { $sp.Children.Add((New-Text -Text 'No past audits yet.' -Size 13 -Color $script:Col.Muted)) | Out-Null; return $sp }
+    foreach ($h in $hist) {
+        $card = New-Object Windows.Controls.Border; $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 10; $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+        $card.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+        $body = New-Object Windows.Controls.StackPanel
+        $top = New-Object Windows.Controls.DockPanel
+        $score = New-Text -Text ("Overall {0}/10" -f $h.scores.overall) -Size 13 -Weight 'Bold' -Color $script:Col.Accent; $score.HorizontalAlignment = 'Right'; [Windows.Controls.DockPanel]::SetDock($score, 'Right'); $top.Children.Add($score) | Out-Null
+        $top.Children.Add((New-Text -Text $h.date -Size 14 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+        $body.Children.Add($top) | Out-Null
+        if ($h.reflection -and $h.reflection.largestWin) { $body.Children.Add((New-Text -Text ("Largest win: {0}" -f $h.reflection.largestWin) -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null }
+        $body.Children.Add((New-Text -Text ("{0} wins logged" -f @($h.wins).Count) -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+        $card.Child = $body; $sp.Children.Add($card) | Out-Null
+    }
+    return $sp
+}
+
+function New-AuditView {
+    $script:AuditDate = $script:TonyNow.ToString('yyyy-MM-dd')
+    $A = Get-DayAudit -Date $script:AuditDate
+
+    $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+    $head.Children.Add((New-Text -Text 'End of Day Audit' -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $head.Children.Add((New-Text -Text ("{0}  -  Did today move you closer to the life you're building?" -f $script:AuditDate) -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $toggle = New-Object Windows.Controls.StackPanel; $toggle.Orientation = 'Horizontal'; $toggle.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+    foreach ($t in @('Today', 'History')) {
+        $active = ($t -eq $script:AuditTab)
+        $btn = New-MiniButton -Text $t -Bg $(if ($active) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($active) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -Tag $t -OnClick { param($s, $e); $script:AuditTab = $s.Tag; Refresh-Audit }
+        if ($t -eq 'Today') { $btn.Margin = New-Object Windows.Thickness (0, 0, 0, 0) }
+        $toggle.Children.Add($btn) | Out-Null
+    }
+    $head.Children.Add($toggle) | Out-Null
+
+    $body = New-Object Windows.Controls.StackPanel; $body.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
+    if ($script:AuditTab -eq 'History') {
+        $body.Children.Add((New-AuditHistorySection)) | Out-Null
+    } else {
+        $g = New-Object Windows.Controls.Grid
+        foreach ($i in 0..1) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $g.ColumnDefinitions.Add($cd) | Out-Null }
+        $cScores = New-AuditScoresCard -A $A; [Windows.Controls.Grid]::SetColumn($cScores, 0); $g.Children.Add($cScores) | Out-Null
+        $cTony = New-AuditTonyCard -A $A; [Windows.Controls.Grid]::SetColumn($cTony, 1); $g.Children.Add($cTony) | Out-Null
+        $body.Children.Add($g) | Out-Null
+
+        $g2 = New-Object Windows.Controls.Grid
+        foreach ($i in 0..1) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $g2.ColumnDefinitions.Add($cd) | Out-Null }
+        $cWins = New-AuditWinsCard -A $A; [Windows.Controls.Grid]::SetColumn($cWins, 0); $g2.Children.Add($cWins) | Out-Null
+        $cInc = New-AuditIncompleteCard -A $A; [Windows.Controls.Grid]::SetColumn($cInc, 1); $g2.Children.Add($cInc) | Out-Null
+        $body.Children.Add($g2) | Out-Null
+
+        $body.Children.Add((New-AuditNonNegotiablesCard -A $A)) | Out-Null
+        $body.Children.Add((New-AuditReflectionCard -A $A)) | Out-Null
+    }
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $body
+    $outer = New-Object Windows.Controls.DockPanel
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null; $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
 # =====================  NAV + SHELL  =====================
 function New-Emoji { param([int[]]$Cp) return (-join ($Cp | ForEach-Object { [char]::ConvertFromUtf32($_) })) }
 
@@ -1481,6 +1673,7 @@ function Set-ActiveView {
         'Capture'        { New-CaptureView }
         'Tony Memory'    { New-TonyMemoryView }
         'Identity'       { New-IdentityView }
+        'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-WorkspacePlaceholder -Title 'Non-Negotiables' -Belongs $script:WorkspaceBelongs['Non-Negotiables'] }
         'Family'         { New-WorkspacePlaceholder -Title 'Family' -Belongs $script:WorkspaceBelongs['Family'] }
         'Health'         { New-WorkspacePlaceholder -Title 'Health' -Belongs $script:WorkspaceBelongs['Health'] }
@@ -1559,6 +1752,7 @@ function New-TonyShell {
     # nav (emoji built at runtime to keep the source ASCII-safe)
     $navDefs = @(
         [pscustomobject]@{ cp = @(0x1F3E0); label = 'Home'; key = 'Home' }
+        [pscustomobject]@{ cp = @(0x1F319); label = 'End of Day Audit'; key = 'End of Day Audit' }
         [pscustomobject]@{ cp = @(0x1F9ED); label = 'Identity'; key = 'Identity' }
         [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables' }
         [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family' }
