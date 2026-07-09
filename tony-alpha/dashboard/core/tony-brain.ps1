@@ -200,11 +200,13 @@ function Invoke-TonyProvider {
 # with a real provider is the ONLY change needed to give Tony a model.
 Register-TonyProvider -Provider ([pscustomobject]@{
         name        = 'local-stub'
-        description = 'Local placeholder. No AI. Returns a deterministic response so the brain is testable.'
+        description = 'Local placeholder. No AI. Consumes a contract Request and returns a contract Response so the brain is testable.'
         invoke      = {
             param($Request)
-            $intent = if ($Request.intent) { $Request.intent.type } else { 'answer' }
-            switch ($intent) {
+            # consumes the AI Provider Contract request
+            $intent = $Request.reasoningHint
+            $req = $Request.requestedAction
+            $answer = switch ($intent) {
                 'recommend'     { 'Here is where I would recommend your best next step (an AI provider will generate this).' }
                 'ask'           { "Tell me a little more and I'll help." }
                 'create-action' { "I'll capture that as an action item for you." }
@@ -213,6 +215,10 @@ Register-TonyProvider -Provider ([pscustomobject]@{
                 'none'          { "I'm here, Jake. What would you like to do?" }
                 default         { 'I hear you. (An AI provider will generate Tony''s full reply here.)' }
             }
+            $nav = if ($intent -eq 'navigate' -and $req) { $req.target } else { $null }
+            $tasks = if ($intent -eq 'create-action' -and $req) { @($req.title) } else { @() }
+            # returns a contract Response
+            New-TonyResponse -Answer $answer -ProviderName 'local-stub' -Confidence 0.4 -NeedsClarification ($intent -eq 'ask') -ReasoningSummary ("Local stub handled intent '{0}' (no AI)." -f $intent) -SuggestedNavigation $nav -SuggestedTasks $tasks
         }
     })
 
@@ -223,26 +229,47 @@ Register-TonyProvider -Provider ([pscustomobject]@{
 #    point a future UI/AI wires into.
 # ---------------------------------------------------------------------
 function Invoke-TonyBrain {
-    param([string]$UserInput, [datetime]$Now = (Get-Date))
+    param([string]$UserInput, [string]$CurrentWorkspace = 'unknown', [datetime]$Now = (Get-Date))
     $context = Get-TonyContext -Now $Now
     $decision = Get-TonyDecision -UserInput $UserInput -Context $context
-    $request = [pscustomobject]@{ persona = (Get-TonyPersona); context = $context; input = $UserInput; intent = $decision }
 
-    $raw = Invoke-TonyProvider -Request $request   # provider layer only - model is hidden from the brain
-    $message = Format-TonyVoice -Text $raw
+    # map the unified context into the AI Provider Contract request
+    $identity   = if ($context.identity) { $context.identity.overview } else { $null }
+    $goals      = if ($context.identity -and $context.identity.goals)   { @($context.identity.goals.goals) } else { @() }
+    $mission    = if ($context.identity -and $context.identity.mission) { $context.identity.mission.statement } else { '' }
+    $openTasks  = if ($context.actions)  { @($context.actions.open | ForEach-Object { $_.title }) } else { @() }
+    $priorities = if ($context.briefing) { @($context.briefing.topPriorities | ForEach-Object { $_.title }) } else { @() }
 
-    $actions = @()
-    switch ($decision.type) {
-        'navigate'      { $actions += (Invoke-TonyNavigateTo -Target $decision.target) }
-        'create-action' { $actions += (Invoke-TonyCreateTask -Title $decision.title) }
-        'save-note'     { $actions += (Invoke-TonySaveNote -Text $decision.text) }
+    # compact context summary (the detailed fields are carried separately - no duplication in the message)
+    $ctxSummary = [pscustomobject]@{ source = 'unified-context'; generatedAt = $context.generatedAt; registry = $context.registry; capture = $context.capture; openTaskCount = @($openTasks).Count; auditCount = @($context.audits).Count }
+
+    $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxSummary -Identity $identity -Goals $goals -Mission $mission `
+        -CurrentWorkspace $CurrentWorkspace -OpenTasks $openTasks -TodaysPriorities $priorities -ConversationHistory @() `
+        -TonyPersona (Get-TonyPersona) -ReasoningHint $decision.type -RequestedAction $decision -Timestamp $Now
+
+    $reqCheck = Test-TonyRequest -Request $request
+    if (-not $reqCheck.valid) {
+        return [pscustomobject]@{ input = $UserInput; decision = $decision; request = $request; message = "I couldn't process that."; actions = @(); provider = $null; error = ($reqCheck.errors -join ' ') }
     }
 
+    # provider returns a CONTRACT RESPONSE; the brain never sees the model
+    $response = Invoke-TonyProvider -Request $request
+    $respCheck = Test-TonyResponse -Response $response
+
+    $message = Format-TonyVoice -Text $response.answer
+    $actions = @()
+    if ($response.suggestedNavigation) { $actions += (Invoke-TonyNavigateTo -Target $response.suggestedNavigation) }
+    foreach ($t in @($response.suggestedTasks)) { if ($t) { $actions += (Invoke-TonyCreateTask -Title $t) } }
+    $actions += @($response.suggestedActions)
+
     return [pscustomobject]@{
-        input    = $UserInput
-        decision = $decision
-        message  = $message
-        actions  = @($actions)
-        provider = $script:TonyActiveProvider   # which provider answered (not which model)
+        input         = $UserInput
+        decision      = $decision
+        request       = $request
+        response      = $response
+        responseValid = $respCheck.valid
+        message       = $message
+        actions       = @($actions)
+        provider      = $response.providerName   # which provider answered (never which model)
     }
 }
