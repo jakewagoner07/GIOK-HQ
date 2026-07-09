@@ -1,15 +1,16 @@
 # =====================================================================
-# tony-ui.ps1  —  Tony Alpha presentation layer (WPF)
+# tony-ui.ps1  —  GIOK presentation layer (WPF)
 # ---------------------------------------------------------------------
-# NO BUSINESS LOGIC HERE. Renders data (core/tony-core.ps1) using a
-# THEME (theme/theme-loader.ps1). All colors, fonts, names, and logos
-# come from the theme object -- none are hardcoded here. Swapping the
-# theme re-brands the app with no code change.
+# NO BUSINESS LOGIC. Renders data (core/) with a THEME (theme/). GIOK is
+# the product; Tony is the AI Chief of Staff inside it. Layout: a left
+# sidebar (brand + Jake + nav) and a swappable main area whose home view
+# answers "what does Jake need to know right now?"
+# All colors/fonts/names/images come from the theme.
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
 
-$script:Col  = @{}                 # filled from the theme by Initialize-TonyTheme
+$script:Col  = @{}
 $script:Font = 'Segoe UI'
 $script:Theme = $null
 
@@ -43,10 +44,8 @@ function New-Text {
     $t = New-Object Windows.Controls.TextBlock
     $t.Text = $Text
     $t.FontFamily = New-Object Windows.Media.FontFamily $script:Font
-    $t.FontSize = $Size
-    $t.FontWeight = [Windows.FontWeights]::$Weight
-    $t.Foreground = New-Brush $Color
-    $t.Margin = $Margin
+    $t.FontSize = $Size; $t.FontWeight = [Windows.FontWeights]::$Weight
+    $t.Foreground = New-Brush $Color; $t.Margin = $Margin
     if ($Wrap) { $t.TextWrapping = 'Wrap' }
     return $t
 }
@@ -54,16 +53,13 @@ function New-Text {
 function New-Chip {
     param([string]$Text, [string]$Bg, [string]$Fg)
     $b = New-Object Windows.Controls.Border
-    $b.Background = New-Brush $Bg
-    $b.CornerRadius = New-Object Windows.CornerRadius 9
-    $b.Padding = New-Object Windows.Thickness (9, 3, 9, 3)
-    $b.Margin = New-Object Windows.Thickness (0, 0, 6, 6)
+    $b.Background = New-Brush $Bg; $b.CornerRadius = New-Object Windows.CornerRadius 9
+    $b.Padding = New-Object Windows.Thickness (9, 3, 9, 3); $b.Margin = New-Object Windows.Thickness (0, 0, 6, 6)
     $b.VerticalAlignment = 'Center'
     $b.Child = (New-Text -Text $Text -Size 11.5 -Weight 'SemiBold' -Color $Fg)
     return $b
 }
 
-# Semantic (non-brand) status/priority colors stay fixed.
 function Get-StatusChipColors { param([string]$Status)
     switch ($Status) {
         'healthy' { @('#DEF7EC', '#03543F') } 'warning' { @('#FDF6B2', '#8E4B10') }
@@ -80,41 +76,30 @@ function Get-PriorityChipColors { param([string]$Priority)
 }
 
 function New-Card {
-    param([string]$Title, [Windows.UIElement]$Body, [string]$Tag = $null,
-          [int]$Col = 0, [int]$Row = 0, [string]$NavTo = $null)
+    param([string]$Title, [Windows.UIElement]$Body, [string]$Tag = $null, [int]$Col = 0, [int]$Row = 0, [string]$NavTo = $null)
     $border = New-Object Windows.Controls.Border
-    $border.Background = New-Brush $script:Col.CardBg
-    $border.CornerRadius = New-Object Windows.CornerRadius 12
-    $border.Padding = New-Object Windows.Thickness 16
-    $border.Margin = New-Object Windows.Thickness 8
-    $border.BorderBrush = New-Brush $script:Col.Line
-    $border.BorderThickness = New-Object Windows.Thickness 1
+    $border.Background = New-Brush $script:Col.CardBg; $border.CornerRadius = New-Object Windows.CornerRadius 12
+    $border.Padding = New-Object Windows.Thickness 16; $border.Margin = New-Object Windows.Thickness 8
+    $border.BorderBrush = New-Brush $script:Col.Line; $border.BorderThickness = New-Object Windows.Thickness 1
     $shadow = New-Object Windows.Media.Effects.DropShadowEffect
     $shadow.Color = [Windows.Media.ColorConverter]::ConvertFromString('#22000000')
     $shadow.BlurRadius = 14; $shadow.ShadowDepth = 2; $shadow.Opacity = 0.5; $shadow.Direction = 270
     $border.Effect = $shadow
-    [Windows.Controls.Grid]::SetColumn($border, $Col)
-    [Windows.Controls.Grid]::SetRow($border, $Row)
+    [Windows.Controls.Grid]::SetColumn($border, $Col); [Windows.Controls.Grid]::SetRow($border, $Row)
 
     $stack = New-Object Windows.Controls.StackPanel
-    $header = New-Object Windows.Controls.DockPanel
-    $header.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+    $header = New-Object Windows.Controls.DockPanel; $header.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
     $titleBlock = New-Text -Text $Title.ToUpper() -Size 12.5 -Weight 'Bold' -Color $script:Col.Muted
-    [Windows.Controls.DockPanel]::SetDock($titleBlock, 'Left')
-    $header.Children.Add($titleBlock) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($titleBlock, 'Left'); $header.Children.Add($titleBlock) | Out-Null
     if ($NavTo) {
-        $go = New-Text -Text 'open >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent
-        $go.HorizontalAlignment = 'Right'
+        $go = New-Text -Text 'open >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent; $go.HorizontalAlignment = 'Right'
         $header.Children.Add($go) | Out-Null
     } elseif ($Tag) {
-        $tagChip = New-Chip -Text $Tag -Bg '#FEF3C7' -Fg '#92400E'
-        $tagChip.Margin = New-Object Windows.Thickness 0; $tagChip.HorizontalAlignment = 'Right'
+        $tagChip = New-Chip -Text $Tag -Bg '#FEF3C7' -Fg '#92400E'; $tagChip.Margin = New-Object Windows.Thickness 0; $tagChip.HorizontalAlignment = 'Right'
         $header.Children.Add($tagChip) | Out-Null
     }
-    $stack.Children.Add($header) | Out-Null
-    $stack.Children.Add($Body) | Out-Null
+    $stack.Children.Add($header) | Out-Null; $stack.Children.Add($Body) | Out-Null
     $border.Child = $stack
-
     if ($NavTo) {
         $border.Cursor = 'Hand'; $border.Tag = $NavTo
         $border.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
@@ -125,111 +110,176 @@ function New-Card {
 function New-KeyValueRow {
     param([string]$Key, [string]$Value, [string]$ValueColor = $null)
     if (-not $ValueColor) { $ValueColor = $script:Col.Ink }
-    $dp = New-Object Windows.Controls.DockPanel
-    $dp.Margin = New-Object Windows.Thickness (0, 0, 0, 7)
+    $dp = New-Object Windows.Controls.DockPanel; $dp.Margin = New-Object Windows.Thickness (0, 0, 0, 7)
     $k = New-Text -Text $Key -Size 13 -Color $script:Col.Muted
-    [Windows.Controls.DockPanel]::SetDock($k, 'Left')
-    $v = New-Text -Text $Value -Size 13 -Weight 'SemiBold' -Color $ValueColor
-    $v.HorizontalAlignment = 'Right'
-    $dp.Children.Add($k) | Out-Null; $dp.Children.Add($v) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($k, 'Left'); $v = New-Text -Text $Value -Size 13 -Weight 'SemiBold' -Color $ValueColor
+    $v.HorizontalAlignment = 'Right'; $dp.Children.Add($k) | Out-Null; $dp.Children.Add($v) | Out-Null
     return $dp
 }
 
-# =====================  VIEW: DASHBOARD  =====================
-function New-DashboardView {
+function New-MiniButton {
+    param([string]$Text, [string]$Bg, [string]$Fg, [string]$Tag, [scriptblock]$OnClick)
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush $Bg; $b.CornerRadius = New-Object Windows.CornerRadius 6
+    $b.Padding = New-Object Windows.Thickness (10, 5, 10, 5); $b.Margin = New-Object Windows.Thickness (6, 0, 0, 0)
+    $b.Cursor = 'Hand'; $b.VerticalAlignment = 'Center'
+    if ($Tag) { $b.Tag = $Tag }
+    $b.Child = (New-Text -Text $Text -Size 12 -Weight 'SemiBold' -Color $Fg)
+    if ($OnClick) { $b.Add_MouseLeftButtonUp($OnClick) | Out-Null }
+    return $b
+}
+
+function New-NumBadge {
+    param([int]$N)
+    $b = New-Object Windows.Controls.Border
+    $b.Width = 24; $b.Height = 24; $b.CornerRadius = New-Object Windows.CornerRadius 12
+    $b.Background = New-Brush $script:Col.Accent; $b.VerticalAlignment = 'Top'; $b.Margin = New-Object Windows.Thickness (0, 1, 10, 0)
+    $t = New-Text -Text ([string]$N) -Size 12.5 -Weight 'Bold' -Color $script:Col.OnPrimary
+    $t.HorizontalAlignment = 'Center'; $t.VerticalAlignment = 'Center'; $b.Child = $t
+    return $b
+}
+
+# =====================  VIEW: HOME (executive)  =====================
+function New-HomeView {
     param([Parameter(Mandatory)] $Model)
-    $outer = New-Object Windows.Controls.StackPanel
-    $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
+    $stack = New-Object Windows.Controls.StackPanel; $stack.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
 
-    $outer.Children.Add((New-Text -Text $Model.greeting -Size 28 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
-    # brand accent underline
-    $rule = New-Object Windows.Controls.Border
-    $rule.Background = New-Brush $script:Col.Accent; $rule.Height = 3; $rule.Width = 66
-    $rule.HorizontalAlignment = 'Left'; $rule.CornerRadius = New-Object Windows.CornerRadius 2
-    $rule.Margin = New-Object Windows.Thickness (0, 4, 0, 8)
-    $outer.Children.Add($rule) | Out-Null
-    $outer.Children.Add((New-Text -Text $script:Theme.tagline -Size 13 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 12)))) | Out-Null
+    # greeting + brand quote
+    $stack.Children.Add((New-Text -Text $Model.greeting -Size 30 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+    $rule = New-Object Windows.Controls.Border; $rule.Background = New-Brush $script:Col.Accent; $rule.Height = 3; $rule.Width = 66
+    $rule.HorizontalAlignment = 'Left'; $rule.CornerRadius = New-Object Windows.CornerRadius 2; $rule.Margin = New-Object Windows.Thickness (0, 5, 0, 8)
+    $stack.Children.Add($rule) | Out-Null
+    $stack.Children.Add((New-Text -Text ('"{0}"' -f $Model.brandQuote) -Size 17 -Weight 'SemiBold' -Color $script:Col.AccentInk)) | Out-Null
+    $stack.Children.Add((New-Text -Text $Model.dateText -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 14)))) | Out-Null
 
-    $cards = New-Object Windows.Controls.Grid
-    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $cards.ColumnDefinitions.Add($cd) | Out-Null }
-    foreach ($i in 0..1) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::new(1, 'Star'); $cards.RowDefinitions.Add($rd) | Out-Null }
+    # ---- Row A: Top 3 Priorities | Tony Recommends ----
+    $gA = New-Object Windows.Controls.Grid
+    $c0 = New-Object Windows.Controls.ColumnDefinition; $c0.Width = [Windows.GridLength]::new(3, 'Star'); $gA.ColumnDefinitions.Add($c0) | Out-Null
+    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = [Windows.GridLength]::new(2, 'Star'); $gA.ColumnDefinitions.Add($c1) | Out-Null
 
-    # Agents (LIVE, click -> Agents)
-    $asBody = New-Object Windows.Controls.StackPanel
-    $bigRow = New-Object Windows.Controls.StackPanel; $bigRow.Orientation = 'Horizontal'
-    $bigRow.Children.Add((New-Text -Text ([string]$Model.agentSummary.total) -Size 42 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
-    $bigRow.Children.Add((New-Text -Text 'agents tracked' -Size 13 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (8, 20, 0, 0)))) | Out-Null
-    $asBody.Children.Add($bigRow) | Out-Null
-    $asBody.Children.Add((New-Text -Text 'STATUS' -Size 10.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
-    $sw = New-Object Windows.Controls.WrapPanel
-    foreach ($k in $Model.agentSummary.byStatus.Keys) { $n = $Model.agentSummary.byStatus[$k]; if ($n -gt 0) { $c = Get-StatusChipColors $k; $sw.Children.Add((New-Chip -Text ("{0} {1}" -f $k, $n) -Bg $c[0] -Fg $c[1])) | Out-Null } }
-    $asBody.Children.Add($sw) | Out-Null
-    $asBody.Children.Add((New-Text -Text 'PRIORITY' -Size 10.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 4)))) | Out-Null
-    $pw = New-Object Windows.Controls.WrapPanel
-    foreach ($k in $Model.agentSummary.byPriority.Keys) { $n = $Model.agentSummary.byPriority[$k]; $c = Get-PriorityChipColors $k; $pw.Children.Add((New-Chip -Text ("{0} {1}" -f $k, $n) -Bg $c[0] -Fg $c[1])) | Out-Null }
-    $asBody.Children.Add($pw) | Out-Null
-    $cards.Children.Add((New-Card -Title 'Agents' -Body $asBody -Col 0 -Row 0 -NavTo 'Agents')) | Out-Null
-
-    # Registry Health (LIVE)
-    $rh = $Model.registryHealth
-    $rhBody = New-Object Windows.Controls.StackPanel
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Registry version' -Value $rh.version)) | Out-Null
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Verified vs scheduler' -Value ($(if ($rh.verified) { 'Yes' } else { 'No' })) -ValueColor $(if ($rh.verified) { '#03543F' } else { '#9B1C1C' }))) | Out-Null
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Registry status' -Value $rh.registryStatus)) | Out-Null
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Health score' -Value ("{0} ({1})" -f $rh.overallHealth, $rh.healthCoverage))) | Out-Null
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Agents with issues' -Value ([string]$rh.agentsWithIssues))) | Out-Null
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Source' -Value $rh.sourceFile)) | Out-Null
-    $rhBody.Children.Add((New-KeyValueRow -Key 'Last updated' -Value $rh.lastUpdated)) | Out-Null
-    $cards.Children.Add((New-Card -Title 'Registry Health' -Body $rhBody -Col 1 -Row 0)) | Out-Null
-
-    # Current Sprint (placeholder) -> Weekly Review
-    $sp = $Model.currentSprint
-    $spBody = New-Object Windows.Controls.StackPanel
-    $spBody.Children.Add((New-Text -Text $sp.name -Size 15 -Weight 'Bold' -Wrap $true)) | Out-Null
-    $spBody.Children.Add((New-Text -Text $sp.objective -Size 12.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 8)))) | Out-Null
-    $spBody.Children.Add((New-Chip -Text ("Status: {0}" -f $sp.status) -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
-    $cards.Children.Add((New-Card -Title 'Current Sprint' -Body $spBody -Col 2 -Row 0 -NavTo 'Weekly Review')) | Out-Null
-
-    # Open Issues (from file) -> Issues
-    $oiBody = New-Object Windows.Controls.StackPanel
-    $oiBody.Children.Add((New-Text -Text ("{0} open flags" -f $Model.openIssues.Count) -Size 15 -Weight 'Bold' -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
-    foreach ($iss in ($Model.openIssues | Select-Object -First 7)) {
-        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 4)
-        $chip = New-Chip -Text $iss.id -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk; $chip.VerticalAlignment = 'Top'
-        [Windows.Controls.DockPanel]::SetDock($chip, 'Left'); $row.Children.Add($chip) | Out-Null
-        $tx = New-Text -Text $iss.title -Size 12 -Wrap $true; $tx.Margin = New-Object Windows.Thickness (4, 2, 0, 0)
-        $row.Children.Add($tx) | Out-Null
-        $oiBody.Children.Add($row) | Out-Null
+    $topBody = New-Object Windows.Controls.StackPanel
+    if (@($Model.top3).Count -eq 0) {
+        $topBody.Children.Add((New-Text -Text 'All clear - no open priorities right now.' -Size 13 -Color $script:Col.Muted)) | Out-Null
+    } else {
+        $i = 1
+        foreach ($p in $Model.top3) {
+            $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+            $badge = New-NumBadge -N $i; [Windows.Controls.DockPanel]::SetDock($badge, 'Left'); $row.Children.Add($badge) | Out-Null
+            $wrap = New-Object Windows.Controls.StackPanel
+            $wrap.Children.Add((New-Text -Text $p.title -Size 14 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+            $wrap.Children.Add((New-Text -Text $p.id -Size 11 -Color $script:Col.Muted)) | Out-Null
+            $row.Children.Add($wrap) | Out-Null
+            $topBody.Children.Add($row) | Out-Null
+            $i++
+        }
     }
-    $cards.Children.Add((New-Card -Title 'Open Issues' -Body $oiBody -Col 0 -Row 1 -NavTo 'Issues')) | Out-Null
+    $gA.Children.Add((New-Card -Title "Today's Top 3 Priorities" -Body $topBody -Col 0 -NavTo 'Action Items')) | Out-Null
 
-    # Action Items (from file) -> Action Items
-    $aiBody = New-Object Windows.Controls.StackPanel
-    $open = @($Model.actionItems | Where-Object { -not $_.done })
-    $aiBody.Children.Add((New-Text -Text ("{0} open, {1} total" -f $open.Count, $Model.actionItems.Count) -Size 15 -Weight 'Bold' -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
-    foreach ($ai in ($open | Select-Object -First 6)) {
-        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 5)
-        $mk = New-Text -Text '[ ]' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.Accent; $mk.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $mk.VerticalAlignment = 'Top'
-        [Windows.Controls.DockPanel]::SetDock($mk, 'Left'); $row.Children.Add($mk) | Out-Null
-        $row.Children.Add((New-Text -Text ("{0}  {1}" -f $ai.id, $ai.title) -Size 12 -Wrap $true)) | Out-Null
-        $aiBody.Children.Add($row) | Out-Null
+    $recBody = New-Object Windows.Controls.StackPanel
+    foreach ($r in $Model.tonyRecommends) {
+        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+        $dot = New-Text -Text "*" -Size 15 -Weight 'Bold' -Color $script:Col.Accent; $dot.Margin = New-Object Windows.Thickness (0, 0, 8, 0); $dot.VerticalAlignment = 'Top'
+        [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $row.Children.Add($dot) | Out-Null
+        $txt = New-Text -Text $r.text -Size 12.5 -Wrap $true
+        if ($r.source -eq 'placeholder') { $txt.Text = $r.text + '  (sample)' }
+        $row.Children.Add($txt) | Out-Null
+        $recBody.Children.Add($row) | Out-Null
     }
-    $cards.Children.Add((New-Card -Title 'Action Items' -Body $aiBody -Col 1 -Row 1 -NavTo 'Action Items')) | Out-Null
+    $gA.Children.Add((New-Card -Title 'Tony Recommends' -Body $recBody -Col 1)) | Out-Null
+    $stack.Children.Add($gA) | Out-Null
 
-    # Documents quick links
-    $qlBody = New-Object Windows.Controls.StackPanel
-    $qlBody.Children.Add((New-Text -Text 'Reads live from files:' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
-    foreach ($lnk in @(@('Weekly Review', 'weekly_status.md'), @('Roadmap', 'ROADMAP.md'))) {
-        $row = New-Object Windows.Controls.Border
-        $row.Cursor = 'Hand'; $row.Tag = $lnk[0]; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
-        $row.Background = New-Brush $script:Col.AccentSoft; $row.CornerRadius = New-Object Windows.CornerRadius 8; $row.Padding = New-Object Windows.Thickness (10, 6, 10, 6)
-        $row.Child = (New-Text -Text ("{0}  ->  {1}" -f $lnk[0], $lnk[1]) -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk)
-        $row.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
-        $qlBody.Children.Add($row) | Out-Null
+    # ---- Row B: Agency Overview | Upcoming Appointments | Agent Health ----
+    $gB = New-Object Windows.Controls.Grid
+    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $gB.ColumnDefinitions.Add($cd) | Out-Null }
+
+    # Agency Overview (placeholder metrics)
+    $agBody = New-Object Windows.Controls.Grid
+    foreach ($i in 0..1) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $agBody.ColumnDefinitions.Add($cd) | Out-Null }
+    $mi = 0
+    foreach ($m in $Model.agencyMetrics.items) {
+        $r = [int][math]::Floor($mi / 2); $c = $mi % 2
+        if ($c -eq 0) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $agBody.RowDefinitions.Add($rd) | Out-Null }
+        $cell = New-Object Windows.Controls.StackPanel; $cell.Margin = New-Object Windows.Thickness (0, 0, 8, 12)
+        $cell.Children.Add((New-Text -Text $m.value -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+        $cell.Children.Add((New-Text -Text $m.label -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+        [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c); $agBody.Children.Add($cell) | Out-Null
+        $mi++
     }
-    $cards.Children.Add((New-Card -Title 'Documents' -Body $qlBody -Col 2 -Row 1)) | Out-Null
+    $gB.Children.Add((New-Card -Title 'Agency Overview' -Body $agBody -Tag 'SAMPLE' -Col 0)) | Out-Null
 
-    $outer.Children.Add($cards) | Out-Null
+    # Upcoming Appointments (placeholder)
+    $apBody = New-Object Windows.Controls.StackPanel
+    foreach ($ap in $Model.appointments.items) {
+        $row = New-Object Windows.Controls.StackPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 9)
+        $row.Children.Add((New-Text -Text $ap.time -Size 12.5 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
+        $row.Children.Add((New-Text -Text $ap.title -Size 12.5 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+        $row.Children.Add((New-Text -Text $ap.who -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+        $apBody.Children.Add($row) | Out-Null
+    }
+    $gB.Children.Add((New-Card -Title 'Upcoming Appointments' -Body $apBody -Tag 'SAMPLE' -Col 1)) | Out-Null
+
+    # Agent Health Summary (live)
+    $h = $Model.agentHealth
+    $hBody = New-Object Windows.Controls.StackPanel
+    $big = New-Object Windows.Controls.StackPanel; $big.Orientation = 'Horizontal'
+    $big.Children.Add((New-Text -Text ([string]$h.total) -Size 30 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+    $big.Children.Add((New-Text -Text 'agents' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 15, 0, 0)))) | Out-Null
+    $hBody.Children.Add($big) | Out-Null
+    $sw = New-Object Windows.Controls.WrapPanel; $sw.Margin = New-Object Windows.Thickness (0, 4, 0, 4)
+    foreach ($k in $h.byStatus.Keys) { $n = $h.byStatus[$k]; if ($n -gt 0) { $cc = Get-StatusChipColors $k; $sw.Children.Add((New-Chip -Text ("{0} {1}" -f $k, $n) -Bg $cc[0] -Fg $cc[1])) | Out-Null } }
+    $hBody.Children.Add($sw) | Out-Null
+    $hBody.Children.Add((New-KeyValueRow -Key 'Health measured' -Value $h.healthCoverage)) | Out-Null
+    $hBody.Children.Add((New-KeyValueRow -Key 'Agents with issues' -Value ([string]$h.withIssues))) | Out-Null
+    $gB.Children.Add((New-Card -Title 'Agent Health' -Body $hBody -Col 2 -NavTo 'Agents')) | Out-Null
+    $stack.Children.Add($gB) | Out-Null
+
+    # ---- Quick links ----
+    $ql = New-Object Windows.Controls.StackPanel; $ql.Orientation = 'Horizontal'; $ql.Margin = New-Object Windows.Thickness (8, 6, 0, 6)
+    $ql.Children.Add((New-Text -Text 'Quick links:' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 4, 0)))) | Out-Null
+    foreach ($lnk in @('Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
+        $ql.Children.Add((New-MiniButton -Text $lnk -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $lnk -OnClick { param($s, $e) Set-ActiveView $s.Tag })) | Out-Null
+    }
+    $stack.Children.Add($ql) | Out-Null
+
+    # ---- System strip (lower priority) ----
+    $sys = New-Object Windows.Controls.Border
+    $sys.Background = New-Brush $script:Col.AppBg; $sys.BorderBrush = New-Brush $script:Col.Line; $sys.BorderThickness = New-Object Windows.Thickness (0, 1, 0, 0)
+    $sys.Margin = New-Object Windows.Thickness (8, 10, 8, 0); $sys.Padding = New-Object Windows.Thickness (0, 8, 0, 0)
+    $verified = if ($h.verified) { 'verified' } else { 'unverified' }
+    $sys.Child = (New-Text -Text ("System: registry v{0} ({1}) - {2} open issues - Focus: {3}" -f $h.registryVersion, $verified, $Model.issueCount, $Model.sprint) -Size 11 -Color $script:Col.Muted -Wrap $true)
+    $stack.Children.Add($sys) | Out-Null
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $stack
+    return $scroll
+}
+
+# =====================  VIEW: SETTINGS  =====================
+function New-SettingsView {
+    $t = $script:Theme
+    $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
+    $outer.Children.Add((New-Text -Text 'Settings' -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+    $outer.Children.Add((New-Text -Text 'Workspace & branding' -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 12)))) | Out-Null
+
+    $body = New-Object Windows.Controls.StackPanel
+    $body.Children.Add((New-KeyValueRow -Key 'Company' -Value $t.companyName)) | Out-Null
+    $body.Children.Add((New-KeyValueRow -Key 'Workspace' -Value $t.workspaceName)) | Out-Null
+    $body.Children.Add((New-KeyValueRow -Key 'Assistant' -Value $t.assistantName)) | Out-Null
+    $body.Children.Add((New-KeyValueRow -Key 'Version' -Value $t.version)) | Out-Null
+    $body.Children.Add((New-KeyValueRow -Key 'Theme' -Value $t.themeId)) | Out-Null
+    $sw = New-Object Windows.Controls.WrapPanel; $sw.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
+    foreach ($pair in @(@('Primary', $t.colors.primary), @('Accent', $t.colors.accent), @('Background', $t.colors.background))) {
+        $chip = New-Object Windows.Controls.Border; $chip.Background = New-Brush $pair[1]; $chip.Width = 26; $chip.Height = 26
+        $chip.CornerRadius = New-Object Windows.CornerRadius 6; $chip.Margin = New-Object Windows.Thickness (0, 0, 6, 0)
+        $chip.BorderBrush = New-Brush $script:Col.Line; $chip.BorderThickness = New-Object Windows.Thickness 1
+        $sw.Children.Add($chip) | Out-Null
+    }
+    $body.Children.Add($sw) | Out-Null
+    $note = New-Text -Text 'Branding is theme-driven. Edit theme/theme.json to re-brand this workspace (logo, colors, tagline, profile) - no code change needed. See THEME.md. Per-user personalization is planned; this is not multi-user yet.' -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
+    $body.Children.Add($note) | Out-Null
+
+    $card = New-Card -Title 'Workspace' -Body $body
+    $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
+    $outer.Children.Add($card) | Out-Null
     return $outer
 }
 
@@ -238,8 +288,7 @@ function New-AgentCard {
     param([Parameter(Mandatory)] $Agent)
     $a = $Agent
     $card = New-Object Windows.Controls.Border
-    $card.Background = New-Brush $script:Col.CardBg
-    $card.CornerRadius = New-Object Windows.CornerRadius 10
+    $card.Background = New-Brush $script:Col.CardBg; $card.CornerRadius = New-Object Windows.CornerRadius 10
     $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
     $card.Padding = New-Object Windows.Thickness 14; $card.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
     $stack = New-Object Windows.Controls.StackPanel
@@ -253,8 +302,7 @@ function New-AgentCard {
     $titleWrap = New-Object Windows.Controls.StackPanel; $titleWrap.Orientation = 'Horizontal'
     $titleWrap.Children.Add((New-Chip -Text $a.stable_id -Bg $script:Col.Primary -Fg $script:Col.OnPrimary)) | Out-Null
     $nm = New-Text -Text $a.name -Size 15 -Weight 'Bold'; $nm.VerticalAlignment = 'Center'; $nm.Margin = New-Object Windows.Thickness (2, 0, 0, 6)
-    $titleWrap.Children.Add($nm) | Out-Null
-    $head.Children.Add($titleWrap) | Out-Null
+    $titleWrap.Children.Add($nm) | Out-Null; $head.Children.Add($titleWrap) | Out-Null
     $stack.Children.Add($head) | Out-Null
 
     $deps    = if (@($a.dependencies).Count -gt 0) { ($a.dependencies -join ', ') } else { '-' }
@@ -272,8 +320,7 @@ function New-AgentCard {
         $cell = New-Object Windows.Controls.StackPanel; $cell.Orientation = 'Horizontal'; $cell.Margin = New-Object Windows.Thickness (0, 0, 12, 4)
         $cell.Children.Add((New-Text -Text ("{0}: " -f $pairs[$i][0]) -Size 12.5 -Color $script:Col.Muted)) | Out-Null
         $cell.Children.Add((New-Text -Text ([string]$pairs[$i][1]) -Size 12.5 -Weight 'SemiBold')) | Out-Null
-        [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c)
-        $grid.Children.Add($cell) | Out-Null
+        [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c); $grid.Children.Add($cell) | Out-Null
     }
     $stack.Children.Add($grid) | Out-Null
 
@@ -285,7 +332,6 @@ function New-AgentCard {
     $nt.Children.Add((New-Text -Text 'Notes / report' -Size 11 -Weight 'Bold' -Color $script:Col.Muted)) | Out-Null
     $nt.Children.Add((New-Text -Text $notes -Size 12.5 -Wrap $true)) | Out-Null
     $stack.Children.Add($nt) | Out-Null
-
     $card.Child = $stack
     return $card
 }
@@ -295,32 +341,17 @@ function New-AgentsView {
     $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
     $head.Children.Add((New-Text -Text 'Agents' -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
     $head.Children.Add((New-Text -Text ("{0} registered agents - live from agents_registry.json" -f @($Agents).Count) -Size 13 -Color $script:Col.Muted)) | Out-Null
-
     $list = New-Object Windows.Controls.StackPanel; $list.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
     foreach ($a in $Agents) { $list.Children.Add((New-AgentCard -Agent $a)) | Out-Null }
     $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $list
-
     $outer = New-Object Windows.Controls.DockPanel
-    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
-    $outer.Children.Add($scroll) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null; $outer.Children.Add($scroll) | Out-Null
     return $outer
 }
 
 # =====================  VIEW: ACTION ITEMS (interactive)  =====================
 $script:ActionArchiveMode = $false
 $script:ActionInputBox = $null
-
-function New-MiniButton {
-    param([string]$Text, [string]$Bg, [string]$Fg, [string]$Tag, [scriptblock]$OnClick)
-    $b = New-Object Windows.Controls.Border
-    $b.Background = New-Brush $Bg; $b.CornerRadius = New-Object Windows.CornerRadius 6
-    $b.Padding = New-Object Windows.Thickness (10, 5, 10, 5); $b.Margin = New-Object Windows.Thickness (6, 0, 0, 0)
-    $b.Cursor = 'Hand'; $b.VerticalAlignment = 'Center'
-    if ($Tag) { $b.Tag = $Tag }
-    $b.Child = (New-Text -Text $Text -Size 12 -Weight 'SemiBold' -Color $Fg)
-    if ($OnClick) { $b.Add_MouseLeftButtonUp($OnClick) | Out-Null }
-    return $b
-}
 
 function Refresh-ActionItems { $script:TonyBody.Child = New-ActionItemsView }
 
@@ -332,7 +363,6 @@ function New-ActionRow {
     $row.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $row.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
     $dp = New-Object Windows.Controls.DockPanel
 
-    # right-side action buttons
     $btns = New-Object Windows.Controls.StackPanel; $btns.Orientation = 'Horizontal'; $btns.HorizontalAlignment = 'Right'
     if ($ArchiveMode) {
         $btns.Children.Add((New-MiniButton -Text 'Restore' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $Item.id -OnClick {
@@ -342,24 +372,19 @@ function New-ActionRow {
         param($s, $e); $d = Get-ActionItemsData; Remove-ActionItem -Data $d -Id $s.Tag | Out-Null; Save-ActionItemsData $d; Refresh-ActionItems })) | Out-Null
     [Windows.Controls.DockPanel]::SetDock($btns, 'Right'); $dp.Children.Add($btns) | Out-Null
 
-    # checkbox (active mode) or a done marker (archive mode)
     if (-not $ArchiveMode) {
         $cb = New-Object Windows.Controls.CheckBox
-        $cb.IsChecked = [bool]$Item.done; $cb.Tag = $Item.id; $cb.VerticalAlignment = 'Center'
-        $cb.Margin = New-Object Windows.Thickness (0, 0, 10, 0)
+        $cb.IsChecked = [bool]$Item.done; $cb.Tag = $Item.id; $cb.VerticalAlignment = 'Center'; $cb.Margin = New-Object Windows.Thickness (0, 0, 10, 0)
         $cb.Add_Click({ param($s, $e); $d = Get-ActionItemsData; Set-ActionItemDone -Data $d -Id $s.Tag -Done ([bool]$s.IsChecked) | Out-Null; Save-ActionItemsData $d; Refresh-ActionItems }) | Out-Null
         [Windows.Controls.DockPanel]::SetDock($cb, 'Left'); $dp.Children.Add($cb) | Out-Null
     }
 
-    # id chip + title (strikethrough when done)
     $content = New-Object Windows.Controls.StackPanel; $content.Orientation = 'Horizontal'
     $content.Children.Add((New-Chip -Text $Item.id -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
     $title = New-Text -Text $Item.title -Size 13 -Wrap $true -Color $(if ($Item.done) { $script:Col.Muted } else { $script:Col.Ink })
     $title.VerticalAlignment = 'Center'; $title.Margin = New-Object Windows.Thickness (2, 0, 0, 0)
     if ($Item.done) { $title.TextDecorations = [System.Windows.TextDecorations]::Strikethrough }
-    $content.Children.Add($title) | Out-Null
-    $dp.Children.Add($content) | Out-Null
-
+    $content.Children.Add($title) | Out-Null; $dp.Children.Add($content) | Out-Null
     $row.Child = $dp
     return $row
 }
@@ -373,8 +398,6 @@ function New-ActionItemsView {
     $shown = if ($mode) { $archived } else { $active }
 
     $outer = New-Object Windows.Controls.DockPanel
-
-    # header (title + toggle)
     $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
     $head.Children.Add((New-Text -Text 'Action Items' -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
     $head.Children.Add((New-Text -Text 'Interactive - source of truth: action_items.json' -Size 12.5 -Color $script:Col.Muted)) | Out-Null
@@ -382,16 +405,13 @@ function New-ActionItemsView {
     $activeBtn = New-MiniButton -Text ("Active ({0})" -f $active.Count) -Bg $(if (-not $mode) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if (-not $mode) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e); $script:ActionArchiveMode = $false; Refresh-ActionItems }
     $activeBtn.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
     $archBtn = New-MiniButton -Text ("Archived ({0})" -f $archived.Count) -Bg $(if ($mode) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($mode) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e); $script:ActionArchiveMode = $true; Refresh-ActionItems }
-    $toggle.Children.Add($activeBtn) | Out-Null; $toggle.Children.Add($archBtn) | Out-Null
-    $head.Children.Add($toggle) | Out-Null
+    $toggle.Children.Add($activeBtn) | Out-Null; $toggle.Children.Add($archBtn) | Out-Null; $head.Children.Add($toggle) | Out-Null
     [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
 
-    # toolbar: add box + archive-completed (active mode only)
     if (-not $mode) {
         $bar = New-Object Windows.Controls.DockPanel; $bar.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
         $addBtn = New-MiniButton -Text '+ Add' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick {
-            param($s, $e)
-            $t = $script:ActionInputBox.Text
+            param($s, $e); $t = $script:ActionInputBox.Text
             if (-not [string]::IsNullOrWhiteSpace($t)) { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $t | Out-Null; Save-ActionItemsData $d; $script:ActionArchiveMode = $false; Refresh-ActionItems }
         }
         [Windows.Controls.DockPanel]::SetDock($addBtn, 'Right'); $bar.Children.Add($addBtn) | Out-Null
@@ -401,22 +421,16 @@ function New-ActionItemsView {
         [Windows.Controls.DockPanel]::SetDock($archComplete, 'Right'); $bar.Children.Add($archComplete) | Out-Null
         $tb = New-Object Windows.Controls.TextBox
         $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 13
-        $tb.Padding = New-Object Windows.Thickness (8, 6, 8, 6); $tb.VerticalContentAlignment = 'Center'
-        $tb.BorderBrush = New-Brush $script:Col.Line
+        $tb.Padding = New-Object Windows.Thickness (8, 6, 8, 6); $tb.VerticalContentAlignment = 'Center'; $tb.BorderBrush = New-Brush $script:Col.Line
         $tb.Add_KeyDown({ param($s, $e); if ($e.Key -eq 'Return' -and -not [string]::IsNullOrWhiteSpace($s.Text)) { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $s.Text | Out-Null; Save-ActionItemsData $d; $script:ActionArchiveMode = $false; Refresh-ActionItems } })
-        $script:ActionInputBox = $tb
-        $bar.Children.Add($tb) | Out-Null   # fills remaining space
-        [Windows.Controls.DockPanel]::SetDock($bar, 'Top')
-        $outer.Children.Add($bar) | Out-Null
+        $script:ActionInputBox = $tb; $bar.Children.Add($tb) | Out-Null
+        [Windows.Controls.DockPanel]::SetDock($bar, 'Top'); $outer.Children.Add($bar) | Out-Null
     }
 
-    # list
     $list = New-Object Windows.Controls.StackPanel; $list.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
     if ($shown.Count -eq 0) {
         $list.Children.Add((New-Text -Text $(if ($mode) { 'No archived items yet.' } else { 'No action items. Add one above.' }) -Size 13 -Color $script:Col.Muted)) | Out-Null
-    } else {
-        foreach ($it in $shown) { $list.Children.Add((New-ActionRow -Item $it -ArchiveMode $mode)) | Out-Null }
-    }
+    } else { foreach ($it in $shown) { $list.Children.Add((New-ActionRow -Item $it -ArchiveMode $mode)) | Out-Null } }
     $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $list
     $outer.Children.Add($scroll) | Out-Null
     return $outer
@@ -440,8 +454,7 @@ function New-MarkdownView {
     $outer = New-Object Windows.Controls.DockPanel
     $hd = New-Object Windows.Controls.StackPanel; $hd.Margin = New-Object Windows.Thickness (4, 0, 4, 8)
     $hd.Children.Add((New-Text -Text $Title -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
-    [Windows.Controls.DockPanel]::SetDock($hd, 'Top'); $outer.Children.Add($hd) | Out-Null
-    $outer.Children.Add($scroll) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($hd, 'Top'); $outer.Children.Add($hd) | Out-Null; $outer.Children.Add($scroll) | Out-Null
     return $outer
 }
 
@@ -451,102 +464,107 @@ function Set-ActiveView {
     $script:TonyActiveView = $Name
     foreach ($n in $script:TonyNav) {
         if ($n.Name -eq $Name) { $n.Border.Background = New-Brush $script:Col.Accent; $n.Text.Foreground = New-Brush $script:Col.OnPrimary }
-        else { $n.Border.Background = New-Brush $script:Col.PrimaryMid; $n.Text.Foreground = New-Brush $script:Col.OnPrimaryMuted }
+        else { $n.Border.Background = New-Brush $script:Col.Primary; $n.Text.Foreground = New-Brush $script:Col.OnPrimaryMuted }
     }
     $body = switch ($Name) {
-        'Dashboard'    { New-DashboardView -Model (Get-TonyModel -Now $script:TonyNow) }
-        'Agents'       { New-AgentsView    -Agents (Get-AgentsList) }
-        'Issues'       { New-MarkdownView  -Title 'Open Issues'   -Text (Get-DocText 'issues_log.md') }
+        'Home'         { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
+        'Agents'       { New-AgentsView     -Agents (Get-AgentsList) }
+        'Issues'       { New-MarkdownView   -Title 'Open Issues'   -Text (Get-DocText 'issues_log.md') }
         'Action Items' { New-ActionItemsView }
-        'Weekly Review'{ New-MarkdownView  -Title 'Weekly Review' -Text (Get-DocText 'weekly_status.md') }
-        'Roadmap'      { New-MarkdownView  -Title 'Roadmap'       -Text (Get-DocText 'ROADMAP.md') }
-        default        { New-DashboardView -Model (Get-TonyModel -Now $script:TonyNow) }
+        'Weekly Review'{ New-MarkdownView   -Title 'Weekly Review' -Text (Get-DocText 'weekly_status.md') }
+        'Roadmap'      { New-MarkdownView   -Title 'Roadmap'       -Text (Get-DocText 'ROADMAP.md') }
+        'Settings'     { New-SettingsView }
+        default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
 }
 
+function New-SidebarNavItem {
+    param([string]$Name)
+    $b = New-Object Windows.Controls.Border
+    $b.CornerRadius = New-Object Windows.CornerRadius 8; $b.Padding = New-Object Windows.Thickness (12, 9, 12, 9)
+    $b.Margin = New-Object Windows.Thickness (0, 0, 0, 4); $b.Cursor = 'Hand'; $b.Tag = $Name; $b.HorizontalAlignment = 'Stretch'
+    $t = New-Text -Text $Name -Size 13 -Weight 'SemiBold' -Color $script:Col.OnPrimaryMuted
+    $b.Child = $t
+    $b.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
+    return [pscustomobject]@{ Name = $Name; Border = $b; Text = $t }
+}
+
 function New-TonyShell {
-    param([string]$InitialView = 'Dashboard', [datetime]$Now = (Get-Date), [Parameter(Mandatory)] $Theme)
+    param([string]$InitialView = 'Home', [datetime]$Now = (Get-Date), [Parameter(Mandatory)] $Theme)
     Initialize-TonyTheme -Theme $Theme
     $script:TonyNow = $Now
+    $script:TonyNav = @()
 
-    $root = New-Object Windows.Controls.Border
-    $root.Background = New-Brush $script:Col.AppBg
-    $grid = New-Object Windows.Controls.Grid
-    foreach ($h in 'Auto', 'Auto', '*') {
+    $root = New-Object Windows.Controls.Grid
+    $cSide = New-Object Windows.Controls.ColumnDefinition; $cSide.Width = [Windows.GridLength]::new(238); $root.ColumnDefinitions.Add($cSide) | Out-Null
+    $cMain = New-Object Windows.Controls.ColumnDefinition; $cMain.Width = [Windows.GridLength]::new(1, 'Star'); $root.ColumnDefinitions.Add($cMain) | Out-Null
+
+    # ---------- sidebar ----------
+    $side = New-Object Windows.Controls.Border; $side.Background = New-Brush $script:Col.Primary
+    [Windows.Controls.Grid]::SetColumn($side, 0); $root.Children.Add($side) | Out-Null
+    $sideGrid = New-Object Windows.Controls.Grid; $sideGrid.Margin = New-Object Windows.Thickness (16, 18, 16, 16)
+    foreach ($h in 'Auto', 'Auto', '*', 'Auto', 'Auto', 'Auto') {
         $rd = New-Object Windows.Controls.RowDefinition
         $rd.Height = if ($h -eq '*') { [Windows.GridLength]::new(1, 'Star') } else { [Windows.GridLength]::Auto }
-        $grid.RowDefinitions.Add($rd) | Out-Null
+        $sideGrid.RowDefinitions.Add($rd) | Out-Null
     }
-    $root.Child = $grid
+    $side.Child = $sideGrid
 
-    # ---- top bar (branded) ----
-    $top = New-Object Windows.Controls.Border
-    $top.Background = New-Brush $script:Col.Primary; $top.Padding = New-Object Windows.Thickness (20, 12, 20, 12)
-    $topDock = New-Object Windows.Controls.DockPanel
-
-    # left: logo + wordmark + subtitle
-    $left = New-Object Windows.Controls.StackPanel; $left.Orientation = 'Horizontal'
+    # logo + wordmark
+    $logoRow = New-Object Windows.Controls.StackPanel; $logoRow.Orientation = 'Horizontal'
     $logoSrc = New-ImageSource $Theme.logoPath
     if ($logoSrc) {
-        $logo = New-Object Windows.Controls.Image; $logo.Source = $logoSrc; $logo.Height = 40; $logo.Width = 40
-        $logo.Margin = New-Object Windows.Thickness (0, 0, 12, 0); $logo.VerticalAlignment = 'Center'
-        $lb = New-Object Windows.Controls.Border; $lb.CornerRadius = New-Object Windows.CornerRadius 8; $lb.ClipToBounds = $true; $lb.Child = $logo
-        $left.Children.Add($lb) | Out-Null
+        $img = New-Object Windows.Controls.Image; $img.Source = $logoSrc; $img.Height = 34; $img.Width = 34; $img.Margin = New-Object Windows.Thickness (0, 0, 10, 0)
+        $lb = New-Object Windows.Controls.Border; $lb.CornerRadius = New-Object Windows.CornerRadius 7; $lb.ClipToBounds = $true; $lb.Child = $img; $lb.VerticalAlignment = 'Center'
+        $logoRow.Children.Add($lb) | Out-Null
     }
-    $brandStack = New-Object Windows.Controls.StackPanel; $brandStack.VerticalAlignment = 'Center'
-    $wordRow = New-Object Windows.Controls.StackPanel; $wordRow.Orientation = 'Horizontal'
+    $wmStack = New-Object Windows.Controls.StackPanel; $wmStack.VerticalAlignment = 'Center'
+    $wmRow = New-Object Windows.Controls.StackPanel; $wmRow.Orientation = 'Horizontal'
     $wm = $Theme.companyWordmark -split ' ', 2
-    $wordRow.Children.Add((New-Text -Text $wm[0] -Size 17 -Weight 'Bold' -Color $script:Col.OnPrimary)) | Out-Null
-    if ($wm.Count -gt 1) { $wordRow.Children.Add((New-Text -Text (' ' + $wm[1]) -Size 17 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null }
-    $brandStack.Children.Add($wordRow) | Out-Null
-    $brandStack.Children.Add((New-Text -Text ("{0}  -  v{1}" -f $Theme.assistantName, $Theme.version) -Size 11.5 -Color $script:Col.OnPrimaryMuted)) | Out-Null
-    $left.Children.Add($brandStack) | Out-Null
-    [Windows.Controls.DockPanel]::SetDock($left, 'Left'); $topDock.Children.Add($left) | Out-Null
+    $wmRow.Children.Add((New-Text -Text $wm[0] -Size 16 -Weight 'Bold' -Color $script:Col.OnPrimary)) | Out-Null
+    if ($wm.Count -gt 1) { $wmRow.Children.Add((New-Text -Text (' ' + $wm[1]) -Size 16 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null }
+    $wmStack.Children.Add($wmRow) | Out-Null
+    $wmStack.Children.Add((New-Text -Text 'Tony - AI Chief of Staff' -Size 10.5 -Color $script:Col.OnPrimaryMuted)) | Out-Null
+    $logoRow.Children.Add($wmStack) | Out-Null
+    [Windows.Controls.Grid]::SetRow($logoRow, 0); $sideGrid.Children.Add($logoRow) | Out-Null
 
-    # right: profile avatar + name + clock
-    $right = New-Object Windows.Controls.StackPanel; $right.Orientation = 'Horizontal'; $right.HorizontalAlignment = 'Right'
-    $meStack = New-Object Windows.Controls.StackPanel; $meStack.VerticalAlignment = 'Center'; $meStack.Margin = New-Object Windows.Thickness (0, 0, 12, 0)
-    if ($Theme.profileName) {
-        $pn = New-Text -Text $Theme.profileName -Size 12.5 -Weight 'SemiBold' -Color $script:Col.OnPrimary; $pn.HorizontalAlignment = 'Right'
-        $meStack.Children.Add($pn) | Out-Null
-    }
-    $clock = New-Text -Text ('{0}   -   {1}' -f $Now.ToString('dddd, MMMM d, yyyy'), $Now.ToString('h:mm:ss tt')) -Size 11.5 -Color $script:Col.OnPrimaryMuted
-    $clock.HorizontalAlignment = 'Right'; $meStack.Children.Add($clock) | Out-Null
-    $right.Children.Add($meStack) | Out-Null
+    # profile block
+    $prof = New-Object Windows.Controls.StackPanel; $prof.Margin = New-Object Windows.Thickness (0, 20, 0, 16); $prof.HorizontalAlignment = 'Left'
     $profSrc = New-ImageSource $Theme.profilePath
     if ($profSrc) {
-        $ell = New-Object Windows.Shapes.Ellipse; $ell.Width = 40; $ell.Height = 40
+        $ell = New-Object Windows.Shapes.Ellipse; $ell.Width = 66; $ell.Height = 66; $ell.HorizontalAlignment = 'Left'
         $ib = New-Object Windows.Media.ImageBrush; $ib.ImageSource = $profSrc; $ib.Stretch = 'UniformToFill'
-        $ell.Fill = $ib; $ell.Stroke = New-Brush $script:Col.Accent; $ell.StrokeThickness = 2; $ell.VerticalAlignment = 'Center'
-        $right.Children.Add($ell) | Out-Null
+        $ell.Fill = $ib; $ell.Stroke = New-Brush $script:Col.Accent; $ell.StrokeThickness = 2.5; $ell.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+        $prof.Children.Add($ell) | Out-Null
     }
-    [Windows.Controls.DockPanel]::SetDock($right, 'Right'); $topDock.Children.Add($right) | Out-Null
+    if ($Theme.profileName) { $prof.Children.Add((New-Text -Text $Theme.profileName -Size 15 -Weight 'Bold' -Color $script:Col.OnPrimary)) | Out-Null }
+    $prof.Children.Add((New-Text -Text 'Licensed Insurance Agent' -Size 11 -Color $script:Col.OnPrimaryMuted -Wrap $true)) | Out-Null
+    $prof.Children.Add((New-Text -Text $Theme.companyWordmark -Size 11 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 1, 0, 0)))) | Out-Null
+    [Windows.Controls.Grid]::SetRow($prof, 1); $sideGrid.Children.Add($prof) | Out-Null
 
-    $top.Child = $topDock
-    [Windows.Controls.Grid]::SetRow($top, 0); $grid.Children.Add($top) | Out-Null
-
-    # ---- nav bar ----
-    $navBar = New-Object Windows.Controls.Border
-    $navBar.Background = New-Brush $script:Col.PrimaryDark; $navBar.Padding = New-Object Windows.Thickness (14, 8, 14, 8)
-    $navStack = New-Object Windows.Controls.StackPanel; $navStack.Orientation = 'Horizontal'
-    $script:TonyNav = @()
-    foreach ($name in @('Dashboard', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
-        $b = New-Object Windows.Controls.Border
-        $b.CornerRadius = New-Object Windows.CornerRadius 7; $b.Padding = New-Object Windows.Thickness (14, 6, 14, 6)
-        $b.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $b.Cursor = 'Hand'; $b.Tag = $name
-        $t = New-Text -Text $name -Size 12.5 -Weight 'SemiBold' -Color $script:Col.OnPrimaryMuted
-        $b.Child = $t
-        $b.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
-        $navStack.Children.Add($b) | Out-Null
-        $script:TonyNav += [pscustomobject]@{ Name = $name; Border = $b; Text = $t }
+    # nav
+    $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
+    foreach ($name in @('Home', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
+        $item = New-SidebarNavItem -Name $name; $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
     }
-    $navBar.Child = $navStack
-    [Windows.Controls.Grid]::SetRow($navBar, 1); $grid.Children.Add($navBar) | Out-Null
+    [Windows.Controls.Grid]::SetRow($nav, 2); $sideGrid.Children.Add($nav) | Out-Null
 
-    # ---- body host ----
-    $body = New-Object Windows.Controls.Border; $body.Padding = New-Object Windows.Thickness (20, 18, 20, 18)
-    [Windows.Controls.Grid]::SetRow($body, 2); $grid.Children.Add($body) | Out-Null
+    # settings (row 3)
+    $setItem = New-SidebarNavItem -Name 'Settings'; $script:TonyNav += $setItem
+    [Windows.Controls.Grid]::SetRow($setItem.Border, 3); $sideGrid.Children.Add($setItem.Border) | Out-Null
+
+    # clock (row 4)
+    $clock = New-Text -Text ('{0}  -  {1}' -f $Now.ToString('ddd, MMM d'), $Now.ToString('h:mm tt')) -Size 11 -Color $script:Col.OnPrimaryMuted -Margin (New-Object Windows.Thickness (2, 8, 0, 0))
+    [Windows.Controls.Grid]::SetRow($clock, 4); $sideGrid.Children.Add($clock) | Out-Null
+
+    # version (row 5)
+    $ver = New-Text -Text ("v{0}" -f $Theme.version) -Size 10.5 -Color $script:Col.OnPrimaryMuted -Margin (New-Object Windows.Thickness (2, 4, 0, 0))
+    [Windows.Controls.Grid]::SetRow($ver, 5); $sideGrid.Children.Add($ver) | Out-Null
+
+    # ---------- main body ----------
+    $body = New-Object Windows.Controls.Border; $body.Background = New-Brush $script:Col.AppBg; $body.Padding = New-Object Windows.Thickness (22, 20, 22, 20)
+    [Windows.Controls.Grid]::SetColumn($body, 1); $root.Children.Add($body) | Out-Null
     $script:TonyBody = $body
 
     Set-ActiveView $InitialView

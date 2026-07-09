@@ -16,7 +16,7 @@ param(
     [int]      $Width  = 1180,
     [int]      $Height = 820,
     [datetime] $Now,
-    [string]   $View = 'Dashboard'
+    [string]   $View = 'Home'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,7 +76,7 @@ $timer = New-Object Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromSeconds(1)
 $timer.Add_Tick({
     $n = Get-Date
-    $clock.Text = ('{0}   -   {1}' -f $n.ToString('dddd, MMMM d, yyyy'), $n.ToString('h:mm:ss tt'))
+    $clock.Text = ('{0}  -  {1}' -f $n.ToString('ddd, MMM d'), $n.ToString('h:mm tt'))
 })
 $timer.Start()
 

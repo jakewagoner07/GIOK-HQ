@@ -41,23 +41,30 @@ which is why WPF was chosen over Electron.)
 
 ---
 
-## Hub navigation (Sprint Charlie)
+## Executive home (Sprint Echo)
 
-Tony Alpha is now a **command hub**, not a single screen. A persistent top bar (brand +
-live clock) and a nav bar sit above a swappable body. Six views:
+GIOK opens on **Jake's executive command center**, not a system console. A **left sidebar**
+(GIOK logo, Jake's photo, name, "Licensed Insurance Agent", "GIOK Agency", nav, Settings,
+version, clock) sits beside a main area that answers *"what does Jake need to know right now?"*
 
+**Home** shows: greeting, the brand line *"People Matter More Than Money."*, **Today's Top 3
+Priorities** (live from `action_items.json`), **Agency Overview** (placeholder metrics),
+**Tony Recommends** (live signals + sample nudges), **Upcoming Appointments** (placeholder),
+**Agent Health** (live from the registry), quick links, and a demoted system-status strip.
+
+Placeholder groups (appointments, agency metrics, some recommendations) are clearly marked
+and structured so live integrations can replace them later.
+
+### Navigation (left sidebar)
 | Tab | Reads from | Shows |
 |-----|-----------|-------|
-| **Dashboard** | agents_registry.json (+ the .md files, for summaries) | Greeting, clock, clickable summary cards |
+| **Home** | registry + action_items.json + issues_log.md + ROADMAP.md | Executive summary of the day |
 | **Agents** | `agents_registry.json` | Every registered agent with all fields |
 | **Issues** | `issues_log.md` | The full issues log |
-| **Action Items** | `action_items.md` | The full action-items list |
+| **Action Items** | `action_items.json` | Interactive task manager |
 | **Weekly Review** | `weekly_status.md` | The weekly status |
 | **Roadmap** | `ROADMAP.md` | The roadmap |
-
-**Clickable cards:** on the Dashboard, the summary cards are clickable — *Agents* opens the
-Agents view, *Open Issues* → Issues, *Action Items* → Action Items, *Current Sprint* →
-Weekly Review, plus quick links to Weekly Review / Roadmap.
+| **Settings** | theme | Workspace & branding info |
 
 **Agents view** shows, per agent: ID (`AG-###`), name, owner/department, priority, status,
 last run, health score, schedule, dependencies, issues, and notes/report.

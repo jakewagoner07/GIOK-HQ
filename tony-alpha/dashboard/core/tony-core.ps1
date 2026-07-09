@@ -145,3 +145,91 @@ function Get-TonyModel {
         }
     }
 }
+
+# ---- Sprint / current focus (LIVE from ROADMAP.md) ----
+function Get-SprintInfo {
+    try {
+        $lines = Get-Content -Path (Get-DocPath 'ROADMAP.md') -Encoding UTF8
+        foreach ($l in $lines) { if ($l -match '^##\s+(Phase.*STARTED.*)$') { return (($Matches[1] -replace '[#*]', '').Trim()) } }
+        foreach ($l in $lines) { if ($l -match '^##\s+(Phase\s*\d.*)$') { return (($Matches[1] -replace '[#*]', '').Trim()) } }
+    } catch { }
+    return 'See Roadmap'
+}
+
+# =====================================================================
+# Get-HomeModel  —  the executive home dashboard data
+# ---------------------------------------------------------------------
+# Assembles "what does Jake need to know right now" from live sources
+# (registry, action_items.json, issues_log.md, ROADMAP.md) plus clearly
+# marked PLACEHOLDER groups (appointments, agency metrics, some Tony
+# recommendations) that live integrations can replace later. Each
+# placeholder group carries source='placeholder'.
+# =====================================================================
+function Get-HomeModel {
+    param([datetime]$Now = (Get-Date))
+
+    $reg    = Get-Registry
+    $agents = @($reg.agents)
+
+    # --- agent health summary (LIVE) ---
+    $byStatus = [ordered]@{}
+    foreach ($s in $reg.meta.status_values) { $byStatus[$s] = 0 }
+    foreach ($a in $agents) { if ($byStatus.Contains($a.status)) { $byStatus[$a.status]++ } else { $byStatus[$a.status] = 1 } }
+    $withHealth       = @($agents | Where-Object { $null -ne $_.health_score })
+    $agentsWithIssues = @($agents | Where-Object { @($_.issues).Count -gt 0 })
+
+    # --- action items (LIVE from action_items.json) ---
+    $aiItems = if (Get-Command Get-ActionItemsData -ErrorAction SilentlyContinue) { @((Get-ActionItemsData).items) } else { @() }
+    $openAI  = @($aiItems | Where-Object { -not $_.archived -and -not $_.done })
+    $top3    = @($openAI | Select-Object -First 3)
+
+    # --- issues (LIVE from issues_log.md) ---
+    $issues = @(Get-IssuesSummary)
+
+    # --- Tony recommends (LIVE signals + PLACEHOLDER business nudges) ---
+    $recs = @()
+    if ($issues.Count -gt 0)  { $recs += [pscustomobject]@{ text = ("Resolve {0} open overlap/issue flags in the registry." -f $issues.Count); source = 'live' } }
+    if ($openAI.Count -gt 0)  { $recs += [pscustomobject]@{ text = ("Triage your top action items - {0} still open." -f $openAI.Count); source = 'live' } }
+    if (-not $reg.meta.verified_against_scheduler) { $recs += [pscustomobject]@{ text = 'Verify the agent registry against your live CoWork scheduler.'; source = 'live' } }
+    $recs += [pscustomobject]@{ text = 'Reach out to clients overdue for their annual Giok Checkup.'; source = 'placeholder' }
+    $recs += [pscustomobject]@{ text = 'Ask a happy client for a Founder-to-Founder referral.'; source = 'placeholder' }
+    $recs = @($recs | Select-Object -First 4)
+
+    # --- PLACEHOLDER groups (structured for future live integrations) ---
+    $agencyMetrics = @(
+        [pscustomobject]@{ label = 'Active Clients';     value = '128' }
+        [pscustomobject]@{ label = 'Policies in Force';  value = '214' }
+        [pscustomobject]@{ label = 'Checkups This Month';value = '12'  }
+        [pscustomobject]@{ label = 'Referrals (30d)';    value = '5'   }
+    )
+    $appointments = @(
+        [pscustomobject]@{ time = '9:30 AM';  title = 'Annual Giok Checkup'; who = 'The Millers' }
+        [pscustomobject]@{ time = '11:00 AM'; title = 'New client intake';    who = 'David R.'    }
+        [pscustomobject]@{ time = '2:00 PM';  title = 'Policy review';        who = 'Sarah T.'    }
+    )
+
+    return [pscustomobject]@{
+        greeting   = Get-Greeting -Now $Now
+        brandQuote = 'People Matter More Than Money.'
+        dateText   = $Now.ToString('dddd, MMMM d, yyyy')
+        timeText   = $Now.ToString('h:mm tt')
+
+        top3            = $top3
+        openActionCount = $openAI.Count
+        issueCount      = $issues.Count
+        sprint          = (Get-SprintInfo)
+
+        agentHealth = [pscustomobject]@{
+            total = $agents.Count; byStatus = $byStatus
+            healthCoverage = "$($withHealth.Count)/$($agents.Count)"
+            withIssues = $agentsWithIssues.Count
+            verified = [bool]$reg.meta.verified_against_scheduler
+            registryVersion = $reg.meta.version
+        }
+        tonyRecommends = $recs
+
+        # placeholders (clearly flagged)
+        agencyMetrics = [pscustomobject]@{ source = 'placeholder'; items = $agencyMetrics }
+        appointments  = [pscustomobject]@{ source = 'placeholder'; items = $appointments }
+    }
+}
