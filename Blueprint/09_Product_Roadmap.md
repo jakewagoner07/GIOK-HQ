@@ -27,8 +27,12 @@ scaffold that only pays off later — every release must save Jake time today (C
 
 - **Full Capture System** — voice, email, photo, clipboard, Android share → one inbox.
 - **Tony auto-routing** captures to type + workspace, learning from corrections.
-- **Live integrations begin:** Calendar and Email feed the Morning Brief and priorities; GHL
+- **Live integrations begin:** Calendar and Email feed the Morning Briefing and priorities; GHL
   feeds the Agency and Checkup pipeline.
+- **The Continuous Improvement Framework** becomes real: a full **Morning Briefing** (plan) and
+  the signature **End of Day Audit** (review + improve), with day scores, streaks, reflection,
+  and Tony's coaching summary — never shame, always coaching. (See
+  [Continuous_Improvement.md](Continuous_Improvement.md).)
 - **Life Score & Business Score** live, with trends and weekly coaching from Tony.
 - **The full workspace set** (Goals, Non-Negotiables, Health, Financial, Family, Home, Learning).
 - **The annual Giok Checkup** runs as a first-class, tracked ritual.
@@ -45,6 +49,10 @@ scaffold that only pays off later — every release must save Jake time today (C
   reversible work — always inside granted, revocable permissions.
 - **Deeper integrations:** finances, wearables, e-sign/quoting.
 - **Proactive coaching** against goals and scores, with early-warning nudges.
+- **Improvement in every workspace:** each workspace gains its own Plan → Execute → Audit →
+  Improve loop (Health Audit, Financial Audit, Agency Audit, Family Audit, Learning Audit, Home
+  Audit, and Tony's own audit), with daily/weekly/monthly/quarterly/annual history and trend
+  analysis.
 
 *Definition of done:* Jake trusts GIOK to run the machinery so he can focus on people and vision.
 

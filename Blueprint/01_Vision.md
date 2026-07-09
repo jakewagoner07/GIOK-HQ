@@ -51,6 +51,12 @@ agents, small-business owners, "Founders" — can run their lives on it too.
   unifies agency, health, finances, family, and learning into one operator's cockpit.
 - **The tool serves the human.** GIOK adapts to Jake, not the reverse. It should feel like a
   sharp chief of staff, not a form to fill out.
+- **Better, not busy.** *GIOK is not designed to help people become busy — it is designed to help
+  people become better.* Every meaningful area of life runs the same loop — **Plan → Execute →
+  Audit → Improve** — and GIOK's purpose is to guide Jake around that loop, every day, so
+  improvement compounds. This is the **Continuous Improvement Framework** (see
+  [Continuous_Improvement.md](Continuous_Improvement.md)), anchored daily by the **Morning
+  Briefing** (plan) and the **End of Day Audit** (review and improve).
 
 ## Tony's role
 

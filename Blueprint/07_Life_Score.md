@@ -51,6 +51,21 @@ As live integrations arrive, categories deepen with real data:
 - **Consistency:** automatic habit detection from captures and calendar.
 - **Relationships:** last-contact recency for key people (nudge before someone goes cold).
 
+## The Life Score and the improvement cycle
+The Life Score is the scoreboard for the **Plan → Execute → Audit → Improve** loop (see
+[Continuous_Improvement.md](Continuous_Improvement.md)):
+- The **Morning Briefing** opens with a **Life Score / Business Score snapshot** — where things
+  stand before the day begins (Plan).
+- The **End of Day Audit** produces an honest **Day Score** across the same categories (Overall,
+  Business, Health, Financial, Family, Consistency, Learning, Relationship), which rolls up into
+  the trend (Audit).
+- Those trends drive the next day's plan and Tony's coaching (Improve).
+- **Consistency** is scored from the non-negotiable streaks captured in the daily audit — the
+  most direct link between the daily ritual and the long-term score.
+
+Day scores are honest and never inflated to feel good; the audit's job is to make Jake better,
+not to flatter him.
+
 ## Future coaching
 The Life Score is the substrate for Tony's coaching:
 - **Weekly review:** Tony walks the scores, names the wins, flags the one category to focus on,

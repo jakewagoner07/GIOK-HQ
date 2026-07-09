@@ -9,9 +9,12 @@ question, every day: **"What should Jake focus on today?"**
 
 > **People Matter More Than Money.**
 > **Your brain is for thinking, not remembering.**
+> **GIOK helps you become better, not busy.**
 
-These two lines are the soul of the product. If a feature contradicts either one, it is wrong,
-no matter how clever it is.
+These lines are the soul of the product. If a feature contradicts any of them, it is wrong, no
+matter how clever it is. The third line is delivered through the **Continuous Improvement
+Framework** — Plan → Execute → Audit → Improve — run daily via the Morning Briefing and the End
+of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 
 ---
 
@@ -39,6 +42,7 @@ no matter how clever it is.
 | 10 | [Design System](10_Design_System.md) | Branding, color, type, components |
 | 11 | [Mobile Vision](11_Mobile_Vision.md) | The future mobile experience |
 | 12 | [Future Architecture](12_Future_Architecture.md) | Long-horizon architectural concepts |
+| — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
 | — | [Capture](Capture.md) | How Capture is built, version by version (companion to 05) |
 | — | [Tony Memory](Tony_Memory.md) | How Tony's structured memory evolves through V3 |
 

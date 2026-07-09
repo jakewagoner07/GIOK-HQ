@@ -18,9 +18,21 @@ Home. Home is the executive cockpit — calm, prioritized, glanceable, and perso
 
 ## Components
 
-### Morning Brief
-Tony's short narrative of the day: what happened overnight, what's due, what changed, and the one
-thing to not miss. Warm, concise, human. This is the first thing Jake reads.
+### Morning Briefing
+The **PLAN** step of the Continuous Improvement Framework, delivered as a short, warm, human read
+that prepares Jake for today's success. It always answers *"What should Jake focus on today?"* and
+eventually includes: Today's Priorities, Today's Calendar, Today's Top Goals, Today's
+Non-Negotiables, Tony Recommendations, Potential Risks, Big Opportunities, and a Life Score /
+Business Score snapshot. Full spec in [Continuous_Improvement.md](Continuous_Improvement.md). This
+is the first thing Jake reads each morning.
+
+### End of Day Audit
+The **AUDIT → IMPROVE** step, and one of GIOK's signature experiences. A guided, honest review of
+the day: day scores, wins, incomplete items (with Tony's move/reschedule/delete/delegate
+suggestions), non-negotiable streaks, reflection, and Tony's coaching summary — **never shaming,
+always coaching.** Home surfaces the prompt to run it at day's end and carries "Tomorrow's #1
+Priority" straight into tomorrow's Morning Briefing. Full spec in
+[Continuous_Improvement.md](Continuous_Improvement.md).
 
 ### Today's Priorities
 The top 3–5 things that actually matter today, drawn live from action items and the Checkup
@@ -68,7 +80,8 @@ Mission Control, ask Tony.
 ## Layout priority (top to bottom, importance-ordered)
 1. **Greeting + brand line** ("Good Morning, Jake" · *People Matter More Than Money*) + Quick
    Capture / Ask Tony.
-2. **Morning Brief** and **Today's Priorities** — the core of the answer.
+2. **Morning Briefing** and **Today's Priorities** — the core of the answer (and, at day's end,
+   the **End of Day Audit** prompt).
 3. **Tony Recommends** and **Notifications** — advice and events.
 4. **Agency Overview**, **Upcoming Appointments**, **Business Score** — the business band.
 5. **Life Score**, **Goals Progress**, **Recent Wins** — the life band.

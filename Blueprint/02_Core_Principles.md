@@ -61,6 +61,15 @@ If a feature doesn't give Jake back time or attention, it doesn't ship. "Cool" i
 The test for any addition: *does this reduce the mental tax of running a life and a business?*
 If the honest answer is no, cut it.
 
+### 10. Improve Continuously (Better, Not Busy)
+Every meaningful area of life runs the same loop — **Plan → Execute → Audit → Improve** — and
+GIOK exists to guide Jake around it, repeatedly. *GIOK is not designed to help people become
+busy; it is designed to help people become better.* This principle shapes every workspace: each
+should support planning, execution, honest audit, and improvement (see
+[Continuous_Improvement.md](Continuous_Improvement.md)). The daily anchors are the **Morning
+Briefing** and the **End of Day Audit** — which **never shames, always coaches.** A feature that
+adds motion without adding progress fails this principle.
+
 ---
 
 ## How to apply these
