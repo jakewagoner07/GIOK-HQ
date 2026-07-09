@@ -20,19 +20,42 @@
 $ErrorActionPreference = 'Stop'
 
 # ---- configuration (key + model live ONLY here) --------------------
+# A real Anthropic API key is ~100+ chars and starts sk-ant-api...  A key
+# is only accepted if it looks real - a short/placeholder value (e.g. the
+# example "sk-ant-...xxx") is IGNORED, so a stale placeholder can never
+# shadow a real key or make Tony think he's connected when he isn't.
+function Test-ClaudeKeyUsable {
+    param([string]$Key)
+    if ([string]::IsNullOrWhiteSpace($Key)) { return $false }
+    if ($Key.Trim().Length -lt 40) { return $false }                                   # real keys are far longer
+    if ($Key -match '\.\.\.') { return $false }                                        # placeholder ellipsis
+    if ($Key -match '(?i)xxxx|placeholder|your[-_ ]?api[-_ ]?key|paste|example|dummy') { return $false }
+    return $true
+}
+
 function Get-ClaudeConfig {
-    $key = $env:ANTHROPIC_API_KEY
+    $key = $null
     $model = $env:ANTHROPIC_MODEL
     $source = 'none'
-    if (-not [string]::IsNullOrWhiteSpace($key)) { $source = 'environment (ANTHROPIC_API_KEY)' }
-    $cfgFile = Join-Path $PSScriptRoot 'claude.config.json'
-    if (Test-Path $cfgFile) {
+
+    # 1) environment always wins
+    if (Test-ClaudeKeyUsable $env:ANTHROPIC_API_KEY) { $key = ([string]$env:ANTHROPIC_API_KEY).Trim(); $source = 'environment (ANTHROPIC_API_KEY)' }
+
+    # 2) config files, in priority order: dashboard-level first, then providers-level.
+    #    (Model may be read from a file even if its key isn't usable.)
+    $candidates = @(
+        (Join-Path $PSScriptRoot '..\claude.config.json')   # dashboard-level (tony-alpha/dashboard/claude.config.json)
+        (Join-Path $PSScriptRoot 'claude.config.json')       # providers-level
+    )
+    foreach ($cf in $candidates) {
+        if (-not (Test-Path $cf)) { continue }
         try {
-            $c = Get-Content -Path $cfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ([string]::IsNullOrWhiteSpace($key) -and $c.apiKey) { $key = $c.apiKey; $source = 'claude.config.json' }
-            if ($c.model) { $model = $c.model }
+            $c = Get-Content -Path $cf -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (-not $model -and $c.model) { $model = $c.model }
+            if (-not $key -and (Test-ClaudeKeyUsable $c.apiKey)) { $key = ([string]$c.apiKey).Trim(); $source = (Resolve-Path $cf).Path }
         } catch { }
     }
+
     if (-not $model) { $model = 'claude-sonnet-5' }   # sensible default; overridable. Never exposed to Tony.
     return [pscustomobject]@{
         apiKey     = $key
@@ -40,7 +63,7 @@ function Get-ClaudeConfig {
         endpoint   = 'https://api.anthropic.com/v1/messages'
         apiVersion = '2023-06-01'
         maxTokens  = 1024
-        configured = -not [string]::IsNullOrWhiteSpace($key)
+        configured = (Test-ClaudeKeyUsable $key)
         source     = $source
     }
 }
