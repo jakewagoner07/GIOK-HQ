@@ -41,6 +41,20 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Dark executive theme + "Ask Tony" command bar (Sprint Golf)
+
+GIOK ships in a **premium dark theme** by default — dark navy background, orange highlights,
+light text, rounded cards. It's fully theme-driven: edit `theme/theme.json` (`mode` + `colors`)
+to switch palettes, including back to light, without touching code. (Themes carry a `heading`
+color so titles render correctly on both dark and light backgrounds.)
+
+The Home screen has a global **"Ask Tony" command bar** (focus with **Ctrl+K**). It runs local
+commands — no external AI yet, just the foundation:
+- `open agents` / `open issues` / `open action items` / `open weekly review` / `open roadmap` → navigate
+- `add task: <text>` → creates a new action item in `action_items.json`
+
+Command parsing lives in `core/command-bar.ps1` (`Invoke-TonyCommand`), separate from the UI.
+
 ## Executive home (Sprint Echo)
 
 GIOK opens on **Jake's executive command center**, not a system console. A **left sidebar**

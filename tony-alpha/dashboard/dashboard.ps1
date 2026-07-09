@@ -27,6 +27,7 @@ try {
 
 . (Join-Path $PSScriptRoot 'core\tony-core.ps1')
 . (Join-Path $PSScriptRoot 'core\action-items.ps1')
+. (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 
@@ -80,11 +81,22 @@ $timer.Add_Tick({
 })
 $timer.Start()
 
+# Ctrl+K opens/focuses the global "Ask Tony" command bar
+$window.Add_PreviewKeyDown({
+    param($s, $e)
+    if ($e.Key -eq [System.Windows.Input.Key]::K -and ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control)) {
+        Focus-CommandBar
+        $e.Handled = $true
+    }
+})
+
 $null = $window.ShowDialog()
 
 }
 catch {
-    $msg = "Tony Alpha could not start.`n`n" + $_.Exception.Message
-    [System.Windows.MessageBox]::Show($msg, 'Tony Alpha', 'OK', 'Error') | Out-Null
+    $msg = "GIOK could not start.`n`n" + $_.Exception.Message
+    # In headless screenshot mode a modal dialog would block forever - print instead.
+    if ($Screenshot) { Write-Host "ERROR: $msg"; Write-Host $_.ScriptStackTrace; exit 1 }
+    [System.Windows.MessageBox]::Show($msg, 'GIOK', 'OK', 'Error') | Out-Null
     exit 1
 }

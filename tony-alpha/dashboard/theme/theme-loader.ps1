@@ -32,9 +32,9 @@ function Get-DefaultTheme {
         iconPath       = $null
         colors = [pscustomobject]@{
             primary = '#111827'; primaryDark = '#0B1220'; primaryMid = '#1F2A3A'
-            accent = '#2563EB'; accentLight = '#3B82F6'; accentDark = '#1E429F'; accentSoft = '#EAF0FE'
+            accent = '#2563EB'; accentLight = '#3B82F6'; accentDark = '#1E429F'; accentSoft = '#EAF0FE'; accentInk = '#1E429F'
             background = '#F3F5F9'; surface = '#FFFFFF'; text = '#1F2933'; textMuted = '#6B7280'
-            textOnPrimary = '#FFFFFF'; line = '#E5E7EB'
+            textOnPrimary = '#FFFFFF'; line = '#E5E7EB'; heading = '#111827'
         }
         typography = [pscustomobject]@{ fontFamily = 'Segoe UI'; headingFamily = 'Segoe UI' }
     }
@@ -70,10 +70,16 @@ function Get-Theme {
     $theme.iconPath    = & $resolve $raw.icon
 
     if ($raw.PSObject.Properties.Name -contains 'colors') {
-        foreach ($c in $raw.colors.PSObject.Properties.Name) { $theme.colors.$c = $raw.colors.$c }
+        foreach ($c in $raw.colors.PSObject.Properties.Name) {
+            if ($c -like '_*') { continue }   # skip comment/meta keys
+            $theme.colors | Add-Member -NotePropertyName $c -NotePropertyValue $raw.colors.$c -Force
+        }
     }
     if ($raw.PSObject.Properties.Name -contains 'typography') {
-        foreach ($t in $raw.typography.PSObject.Properties.Name) { $theme.typography.$t = $raw.typography.$t }
+        foreach ($t in $raw.typography.PSObject.Properties.Name) {
+            if ($t -like '_*') { continue }
+            $theme.typography | Add-Member -NotePropertyName $t -NotePropertyValue $raw.typography.$t -Force
+        }
     }
     return $theme
 }
