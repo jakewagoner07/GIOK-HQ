@@ -160,14 +160,28 @@ function ConvertTo-ClaudeMessages {
     return @($messages)
 }
 
+# Extract the answer from a Claude Messages response. The content is an
+# ARRAY of blocks and may include non-text blocks (e.g. a 'thinking' block)
+# BEFORE the answer - so we must concatenate every 'text' block, never just
+# content[0]. Taking content[0] blindly silently discards the real answer
+# whenever a thinking block comes first.
+function Get-ClaudeResponseText {
+    param($Response)
+    if (-not $Response -or -not $Response.content) { return '' }
+    $parts = @()
+    foreach ($blk in @($Response.content)) {
+        if ($blk.type -eq 'text' -and -not [string]::IsNullOrEmpty([string]$blk.text)) { $parts += [string]$blk.text }
+    }
+    return (($parts -join "`n").Trim())
+}
+
 # ---- the ONLY network call in GIOK (guarded) -----------------------
 function Invoke-ClaudeApi {
     param([string]$System, [array]$Messages, $Config)
     $headers = @{ 'x-api-key' = $Config.apiKey; 'anthropic-version' = $Config.apiVersion; 'content-type' = 'application/json' }
     $body = @{ model = $Config.model; max_tokens = $Config.maxTokens; system = $System; messages = $Messages } | ConvertTo-Json -Depth 8
     $resp = Invoke-RestMethod -Method Post -Uri $Config.endpoint -Headers $headers -Body $body
-    if ($resp.content -and @($resp.content).Count -gt 0) { return [string]$resp.content[0].text }
-    return ''
+    return (Get-ClaudeResponseText -Response $resp)
 }
 
 # ---- live connection test + status (for Settings) ------------------
@@ -250,12 +264,14 @@ $ClaudeProvider = [pscustomobject]@{
             Write-TonyDiag -Level 'warn' -Source 'claude' -Message ("Empty response after {0} ms." -f $sw.ElapsedMilliseconds)
             return New-TonyResponse -Answer (Get-ClaudeHonestMessage 'empty') -ProviderName 'claude' -Confidence 0.0 -NeedsClarification $false -ReasoningSummary 'Claude returned empty content.'
         }
-        Write-TonyDiag -Source 'claude' -Message ("Answered in {0} ms ({1} messages sent)." -f $sw.ElapsedMilliseconds, $messages.Count)
-        # pass through any action the reasoning engine already decided (so command-style inputs still act)
+        Write-TonyDiag -Source 'claude' -Message ("Answered in {0} ms ({1} chars, {2} messages sent)." -f $sw.ElapsedMilliseconds, $text.Length, $messages.Count)
+        # Claude returned plain text -> wrap it in a valid TonyResponse. NEVER discard
+        # a valid answer. pass through any action the reasoning engine already decided
+        # (so command-style inputs still act) without touching the answer text.
         $req = $Request.requestedAction
         $nav = if ($req -and $req.type -eq 'navigate') { $req.target } else { $null }
         $tasks = if ($req -and $req.type -eq 'create-action') { @($req.title) } else { @() }
-        return New-TonyResponse -Answer (Format-TonyVoice -Text $text) -ProviderName 'claude' -Confidence 0.85 -NeedsClarification $false -ReasoningSummary 'Answered by the connected provider.' -SuggestedNavigation $nav -SuggestedTasks $tasks
+        return New-TonyResponse -Answer (Format-TonyVoice -Text $text) -ProviderName 'claude' -Confidence 0.8 -NeedsClarification $false -SuggestedActions @() -ReasoningSummary 'Answered by the connected provider.' -SuggestedNavigation $nav -SuggestedTasks $tasks
     }
 }
 
