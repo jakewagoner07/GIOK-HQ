@@ -11,9 +11,10 @@
 #
 # SAFETY: the key is read from the environment (ANTHROPIC_API_KEY) or a
 # git-ignored config file - never hardcoded, never committed. If no key
-# is configured, the provider makes NO network call and returns an honest
-# "not connected" response, and Tony's "auto" selection falls back to the
-# local stub. No cloud sync, no Gmail/Calendar/GHL, no document ingestion.
+# is configured, the provider makes NO network call and returns an HONEST
+# "not connected" response (never a placeholder). If a call fails, it
+# returns an honest, classified message (auth / network / etc). No cloud
+# sync, no Gmail/Calendar/GHL, no document ingestion.
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -22,11 +23,13 @@ $ErrorActionPreference = 'Stop'
 function Get-ClaudeConfig {
     $key = $env:ANTHROPIC_API_KEY
     $model = $env:ANTHROPIC_MODEL
+    $source = 'none'
+    if (-not [string]::IsNullOrWhiteSpace($key)) { $source = 'environment (ANTHROPIC_API_KEY)' }
     $cfgFile = Join-Path $PSScriptRoot 'claude.config.json'
     if (Test-Path $cfgFile) {
         try {
             $c = Get-Content -Path $cfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            if (-not $key -and $c.apiKey) { $key = $c.apiKey }
+            if ([string]::IsNullOrWhiteSpace($key) -and $c.apiKey) { $key = $c.apiKey; $source = 'claude.config.json' }
             if ($c.model) { $model = $c.model }
         } catch { }
     }
@@ -38,9 +41,45 @@ function Get-ClaudeConfig {
         apiVersion = '2023-06-01'
         maxTokens  = 1024
         configured = -not [string]::IsNullOrWhiteSpace($key)
+        source     = $source
     }
 }
 function Test-ClaudeConfigured { return (Get-ClaudeConfig).configured }
+
+# ---- honest messaging + error classification ----------------------
+# Never a placeholder: when we can't answer, we say plainly why.
+function Get-ClaudeHonestMessage {
+    param([string]$Class)
+    switch ($Class) {
+        'not-configured' { "I'm not connected to my reasoning service yet - no Claude API key is configured. Add ANTHROPIC_API_KEY (or a claude.config.json) and I'll think this through with you." }
+        'auth-failed'    { "I can't authenticate with my reasoning service - the API key looks invalid or expired. Update it and I'll be right back." }
+        'network-error'  { "I can't reach my reasoning service right now - the network looks unavailable. Try me again once you're connected." }
+        'rate-limited'   { "My reasoning service is rate-limited at the moment. Give it a minute, then ask me again." }
+        'server-error'   { "My reasoning service hit a temporary error on its end. Let's try that again shortly." }
+        'empty'          { "I didn't get a complete answer back just now - ask me again and I'll try once more." }
+        default          { "The request to my reasoning service failed and I couldn't complete that. I've logged the details." }
+    }
+}
+
+# Classify a failed Invoke-RestMethod into an honest category. Works with
+# Windows PowerShell 5.1 (System.Net.WebException) - no key is ever read here.
+function Get-ClaudeErrorInfo {
+    param($ErrorRecord)
+    $ex = $ErrorRecord.Exception
+    $status = $null
+    try { if ($ex.Response -and ($ex.Response.PSObject.Properties.Name -contains 'StatusCode')) { $status = [int]$ex.Response.StatusCode } } catch { }
+    $wstatus = ''
+    try { if ($ex.PSObject.Properties.Name -contains 'Status') { $wstatus = [string]$ex.Status } } catch { }
+
+    $class = 'error'
+    if ($status -eq 401 -or $status -eq 403) { $class = 'auth-failed' }
+    elseif ($status -eq 429) { $class = 'rate-limited' }
+    elseif ($status -ge 500 -and $status -lt 600) { $class = 'server-error' }
+    elseif ($status -ge 400) { $class = 'error' }
+    elseif ($wstatus -in @('NameResolutionFailure', 'ConnectFailure', 'SendFailure', 'ReceiveFailure', 'Timeout', 'ProxyNameResolutionFailure', 'ConnectionClosed', 'TrustFailure', 'SecureChannelFailure')) { $class = 'network-error' }
+    elseif (-not $status) { $class = 'network-error' }
+    return [pscustomobject]@{ class = $class; status = $status; message = $ex.Message }
+}
 
 # ---- build the Claude call from a contract Request -----------------
 # Tony's scope and rules live in the SYSTEM prompt (kept internal to this
@@ -80,6 +119,24 @@ function Get-ClaudeUserContent {
     return ($lines -join "`n")
 }
 
+# Map the contract's conversationHistory into Anthropic messages. History
+# turns are {role='user'|'tony', text=...}; Anthropic needs 'user'/'assistant'
+# and a 'content' field. This is where Tony's turns become 'assistant'.
+function ConvertTo-ClaudeMessages {
+    param($History)
+    $messages = @()
+    foreach ($h in @($History)) {
+        $content = $null
+        if (($h.PSObject.Properties.Name -contains 'text') -and $h.text) { $content = [string]$h.text }
+        elseif (($h.PSObject.Properties.Name -contains 'content') -and $h.content) { $content = [string]$h.content }
+        if ([string]::IsNullOrWhiteSpace($content)) { continue }
+        $role = [string]$h.role
+        $arole = if ($role -eq 'tony' -or $role -eq 'assistant') { 'assistant' } else { 'user' }
+        $messages += @{ role = $arole; content = $content }
+    }
+    return @($messages)
+}
+
 # ---- the ONLY network call in GIOK (guarded) -----------------------
 function Invoke-ClaudeApi {
     param([string]$System, [array]$Messages, $Config)
@@ -90,27 +147,87 @@ function Invoke-ClaudeApi {
     return ''
 }
 
+# ---- live connection test + status (for Settings) ------------------
+# A minimal live request that classifies the outcome: connected / auth-failed
+# / network-error / etc. Costs a tiny token count; only run on demand.
+function Test-ClaudeConnection {
+    $cfg = Get-ClaudeConfig
+    if (-not $cfg.configured) { return [pscustomobject]@{ state = 'not-configured'; status = $null; message = 'No API key configured.' } }
+    $probe = [pscustomobject]@{ apiKey = $cfg.apiKey; model = $cfg.model; endpoint = $cfg.endpoint; apiVersion = $cfg.apiVersion; maxTokens = 8 }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $null = Invoke-ClaudeApi -System 'Connection check. Reply with the single word: ok.' -Messages @(@{ role = 'user'; content = 'ok' }) -Config $probe
+        $sw.Stop()
+        Write-TonyDiag -Source 'claude' -Message ("Connection test OK in {0} ms." -f $sw.ElapsedMilliseconds)
+        return [pscustomobject]@{ state = 'connected'; status = 200; message = ('Connected in {0} ms.' -f $sw.ElapsedMilliseconds) }
+    } catch {
+        $sw.Stop()
+        $info = Get-ClaudeErrorInfo -ErrorRecord $_
+        Write-TonyDiag -Level 'error' -Source 'claude' -Message ("Connection test {0} (status={1}) in {2} ms." -f $info.class, $info.status, $sw.ElapsedMilliseconds)
+        return [pscustomobject]@{ state = $info.class; status = $info.status; message = $info.message }
+    }
+}
+
+$script:ClaudeStatusCache = $null
+# Returns a display status for Settings. Without -Live it never hits the
+# network: not-configured (no key) or 'configured' (key loaded, untested).
+# With -Live it runs a real connection test and maps to the exact states.
+function Get-ClaudeStatus {
+    param([switch]$Live)
+    $cfg = Get-ClaudeConfig
+    if (-not $cfg.configured) {
+        $script:ClaudeStatusCache = $null
+        return [pscustomobject]@{ name = 'Claude'; configured = $false; source = $cfg.source; state = 'not-configured'; label = 'Claude Not Configured'; detail = 'No ANTHROPIC_API_KEY and no claude.config.json found. Tony will tell you honestly until one is set.' }
+    }
+    if (-not $Live) {
+        if ($script:ClaudeStatusCache) { return $script:ClaudeStatusCache }
+        return [pscustomobject]@{ name = 'Claude'; configured = $true; source = $cfg.source; state = 'configured'; label = 'Claude Configured'; detail = ('Key loaded from {0}. Run a connection test to confirm Tony can reach it.' -f $cfg.source) }
+    }
+    $t = Test-ClaudeConnection
+    $label = switch ($t.state) {
+        'connected'     { 'Claude Connected' }
+        'auth-failed'   { 'Claude Authentication Failed' }
+        'network-error' { 'Claude Network Error' }
+        'rate-limited'  { 'Claude Rate Limited' }
+        'server-error'  { 'Claude Service Error' }
+        default         { 'Claude Error' }
+    }
+    $script:ClaudeStatusCache = [pscustomobject]@{ name = 'Claude'; configured = $true; source = $cfg.source; state = $t.state; label = $label; detail = $t.message }
+    return $script:ClaudeStatusCache
+}
+
 # ---- the provider object (implements the contract) -----------------
 $ClaudeProvider = [pscustomobject]@{
     name         = 'claude'
     description  = 'Anthropic Claude. Model, endpoint, and key are internal to this provider.'
     isConfigured = { Test-ClaudeConfigured }
+    status       = { Get-ClaudeStatus }
     invoke       = {
         param($Request)
         $cfg = Get-ClaudeConfig
         if (-not $cfg.configured) {
-            # not connected: NO network call, honest response
-            return New-TonyResponse -Answer "I'm ready to help, but I'm not fully connected to my reasoning service yet. Once that's set up, I'll be able to talk this through with you." -ProviderName 'claude' -Confidence 0.0 -NeedsClarification $false -ReasoningSummary 'Claude provider registered but no API key configured; no request was sent.'
+            Write-TonyDiag -Level 'warn' -Source 'claude' -Message 'Invoke skipped: no API key configured (honest not-connected reply).'
+            return New-TonyResponse -Answer (Get-ClaudeHonestMessage 'not-configured') -ProviderName 'claude' -Confidence 0.0 -NeedsClarification $false -ReasoningSummary 'Not configured: no API key; no request sent.'
         }
         $system = Get-ClaudeSystemPrompt -Request $Request
-        $messages = @()
-        foreach ($h in @($Request.conversationHistory)) { if ($h.role -and $h.content) { $messages += @{ role = $h.role; content = $h.content } } }
+        $messages = ConvertTo-ClaudeMessages -History $Request.conversationHistory
         $messages += @{ role = 'user'; content = (Get-ClaudeUserContent -Request $Request) }
+
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
         try {
             $text = Invoke-ClaudeApi -System $system -Messages $messages -Config $cfg
+            $sw.Stop()
         } catch {
-            return New-TonyResponse -Answer "I couldn't reach my reasoning service just now - let's try again in a moment." -ProviderName 'claude' -Confidence 0.0 -ReasoningSummary ("Claude request failed: {0}" -f $_.Exception.Message)
+            $sw.Stop()
+            $info = Get-ClaudeErrorInfo -ErrorRecord $_
+            Write-TonyDiag -Level 'error' -Source 'claude' -Message ("Request {0} after {1} ms (status={2}): {3}" -f $info.class, $sw.ElapsedMilliseconds, $info.status, $info.message)
+            return New-TonyResponse -Answer (Get-ClaudeHonestMessage $info.class) -ProviderName 'claude' -Confidence 0.0 -NeedsClarification $false -ReasoningSummary ("Claude {0}." -f $info.class)
         }
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            Write-TonyDiag -Level 'warn' -Source 'claude' -Message ("Empty response after {0} ms." -f $sw.ElapsedMilliseconds)
+            return New-TonyResponse -Answer (Get-ClaudeHonestMessage 'empty') -ProviderName 'claude' -Confidence 0.0 -NeedsClarification $false -ReasoningSummary 'Claude returned empty content.'
+        }
+        Write-TonyDiag -Source 'claude' -Message ("Answered in {0} ms ({1} messages sent)." -f $sw.ElapsedMilliseconds, $messages.Count)
         # pass through any action the reasoning engine already decided (so command-style inputs still act)
         $req = $Request.requestedAction
         $nav = if ($req -and $req.type -eq 'navigate') { $req.target } else { $null }

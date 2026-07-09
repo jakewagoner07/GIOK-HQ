@@ -289,6 +289,12 @@ function Send-TonyMessage {
     $t = ''; if ($null -ne $Text) { $t = $Text.Trim() }
     if ($t -eq '') { return }
 
+    # Capture the PRIOR turns BEFORE saving this one, so Tony gets the recent
+    # conversation without the current question duplicated (keeps user/assistant
+    # turns alternating for the provider).
+    $priorHistory = @()
+    if (Get-Command Get-RecentConversation -ErrorAction SilentlyContinue) { $priorHistory = @(Get-RecentConversation -Count 8) }
+
     $data = Get-ConversationLog
     Add-ConversationMessage -Data $data -Role 'user' -Text $t | Out-Null
     Save-ConversationLog -Data $data
@@ -316,7 +322,7 @@ function Send-TonyMessage {
         $msg = 'I hear you.'; $provider = 'tony'
         if (Get-Command Invoke-TonyBrain -ErrorAction SilentlyContinue) {
             try {
-                $brain = Invoke-TonyBrain -UserInput $t -CurrentWorkspace $work -History (Get-RecentConversation -Count 8)
+                $brain = Invoke-TonyBrain -UserInput $t -CurrentWorkspace $work -History $priorHistory
                 if ($brain.message) { $msg = $brain.message }
                 if ($brain.provider) { $provider = $brain.provider }
             } catch { $msg = 'Something went sideways on my end - give me another try.' }
@@ -784,6 +790,68 @@ function New-HomeView {
 }
 
 # =====================  VIEW: SETTINGS  =====================
+# ---- provider status (Tony's reasoning) for Settings ----
+$script:ProvStatusPill = $null; $script:ProvStatusPillText = $null; $script:ProvStatusDetail = $null; $script:ProvStatusSource = $null
+
+function Get-ProviderStateColors {
+    param([string]$State)
+    switch ($State) {
+        'connected'      { @('#DEF7EC', '#03543F') }
+        'configured'     { @($script:Col.AccentSoft, $script:Col.AccentInk) }
+        'not-configured' { @('#FDF6B2', '#8E4B10') }
+        'rate-limited'   { @('#FDF6B2', '#8E4B10') }
+        default          { @('#FDE2E1', '#9B1C1C') }   # auth-failed / network-error / server-error / error
+    }
+}
+
+function Set-ProviderStatusDisplay {
+    param($Status)
+    if (-not $script:ProvStatusPill) { return }
+    $cols = Get-ProviderStateColors $Status.state
+    $script:ProvStatusPill.Background = New-Brush $cols[0]
+    $script:ProvStatusPillText.Text = $Status.label
+    $script:ProvStatusPillText.Foreground = New-Brush $cols[1]
+    if ($script:ProvStatusDetail) { $script:ProvStatusDetail.Text = $Status.detail }
+    if ($script:ProvStatusSource) { $script:ProvStatusSource.Text = ('Key source: {0}' -f $Status.source) }
+}
+
+function New-ProviderStatusCard {
+    $body = New-Object Windows.Controls.StackPanel
+
+    if (Get-Command Get-ClaudeStatus -ErrorAction SilentlyContinue) { $status = Get-ClaudeStatus } else { $status = [pscustomobject]@{ name = 'Claude'; state = 'not-configured'; label = 'Claude Not Configured'; detail = 'Provider unavailable.'; source = 'none' } }
+
+    $body.Children.Add((New-KeyValueRow -Key 'Provider' -Value 'Claude (Anthropic)')) | Out-Null
+
+    $body.Children.Add((New-Text -Text 'STATUS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
+    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 9; $pill.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $pill.HorizontalAlignment = 'Left'
+    $pillText = New-Text -Text $status.label -Size 12.5 -Weight 'Bold' -Color '#03543F'
+    $pill.Child = $pillText
+    $script:ProvStatusPill = $pill; $script:ProvStatusPillText = $pillText
+    $body.Children.Add($pill) | Out-Null
+
+    $detail = New-Text -Text $status.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0))
+    $script:ProvStatusDetail = $detail; $body.Children.Add($detail) | Out-Null
+    $src = New-Text -Text ('Key source: {0}' -f $status.source) -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 0, 0))
+    $script:ProvStatusSource = $src; $body.Children.Add($src) | Out-Null
+
+    $btn = New-MiniButton -Text 'Test Connection' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Get-ClaudeStatus -ErrorAction SilentlyContinue) { Set-ProviderStatusDisplay (Get-ClaudeStatus -Live) } }
+    $btn.Margin = New-Object Windows.Thickness (0, 14, 0, 0); $btn.HorizontalAlignment = 'Left'; $body.Children.Add($btn) | Out-Null
+
+    $tail = @(); if (Get-Command Get-TonyDiagTail -ErrorAction SilentlyContinue) { $tail = @(Get-TonyDiagTail -Count 6) }
+    if ($tail.Count -gt 0) {
+        $body.Children.Add((New-Text -Text 'RECENT ACTIVITY' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 14, 0, 4)))) | Out-Null
+        foreach ($ln in $tail) { $body.Children.Add((New-Text -Text $ln -Size 10.5 -Color $script:Col.Muted -Wrap $true)) | Out-Null }
+    }
+
+    $note = New-Text -Text 'Tony never shows placeholder answers. With no key configured, he tells you honestly; when connected, he answers through the provider. The model name stays inside the provider.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 14, 0, 0))
+    $body.Children.Add($note) | Out-Null
+
+    Set-ProviderStatusDisplay $status
+    $card = New-Card -Title "Tony's Reasoning" -Body $body
+    $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    return $card
+}
+
 function New-SettingsView {
     $t = $script:Theme
     $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -812,7 +880,12 @@ function New-SettingsView {
     $card = New-Card -Title 'Workspace' -Body $body
     $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
     $outer.Children.Add($card) | Out-Null
-    return $outer
+
+    # Tony's Reasoning - live provider status (Claude Connected / Not Configured / ...)
+    $outer.Children.Add((New-ProviderStatusCard)) | Out-Null
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $outer
+    return $scroll
 }
 
 # =====================  PLACEHOLDER DETAIL VIEWS  =====================

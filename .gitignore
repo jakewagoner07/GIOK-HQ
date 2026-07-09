@@ -5,3 +5,7 @@ tony-alpha/dashboard/providers/claude.config.json
 # Private conversation history — Talk with Tony stays local, never on GitHub.
 tony-alpha/conversation.json
 **/conversation.json
+
+# Local diagnostics logs — runtime only, never committed.
+tony-alpha/logs/
+**/tony-diagnostics.log

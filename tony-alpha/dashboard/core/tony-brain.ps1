@@ -167,6 +167,28 @@ function Invoke-TonyFutureIntegration { param([string]$Name) return (New-TonyAct
 $script:TonyProviders = @{}
 $script:TonyActiveProvider = 'auto'   # 'auto' picks a configured real provider, else the local stub
 
+# ---- diagnostics ----------------------------------------------------
+# A local, append-only log of Tony's reasoning/provider activity so we can
+# see what happened (which provider answered, how long it took, why a call
+# failed). NEVER logs the API key or the user's message text - only provider
+# name, outcome, timing, and error class. Local file; gitignored.
+function Get-TonyDiagPath { return (Join-Path $PSScriptRoot '..\..\logs\tony-diagnostics.log') }
+function Write-TonyDiag {
+    param([string]$Level = 'info', [string]$Source = 'tony', [string]$Message = '')
+    try {
+        $dir = Split-Path (Get-TonyDiagPath) -Parent
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $line = '{0}  [{1}]  {2}: {3}' -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $Level.ToUpper(), $Source, $Message
+        Add-Content -Path (Get-TonyDiagPath) -Value $line -Encoding UTF8
+    } catch { }
+}
+function Get-TonyDiagTail {
+    param([int]$Count = 20)
+    $p = Get-TonyDiagPath
+    if (-not (Test-Path $p)) { return @() }
+    try { return @(Get-Content -Path $p -Tail $Count -Encoding UTF8) } catch { return @() }
+}
+
 function Get-TonyProviderContract {
     # The shape every provider must implement.
     return [pscustomobject]@{
@@ -187,16 +209,21 @@ function Get-TonyProviders { return @($script:TonyProviders.Values) }
 function Set-TonyActiveProvider { param([string]$Name) if ($Name -eq 'auto' -or $script:TonyProviders.ContainsKey($Name)) { $script:TonyActiveProvider = $Name } }
 
 # Resolve which provider actually answers. 'auto' prefers the first
-# registered real (non-stub) provider that reports it is configured;
-# otherwise it falls back to the local stub. The brain never names a model.
+# registered real (non-stub) provider that reports it is configured. If no
+# real provider is configured, it STILL routes to the first real provider so
+# that provider can answer HONESTLY about not being connected - Tony never
+# shows a fake placeholder answer. The local stub is used only when no real
+# provider is registered at all (e.g. brain-only unit tests). The brain
+# never names a model.
 function Resolve-TonyProvider {
     if ($script:TonyActiveProvider -ne 'auto') { return $script:TonyActiveProvider }
-    foreach ($p in $script:TonyProviders.Values) {
-        if ($p.name -eq 'local-stub') { continue }
+    $reals = @($script:TonyProviders.Values | Where-Object { $_.name -ne 'local-stub' })
+    foreach ($p in $reals) {
         $ok = $true
-        if (($p.PSObject.Properties.Name -contains 'isConfigured') -and $p.isConfigured) { $ok = [bool](& $p.isConfigured) }
+        if (($p.PSObject.Properties.Name -contains 'isConfigured') -and $p.isConfigured) { try { $ok = [bool](& $p.isConfigured) } catch { $ok = $false } }
         if ($ok) { return $p.name }
     }
+    if ($reals.Count -gt 0) { return $reals[0].name }   # honest "not connected" beats a placeholder
     return 'local-stub'
 }
 
@@ -206,7 +233,8 @@ function Invoke-TonyProvider {
     param([Parameter(Mandatory)] $Request)
     $name = Resolve-TonyProvider
     $p = $script:TonyProviders[$name]
-    if (-not $p) { return (New-TonyResponse -Answer 'No AI provider is connected.' -ProviderName 'none' -Confidence 0.0) }
+    if (-not $p) { Write-TonyDiag -Level 'error' -Source 'provider' -Message 'No provider resolved.'; return (New-TonyResponse -Answer 'No AI provider is connected.' -ProviderName 'none' -Confidence 0.0) }
+    Write-TonyDiag -Source 'provider' -Message ("Resolved provider '{0}' (active='{1}')." -f $name, $script:TonyActiveProvider)
     return (& $p.invoke $Request)
 }
 
