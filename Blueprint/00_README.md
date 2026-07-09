@@ -46,6 +46,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | 11 | [Mobile Vision](11_Mobile_Vision.md) | The future mobile experience |
 | 12 | [Future Architecture](12_Future_Architecture.md) | Long-horizon architectural concepts |
 | 13 | [Project Diamond](13_Project_Diamond.md) | The standard for building GIOK — quality over quantity |
+| — | [Tony's Brain](Tony_Brain.md) | Tony's reasoning architecture; the AI provider seam |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
