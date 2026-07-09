@@ -306,6 +306,122 @@ function New-AgentsView {
     return $outer
 }
 
+# =====================  VIEW: ACTION ITEMS (interactive)  =====================
+$script:ActionArchiveMode = $false
+$script:ActionInputBox = $null
+
+function New-MiniButton {
+    param([string]$Text, [string]$Bg, [string]$Fg, [string]$Tag, [scriptblock]$OnClick)
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush $Bg; $b.CornerRadius = New-Object Windows.CornerRadius 6
+    $b.Padding = New-Object Windows.Thickness (10, 5, 10, 5); $b.Margin = New-Object Windows.Thickness (6, 0, 0, 0)
+    $b.Cursor = 'Hand'; $b.VerticalAlignment = 'Center'
+    if ($Tag) { $b.Tag = $Tag }
+    $b.Child = (New-Text -Text $Text -Size 12 -Weight 'SemiBold' -Color $Fg)
+    if ($OnClick) { $b.Add_MouseLeftButtonUp($OnClick) | Out-Null }
+    return $b
+}
+
+function Refresh-ActionItems { $script:TonyBody.Child = New-ActionItemsView }
+
+function New-ActionRow {
+    param([Parameter(Mandatory)] $Item, [bool]$ArchiveMode)
+    $row = New-Object Windows.Controls.Border
+    $row.Background = New-Brush $script:Col.CardBg; $row.CornerRadius = New-Object Windows.CornerRadius 8
+    $row.BorderBrush = New-Brush $script:Col.Line; $row.BorderThickness = New-Object Windows.Thickness 1
+    $row.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $row.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
+    $dp = New-Object Windows.Controls.DockPanel
+
+    # right-side action buttons
+    $btns = New-Object Windows.Controls.StackPanel; $btns.Orientation = 'Horizontal'; $btns.HorizontalAlignment = 'Right'
+    if ($ArchiveMode) {
+        $btns.Children.Add((New-MiniButton -Text 'Restore' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $Item.id -OnClick {
+            param($s, $e); $d = Get-ActionItemsData; Set-ActionItemArchived -Data $d -Id $s.Tag -Archived $false | Out-Null; Save-ActionItemsData $d; Refresh-ActionItems })) | Out-Null
+    }
+    $btns.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -Tag $Item.id -OnClick {
+        param($s, $e); $d = Get-ActionItemsData; Remove-ActionItem -Data $d -Id $s.Tag | Out-Null; Save-ActionItemsData $d; Refresh-ActionItems })) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($btns, 'Right'); $dp.Children.Add($btns) | Out-Null
+
+    # checkbox (active mode) or a done marker (archive mode)
+    if (-not $ArchiveMode) {
+        $cb = New-Object Windows.Controls.CheckBox
+        $cb.IsChecked = [bool]$Item.done; $cb.Tag = $Item.id; $cb.VerticalAlignment = 'Center'
+        $cb.Margin = New-Object Windows.Thickness (0, 0, 10, 0)
+        $cb.Add_Click({ param($s, $e); $d = Get-ActionItemsData; Set-ActionItemDone -Data $d -Id $s.Tag -Done ([bool]$s.IsChecked) | Out-Null; Save-ActionItemsData $d; Refresh-ActionItems }) | Out-Null
+        [Windows.Controls.DockPanel]::SetDock($cb, 'Left'); $dp.Children.Add($cb) | Out-Null
+    }
+
+    # id chip + title (strikethrough when done)
+    $content = New-Object Windows.Controls.StackPanel; $content.Orientation = 'Horizontal'
+    $content.Children.Add((New-Chip -Text $Item.id -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+    $title = New-Text -Text $Item.title -Size 13 -Wrap $true -Color $(if ($Item.done) { $script:Col.Muted } else { $script:Col.Ink })
+    $title.VerticalAlignment = 'Center'; $title.Margin = New-Object Windows.Thickness (2, 0, 0, 0)
+    if ($Item.done) { $title.TextDecorations = [System.Windows.TextDecorations]::Strikethrough }
+    $content.Children.Add($title) | Out-Null
+    $dp.Children.Add($content) | Out-Null
+
+    $row.Child = $dp
+    return $row
+}
+
+function New-ActionItemsView {
+    $data = Get-ActionItemsData
+    $items = @($data.items)
+    $active   = @($items | Where-Object { -not $_.archived })
+    $archived = @($items | Where-Object { $_.archived })
+    $mode = [bool]$script:ActionArchiveMode
+    $shown = if ($mode) { $archived } else { $active }
+
+    $outer = New-Object Windows.Controls.DockPanel
+
+    # header (title + toggle)
+    $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+    $head.Children.Add((New-Text -Text 'Action Items' -Size 24 -Weight 'Bold' -Color $script:Col.Primary)) | Out-Null
+    $head.Children.Add((New-Text -Text 'Interactive - source of truth: action_items.json' -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $toggle = New-Object Windows.Controls.StackPanel; $toggle.Orientation = 'Horizontal'; $toggle.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+    $activeBtn = New-MiniButton -Text ("Active ({0})" -f $active.Count) -Bg $(if (-not $mode) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if (-not $mode) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e); $script:ActionArchiveMode = $false; Refresh-ActionItems }
+    $activeBtn.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
+    $archBtn = New-MiniButton -Text ("Archived ({0})" -f $archived.Count) -Bg $(if ($mode) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($mode) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e); $script:ActionArchiveMode = $true; Refresh-ActionItems }
+    $toggle.Children.Add($activeBtn) | Out-Null; $toggle.Children.Add($archBtn) | Out-Null
+    $head.Children.Add($toggle) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
+
+    # toolbar: add box + archive-completed (active mode only)
+    if (-not $mode) {
+        $bar = New-Object Windows.Controls.DockPanel; $bar.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+        $addBtn = New-MiniButton -Text '+ Add' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick {
+            param($s, $e)
+            $t = $script:ActionInputBox.Text
+            if (-not [string]::IsNullOrWhiteSpace($t)) { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $t | Out-Null; Save-ActionItemsData $d; $script:ActionArchiveMode = $false; Refresh-ActionItems }
+        }
+        [Windows.Controls.DockPanel]::SetDock($addBtn, 'Right'); $bar.Children.Add($addBtn) | Out-Null
+        $archComplete = New-MiniButton -Text 'Archive completed' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+            param($s, $e); $d = Get-ActionItemsData; [void](Invoke-ArchiveCompleted -Data $d); Save-ActionItemsData $d; Refresh-ActionItems
+        }
+        [Windows.Controls.DockPanel]::SetDock($archComplete, 'Right'); $bar.Children.Add($archComplete) | Out-Null
+        $tb = New-Object Windows.Controls.TextBox
+        $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 13
+        $tb.Padding = New-Object Windows.Thickness (8, 6, 8, 6); $tb.VerticalContentAlignment = 'Center'
+        $tb.BorderBrush = New-Brush $script:Col.Line
+        $tb.Add_KeyDown({ param($s, $e); if ($e.Key -eq 'Return' -and -not [string]::IsNullOrWhiteSpace($s.Text)) { $d = Get-ActionItemsData; Add-ActionItem -Data $d -Title $s.Text | Out-Null; Save-ActionItemsData $d; $script:ActionArchiveMode = $false; Refresh-ActionItems } })
+        $script:ActionInputBox = $tb
+        $bar.Children.Add($tb) | Out-Null   # fills remaining space
+        [Windows.Controls.DockPanel]::SetDock($bar, 'Top')
+        $outer.Children.Add($bar) | Out-Null
+    }
+
+    # list
+    $list = New-Object Windows.Controls.StackPanel; $list.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
+    if ($shown.Count -eq 0) {
+        $list.Children.Add((New-Text -Text $(if ($mode) { 'No archived items yet.' } else { 'No action items. Add one above.' }) -Size 13 -Color $script:Col.Muted)) | Out-Null
+    } else {
+        foreach ($it in $shown) { $list.Children.Add((New-ActionRow -Item $it -ArchiveMode $mode)) | Out-Null }
+    }
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $list
+    $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
 # =====================  VIEW: MARKDOWN DOC  =====================
 function New-MarkdownView {
     param([string]$Title, [string]$Text)
@@ -341,7 +457,7 @@ function Set-ActiveView {
         'Dashboard'    { New-DashboardView -Model (Get-TonyModel -Now $script:TonyNow) }
         'Agents'       { New-AgentsView    -Agents (Get-AgentsList) }
         'Issues'       { New-MarkdownView  -Title 'Open Issues'   -Text (Get-DocText 'issues_log.md') }
-        'Action Items' { New-MarkdownView  -Title 'Action Items'  -Text (Get-DocText 'action_items.md') }
+        'Action Items' { New-ActionItemsView }
         'Weekly Review'{ New-MarkdownView  -Title 'Weekly Review' -Text (Get-DocText 'weekly_status.md') }
         'Roadmap'      { New-MarkdownView  -Title 'Roadmap'       -Text (Get-DocText 'ROADMAP.md') }
         default        { New-DashboardView -Model (Get-TonyModel -Now $script:TonyNow) }

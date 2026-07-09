@@ -26,6 +26,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 try {
 
 . (Join-Path $PSScriptRoot 'core\tony-core.ps1')
+. (Join-Path $PSScriptRoot 'core\action-items.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 

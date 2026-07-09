@@ -64,6 +64,20 @@ last run, health score, schedule, dependencies, issues, and notes/report.
 
 ![Agents view](docs/agents-view.png)
 
+### Action Items — interactive task manager
+The Action Items tab is a real, local task manager. **Source of truth: `action_items.json`**
+(the app renders from JSON, not raw markdown).
+- **Check** an item → marks complete, strikes it through, and saves.
+- **+ Add** (or press Enter in the box) → creates a new item (`AI-###` auto-numbered).
+- **Delete** → removes an item.
+- **Archive completed** → moves all done items to the archive.
+- **Active / Archived** toggle → review archived items; **Restore** brings one back.
+
+State is persisted to `action_items.json`; `action_items.md` remains as a human-readable
+narrative/log and can be regenerated from JSON later. No external integrations — fully local.
+
+![Action Items](docs/action-items.png)
+
 ### What's live vs placeholder
 - **Live from files:** Agent Summary, Registry Health, and the Agents view (registry);
   Issues / Action Items / Weekly Review / Roadmap (their `.md` files, read on each navigation).

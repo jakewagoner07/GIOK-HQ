@@ -127,9 +127,15 @@ function Get-TonyModel {
             sourceFile = 'agents_registry.json'; lastUpdated = $reg.meta.last_updated
         }
 
-        # LIVE from the .md files (parsed, not duplicated)
+        # Open issues: parsed live from issues_log.md
         openIssues  = @(Get-IssuesSummary)
-        actionItems = @(Get-ActionItemsSummary)
+        # Action items: source of truth is action_items.json (falls back to md parser if the
+        # action-items module isn't loaded). Only non-archived items count on the dashboard.
+        actionItems = @(
+            if (Get-Command Get-ActionItemsData -ErrorAction SilentlyContinue) {
+                @((Get-ActionItemsData).items) | Where-Object { -not $_.archived }
+            } else { Get-ActionItemsSummary }
+        )
 
         # Current sprint has no backing file yet -> placeholder
         currentSprint = [pscustomobject]@{

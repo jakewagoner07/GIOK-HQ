@@ -1,5 +1,10 @@
 # Action Items — Tony Alpha
 
+> **Live task state now lives in `action_items.json`** — that's the source of truth the
+> GIOK dashboard's Action Items tab reads and writes (check/add/delete/archive). This
+> markdown file remains as a human-readable narrative/log and was the original seed for the
+> JSON; it can be regenerated from JSON later. Don't treat the checkboxes here as live state.
+
 Open decisions and to-dos. Most are driven by `issues_log.md` and by gaps in `agents_registry.json`.
 
 **Status:** ☐ open · ◐ in progress · ☑ done
@@ -74,3 +79,4 @@ The registry is Tony Alpha's first database; everything eventually registers its
 - ☑ **SPRINT-BRAVO — Silent launch.** `launch-tony.vbs` starts the app with no console window; desktop icon points at it; native error dialog on failure (2026-07-08).
 - ☑ **SPRINT-CHARLIE — Hub navigation + Agents view.** Nav bar (Dashboard/Agents/Issues/Action Items/Weekly Review/Roadmap), clickable summary cards, full Agents view from the registry; Issues/Actions/Weekly/Roadmap views read their `.md` files live. No duplication, no integrations (2026-07-08).
 - ☑ **SPRINT-DELTA — GIOK theme system (Arch Review 002).** Theme layer (`theme/theme.json` + `theme-loader.ps1`); app reads all branding from it, none hardcoded. GIOK logo/palette/typography applied; window title "GIOK"; desktop icon = GIOK logo. Neutral fallback theme keeps app working if branding absent. `THEME.md` documents customization for future users. No logic/registry/integration changes (2026-07-08).
+- ☑ **SPRINT — Interactive Action Items.** `action_items.json` is now the source of truth; new `core/action-items.ps1` (load/save/add/toggle/delete/archive). Action Items tab is interactive: checkbox->complete+strikethrough+save, add, delete, archive completed, Active/Archived toggle with Restore. Dashboard action count reads JSON. GIOK branding kept; no integrations (2026-07-08).
