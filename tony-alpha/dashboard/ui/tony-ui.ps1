@@ -662,6 +662,79 @@ function New-MorningBriefing {
 }
 
 # =====================  VIEW: HOME (executive)  =====================
+# =====================  TONY'S OBSERVATIONS (D9)  =====================
+# Observation cards: what Tony has quietly noticed. Max 3, highest impact
+# first. Celebrate / guide / (low-confidence) question - never criticize.
+function Get-ObsConfidenceColors {
+    param([string]$C)
+    switch ($C) {
+        'High'   { @('#DEF7EC', '#03543F') }
+        'Medium' { @($script:Col.AccentSoft, $script:Col.AccentInk) }
+        default  { @('#FDF6B2', '#8E4B10') }   # Low
+    }
+}
+function Get-ObsToneColor {
+    param([string]$T)
+    switch ($T) {
+        'celebrate' { $script:Col.Accent }
+        'guide'     { $script:Col.AccentInk }
+        default     { $script:Col.Muted }      # question
+    }
+}
+
+function New-ObservationCard {
+    param($Obs)
+    $card = New-Object Windows.Controls.Border
+    $card.Background = New-Brush $script:Col.CardBg
+    $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+    $card.CornerRadius = New-Object Windows.CornerRadius 14
+    $card.Padding = New-Object Windows.Thickness (16, 13, 16, 14); $card.Margin = New-Object Windows.Thickness (0, 0, 10, 0)
+
+    $sp = New-Object Windows.Controls.StackPanel
+
+    # header: category (tone-colored) + confidence pill
+    $hdr = New-Object Windows.Controls.DockPanel
+    $cc = Get-ObsConfidenceColors $Obs.confidence
+    $pill = New-Chip -Text $Obs.confidence -Bg $cc[0] -Fg $cc[1]; $pill.Margin = New-Object Windows.Thickness 0; $pill.HorizontalAlignment = 'Right'
+    [Windows.Controls.DockPanel]::SetDock($pill, 'Right'); $hdr.Children.Add($pill) | Out-Null
+    $cat = New-Text -Text ($Obs.category.ToUpper()) -Size 9.5 -Weight 'Bold' -Color (Get-ObsToneColor $Obs.tone); $cat.VerticalAlignment = 'Center'
+    $hdr.Children.Add($cat) | Out-Null
+    $sp.Children.Add($hdr) | Out-Null
+
+    $sp.Children.Add((New-Text -Text $Obs.headline -Size 15 -Weight 'Bold' -Color $script:Col.Heading -Wrap $true -Margin (New-Object Windows.Thickness (0, 7, 0, 0)))) | Out-Null
+    $sp.Children.Add((New-Text -Text $Obs.message -Size 12.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+
+    $why = New-Object Windows.Controls.StackPanel; $why.Margin = New-Object Windows.Thickness (0, 10, 0, 0)
+    $why.Children.Add((New-Text -Text 'WHY THIS MATTERS' -Size 8.5 -Weight 'Bold' -Color $script:Col.Muted)) | Out-Null
+    $why.Children.Add((New-Text -Text $Obs.why -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+    $sp.Children.Add($why) | Out-Null
+
+    $card.Child = $sp
+    return $card
+}
+
+function New-ObservationsSection {
+    $obs = @()
+    if (Get-Command Get-TopObservations -ErrorAction SilentlyContinue) { try { $obs = @(Get-TopObservations -Max 3) } catch { } }
+    if ($obs.Count -eq 0) { return $null }
+
+    $wrap = New-Object Windows.Controls.StackPanel; $wrap.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+    $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (2, 0, 0, 8)
+    $head.Children.Add((New-Text -Text ((New-Emoji @(0x1F441, 0xFE0F)) + "  TONY'S OBSERVATIONS") -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $head.Children.Add((New-Text -Text "What I've been noticing lately - not reminders, just observations." -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 1, 0, 0)))) | Out-Null
+    $wrap.Children.Add($head) | Out-Null
+
+    $grid = New-Object Windows.Controls.Grid
+    for ($i = 0; $i -lt $obs.Count; $i++) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $grid.ColumnDefinitions.Add($cd) | Out-Null }
+    for ($i = 0; $i -lt $obs.Count; $i++) {
+        $c = New-ObservationCard -Obs $obs[$i]
+        if ($i -eq $obs.Count - 1) { $c.Margin = New-Object Windows.Thickness 0 }
+        [Windows.Controls.Grid]::SetColumn($c, $i); $grid.Children.Add($c) | Out-Null
+    }
+    $wrap.Children.Add($grid) | Out-Null
+    return $wrap
+}
+
 function New-HomeView {
     param([Parameter(Mandatory)] $Model)
     $stack = New-Object Windows.Controls.StackPanel; $stack.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -684,6 +757,10 @@ function New-HomeView {
 
     # Morning Briefing (replaces the greeting) - renders ONLY from the Morning Brief model
     $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null
+
+    # Tony's Observations - up to 3 cards, highest impact first (D9)
+    $obsSection = New-ObservationsSection
+    if ($obsSection) { $stack.Children.Add($obsSection) | Out-Null }
 
     # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
     $cap = Get-CaptureStats

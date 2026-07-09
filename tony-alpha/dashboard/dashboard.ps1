@@ -39,6 +39,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-decision-framework.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-brain.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-conversation.ps1')
+. (Join-Path $PSScriptRoot 'core\tony-observations.ps1')
 . (Join-Path $PSScriptRoot 'core\document-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'providers\claude-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
