@@ -1666,13 +1666,13 @@ function Refresh-Conversation { $script:TonyBody.Child = New-FirstConversationVi
 function Save-ConvCurrentInput { if ($script:ConvInputBox -and $script:ConvStepId) { Set-ConversationAnswer -StepId $script:ConvStepId -Text $script:ConvInputBox.Text } }
 
 function New-TonyBubble {
-    param([string]$Text, [bool]$Soft = $false, [double]$Size = 17)
+    param([string]$Text, [bool]$Soft = $false, [double]$Size = 17, [bool]$ShowLabel = $true)
     $b = New-Object Windows.Controls.Border
     $b.Background = New-Brush $(if ($Soft) { $script:Col.AccentSoft } else { $script:Col.CardBg })
     $b.CornerRadius = New-Object Windows.CornerRadius 14; $b.BorderBrush = New-Brush $script:Col.Line; $b.BorderThickness = New-Object Windows.Thickness 1
     $b.Padding = New-Object Windows.Thickness (20, 16, 20, 16); $b.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
     $sp = New-Object Windows.Controls.StackPanel
-    $sp.Children.Add((New-Text -Text 'TONY' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null
+    if ($ShowLabel) { $sp.Children.Add((New-Text -Text 'TONY' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null }
     $t = New-Text -Text $Text -Size $Size -Weight 'SemiBold' -Color $(if ($Soft) { $script:Col.AccentInk } else { $script:Col.Heading }) -Wrap $true
     $sp.Children.Add($t) | Out-Null
     $b.Child = $sp
@@ -1709,7 +1709,7 @@ function New-FirstConversationView {
         if ($idx -gt 0) {
             $prevAns = Get-ConversationAnswer $state ($steps[$idx - 1].id)
             $ack = Get-TonyResponse -Index ($idx - 1) -Answer $prevAns
-            if ($ack) { $col.Children.Add((New-TonyBubble -Text $ack -Soft $true -Size 13.5)) | Out-Null }
+            if ($ack) { $col.Children.Add((New-TonyBubble -Text $ack -Soft $true -Size 13.5 -ShowLabel $false)) | Out-Null }
         }
         # Tony's question
         $col.Children.Add((New-TonyBubble -Text $step.tony -Margin (New-Object Windows.Thickness (0, 4, 0, 12)))) | Out-Null
@@ -1752,8 +1752,10 @@ function Set-ActiveView {
     $script:TonyActiveView = $Name
     foreach ($n in $script:TonyNav) {
         if ($n.Name -eq $Name) { $n.Border.Background = New-Brush $script:Col.Accent; $n.Text.Foreground = New-Brush $script:Col.OnPrimary }
-        else { $n.Border.Background = New-Brush $script:Col.Primary; $n.Text.Foreground = New-Brush $script:Col.OnPrimaryMuted }
+        else { $n.Border.Background = New-Brush $script:Col.Primary; $n.Text.Foreground = New-Brush $(if ($n.Dim) { '#6B7A93' } else { $script:Col.OnPrimaryMuted }) }
     }
+    # immersive views (onboarding, the morning welcome) hide the utility toolbar for focus
+    if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
     $body = switch ($Name) {
         'Morning Experience' { New-MorningExperience -Model (Get-MorningExperience -Now $script:TonyNow) }
         'Home'         { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
@@ -1784,14 +1786,14 @@ function Set-ActiveView {
 }
 
 function New-SidebarNavItem {
-    param([string]$Label, [string]$Key)
+    param([string]$Label, [string]$Key, [bool]$Dim = $false)
     $b = New-Object Windows.Controls.Border
     $b.CornerRadius = New-Object Windows.CornerRadius 8; $b.Padding = New-Object Windows.Thickness (12, 8, 12, 8)
     $b.Margin = New-Object Windows.Thickness (0, 0, 0, 3); $b.Cursor = 'Hand'; $b.Tag = $Key; $b.HorizontalAlignment = 'Stretch'
-    $t = New-Text -Text $Label -Size 13 -Weight 'SemiBold' -Color $script:Col.OnPrimaryMuted
+    $t = New-Text -Text $Label -Size 13 -Weight 'SemiBold' -Color $(if ($Dim) { '#6B7A93' } else { $script:Col.OnPrimaryMuted })
     $b.Child = $t
     $b.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView $s.Tag }) | Out-Null
-    return [pscustomobject]@{ Name = $Key; Border = $b; Text = $t }
+    return [pscustomobject]@{ Name = $Key; Border = $b; Text = $t; Dim = $Dim }
 }
 
 function New-TonyShell {
@@ -1847,25 +1849,33 @@ function New-TonyShell {
     $prof.Children.Add((New-Text -Text $Theme.companyWordmark -Size 11 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 1, 0, 0)))) | Out-Null
     [Windows.Controls.Grid]::SetRow($prof, 1); $sideGrid.Children.Add($prof) | Out-Null
 
-    # nav (emoji built at runtime to keep the source ASCII-safe)
+    # nav (emoji built at runtime to keep the source ASCII-safe).
+    # Daily tools first; not-yet-built workspaces are dimmed under a "COMING SOON" divider.
     $navDefs = @(
-        [pscustomobject]@{ cp = @(0x1F3E0); label = 'Home'; key = 'Home' }
-        [pscustomobject]@{ cp = @(0x1F319); label = 'End of Day Audit'; key = 'End of Day Audit' }
-        [pscustomobject]@{ cp = @(0x1F9ED); label = 'Identity'; key = 'Identity' }
-        [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables' }
-        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family' }
-        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health' }
-        [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial' }
-        [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency' }
-        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home'; key = 'Home Projects' }
-        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning' }
-        [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents' }
-        [pscustomobject]@{ cp = @(0x1F680); label = 'Mission Control'; key = 'Mission Control' }
-        [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory' }
+        [pscustomobject]@{ cp = @(0x1F3E0); label = 'Home'; key = 'Home'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F319); label = 'End of Day Audit'; key = 'End of Day Audit'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4E5); label = 'Capture'; key = 'Capture'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4CB); label = 'Action Items'; key = 'Action Items'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F9ED); label = 'Identity'; key = 'Identity'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F680); label = 'Mission Control'; key = 'Mission Control'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory'; dim = $false }
+        [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family'; dim = $true }
+        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home Projects'; key = 'Home Projects'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning'; dim = $true }
     )
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
+    $dividerAdded = $false
     foreach ($d in $navDefs) {
-        $item = New-SidebarNavItem -Label ((New-Emoji $d.cp) + '   ' + $d.label) -Key $d.key
+        if ($d.dim -and -not $dividerAdded) {
+            $nav.Children.Add((New-Text -Text 'COMING SOON' -Size 9 -Weight 'Bold' -Color '#5A6B84' -Margin (New-Object Windows.Thickness (12, 10, 0, 4)))) | Out-Null
+            $dividerAdded = $true
+        }
+        $item = New-SidebarNavItem -Label ((New-Emoji $d.cp) + '   ' + $d.label) -Key $d.key -Dim $d.dim
         $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
     }
     $navScroll = New-Object Windows.Controls.ScrollViewer; $navScroll.VerticalScrollBarVisibility = 'Auto'; $navScroll.HorizontalScrollBarVisibility = 'Disabled'; $navScroll.Content = $nav
@@ -1889,6 +1899,7 @@ function New-TonyShell {
     $bodyDock = New-Object Windows.Controls.DockPanel; $bodyOuter.Child = $bodyDock
 
     $toolbar = New-Object Windows.Controls.Border; $toolbar.Padding = New-Object Windows.Thickness (22, 12, 22, 6)
+    $script:TonyToolbar = $toolbar
     $tbDock = New-Object Windows.Controls.DockPanel
     $tbBtns = New-Object Windows.Controls.StackPanel; $tbBtns.Orientation = 'Horizontal'; $tbBtns.HorizontalAlignment = 'Right'
     $tbBtns.Children.Add((New-MiniButton -Text 'Open Mission Control' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) Open-TonyWindow -Name 'Mission Control' | Out-Null })) | Out-Null

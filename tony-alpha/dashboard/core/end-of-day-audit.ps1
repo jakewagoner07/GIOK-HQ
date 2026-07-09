@@ -127,10 +127,10 @@ function Add-AuditWin {
 function Remove-AuditWin {
     param([string]$Date, [int]$Index)
     $data = Get-AuditData; $a = Confirm-DayAuditEntry -Data $data -Date $Date
-    $w = @($a.wins); if ($Index -ge 0 -and $Index -lt $w.Count) { $a.wins = @($w | Where-Object { $_ -ne $w[$Index] -or $false } | Select-Object -First 0) }
-    # simple index removal
+    $w = @($a.wins)
     $new = @(); for ($i = 0; $i -lt $w.Count; $i++) { if ($i -ne $Index) { $new += $w[$i] } }
     $a.wins = @($new)
+    $a.savedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     Save-AuditData $data
 }
 
