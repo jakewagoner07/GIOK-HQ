@@ -41,6 +41,21 @@ which is why WPF was chosen over Electron.)
 
 ---
 
+## Multi-window & Mission Control (Sprint Hotel)
+
+**Open in New Window** — a persistent toolbar (top-right of the body) pops the current view
+into its own native window: Agents, Issues, Action Items, Weekly Review, Roadmap,
+Recommendations, Agency, Appointments. Each popout is a **live read-only snapshot** — GIOK
+branded, titled, rendered from the same source files, with **no shared/duplicated state**
+(so a popout never hijacks the main window; edits stay in the main app).
+
+**Mission Control** — a dense, full-screen **second-monitor** overview (sidebar tab, or the
+**Open Mission Control** button which opens it in its own window). Eight live panels: Agent
+Health, Open Issues, Action Items, Current Sprint, Tony Recommendations, Agency Overview
+(sample), Upcoming Appointments (sample), and System Status.
+
+![Mission Control](docs/mission-control.png)
+
 ## Dark executive theme + "Ask Tony" command bar (Sprint Golf)
 
 GIOK ships in a **premium dark theme** by default — dark navy background, orange highlights,

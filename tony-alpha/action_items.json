@@ -1,7 +1,7 @@
 ﻿{
     "meta":  {
                  "version":  "1.0.0",
-                 "updated":  "2026-07-08 20:06:22",
+                 "updated":  "2026-07-08 20:47:02",
                  "source":  "seeded from action_items.md"
              },
     "items":  [
@@ -280,6 +280,14 @@
                   {
                       "id":  "SPRINT",
                       "title":  "Interactive Action Items.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-HOTEL",
+                      "title":  "Multi-window + Mission Control.",
                       "done":  true,
                       "archived":  false,
                       "created":  "2026-07-08 08:00:00",

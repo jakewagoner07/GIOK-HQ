@@ -371,7 +371,7 @@ function New-ComingSoonView {
     return $scroll
 }
 
-function New-AgencyView {
+function New-AgencyBody {
     $m = Get-HomeModel -Now $script:TonyNow
     $body = New-Object Windows.Controls.WrapPanel
     foreach ($metric in $m.agencyMetrics.items) {
@@ -384,10 +384,11 @@ function New-AgencyView {
         $sp.Children.Add((New-Text -Text $metric.label -Size 12 -Color $script:Col.Muted)) | Out-Null
         $card.Child = $sp; $body.Children.Add($card) | Out-Null
     }
-    return New-ComingSoonView -Title 'Agency Overview' -Subtitle 'Your book of business at a glance' -Body $body
+    return $body
 }
+function New-AgencyView { return New-ComingSoonView -Title 'Agency Overview' -Subtitle 'Your book of business at a glance' -Body (New-AgencyBody) }
 
-function New-AppointmentsView {
+function New-AppointmentsBody {
     $m = Get-HomeModel -Now $script:TonyNow
     $body = New-Object Windows.Controls.StackPanel
     foreach ($ap in $m.appointments.items) {
@@ -403,10 +404,11 @@ function New-AppointmentsView {
         $info.Children.Add((New-Text -Text $ap.who -Size 11.5 -Color $script:Col.Muted)) | Out-Null
         $dp.Children.Add($info) | Out-Null; $row.Child = $dp; $body.Children.Add($row) | Out-Null
     }
-    return New-ComingSoonView -Title 'Upcoming Appointments' -Subtitle 'Your day, from the GIOK calendar' -Body $body
+    return $body
 }
+function New-AppointmentsView { return New-ComingSoonView -Title 'Upcoming Appointments' -Subtitle 'Your day, from the GIOK calendar' -Body (New-AppointmentsBody) }
 
-function New-RecommendationsView {
+function New-RecommendationsBody {
     $m = Get-HomeModel -Now $script:TonyNow
     $body = New-Object Windows.Controls.StackPanel
     foreach ($r in $m.tonyRecommends) {
@@ -420,7 +422,26 @@ function New-RecommendationsView {
         $txt = New-Text -Text $r.text -Size 13 -Wrap $true; $txt.Margin = New-Object Windows.Thickness (4, 1, 0, 0)
         $dp.Children.Add($txt) | Out-Null; $row.Child = $dp; $body.Children.Add($row) | Out-Null
     }
-    return New-ComingSoonView -Title 'Tony Recommends' -Subtitle "Tony's suggestions for today" -Body $body -RelatedTab 'Action Items' -RelatedLabel 'Go to Action Items'
+    return $body
+}
+function New-RecommendationsView { return New-ComingSoonView -Title 'Tony Recommends' -Subtitle "Tony's suggestions for today" -Body (New-RecommendationsBody) -RelatedTab 'Action Items' -RelatedLabel 'Go to Action Items' }
+
+# read-only Action Items snapshot (for popout windows / Mission Control - no shared state)
+function New-ActionItemsSnapshot {
+    param([int]$Max = 0)
+    $items = @((Get-ActionItemsData).items | Where-Object { -not $_.archived })
+    if ($Max -gt 0) { $items = @($items | Select-Object -First $Max) }
+    $list = New-Object Windows.Controls.StackPanel
+    if ($items.Count -eq 0) { $list.Children.Add((New-Text -Text 'No open action items.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null; return $list }
+    foreach ($it in $items) {
+        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 5)
+        $mk = New-Text -Text $(if ($it.done) { '[x]' } else { '[ ]' }) -Size 12.5 -Weight 'SemiBold' -Color $script:Col.Accent; $mk.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $mk.VerticalAlignment = 'Top'
+        [Windows.Controls.DockPanel]::SetDock($mk, 'Left'); $row.Children.Add($mk) | Out-Null
+        $txt = New-Text -Text ("{0}  {1}" -f $it.id, $it.title) -Size 12.5 -Wrap $true -Color $(if ($it.done) { $script:Col.Muted } else { $script:Col.Ink })
+        if ($it.done) { $txt.TextDecorations = [System.Windows.TextDecorations]::Strikethrough }
+        $row.Children.Add($txt) | Out-Null; $list.Children.Add($row) | Out-Null
+    }
+    return $list
 }
 
 # =====================  VIEW: AGENTS  =====================
@@ -599,6 +620,175 @@ function New-MarkdownView {
     return $outer
 }
 
+# =====================  VIEW: MISSION CONTROL  =====================
+function New-McPanelBody { param([scriptblock]$Build) return (& $Build) }
+
+function New-MissionControlView {
+    $m = Get-HomeModel -Now $script:TonyNow
+    $reg = Get-Registry
+    $iss = @(Get-IssuesSummary)
+    $openAI = @((Get-ActionItemsData).items | Where-Object { -not $_.archived -and -not $_.done })
+    $h = $m.agentHealth
+
+    $outer = New-Object Windows.Controls.StackPanel
+    $outer.Children.Add((New-Text -Text 'Mission Control' -Size 26 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $rule = New-Object Windows.Controls.Border; $rule.Background = New-Brush $script:Col.Accent; $rule.Height = 3; $rule.Width = 72; $rule.HorizontalAlignment = 'Left'; $rule.CornerRadius = New-Object Windows.CornerRadius 2; $rule.Margin = New-Object Windows.Thickness (0, 5, 0, 6)
+    $outer.Children.Add($rule) | Out-Null
+    $outer.Children.Add((New-Text -Text 'Full-screen second-screen overview - live from GIOK sources' -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 12)))) | Out-Null
+
+    $grid = New-Object Windows.Controls.Grid; $grid.MinHeight = 640
+    foreach ($i in 0..3) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $grid.ColumnDefinitions.Add($cd) | Out-Null }
+    foreach ($i in 0..1) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::new(1, 'Star'); $grid.RowDefinitions.Add($rd) | Out-Null }
+
+    # Agent Health
+    $b = New-Object Windows.Controls.StackPanel
+    $bigp = New-Object Windows.Controls.StackPanel; $bigp.Orientation = 'Horizontal'
+    $bigp.Children.Add((New-Text -Text ([string]$h.total) -Size 28 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $bigp.Children.Add((New-Text -Text 'agents' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 13, 0, 0)))) | Out-Null
+    $b.Children.Add($bigp) | Out-Null
+    $sw = New-Object Windows.Controls.WrapPanel; $sw.Margin = New-Object Windows.Thickness (0, 4, 0, 4)
+    foreach ($k in $h.byStatus.Keys) { $n = $h.byStatus[$k]; if ($n -gt 0) { $cc = Get-StatusChipColors $k; $sw.Children.Add((New-Chip -Text ("{0} {1}" -f $k, $n) -Bg $cc[0] -Fg $cc[1])) | Out-Null } }
+    $b.Children.Add($sw) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'Health measured' -Value $h.healthCoverage)) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'With issues' -Value ([string]$h.withIssues))) | Out-Null
+    $grid.Children.Add((New-Card -Title 'Agent Health' -Body $b -Col 0 -Row 0)) | Out-Null
+
+    # Open Issues
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-Text -Text ("{0} open flags" -f $iss.Count) -Size 15 -Weight 'Bold' -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
+    foreach ($x in ($iss | Select-Object -First 6)) {
+        $r = New-Object Windows.Controls.DockPanel; $r.Margin = New-Object Windows.Thickness (0, 0, 0, 4)
+        $cp = New-Chip -Text $x.id -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk; $cp.VerticalAlignment = 'Top'; [Windows.Controls.DockPanel]::SetDock($cp, 'Left'); $r.Children.Add($cp) | Out-Null
+        $tx = New-Text -Text $x.title -Size 11.5 -Wrap $true; $tx.Margin = New-Object Windows.Thickness (4, 2, 0, 0); $r.Children.Add($tx) | Out-Null
+        $b.Children.Add($r) | Out-Null
+    }
+    $grid.Children.Add((New-Card -Title 'Open Issues' -Body $b -Col 1 -Row 0)) | Out-Null
+
+    # Action Items
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-Text -Text ("{0} open" -f $openAI.Count) -Size 15 -Weight 'Bold' -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
+    $b.Children.Add((New-ActionItemsSnapshot -Max 6)) | Out-Null
+    $grid.Children.Add((New-Card -Title 'Action Items' -Body $b -Col 2 -Row 0)) | Out-Null
+
+    # Current Sprint
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-Text -Text $m.sprint -Size 14 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+    $b.Children.Add((New-Chip -Text 'Active' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+    $grid.Children.Add((New-Card -Title 'Current Sprint' -Body $b -Col 3 -Row 0)) | Out-Null
+
+    # Tony Recommendations
+    $b = New-Object Windows.Controls.StackPanel
+    foreach ($rc in $m.tonyRecommends) {
+        $r = New-Object Windows.Controls.DockPanel; $r.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
+        $dot = New-Text -Text '*' -Size 14 -Weight 'Bold' -Color $script:Col.Accent; $dot.Margin = New-Object Windows.Thickness (0, 0, 6, 0); $dot.VerticalAlignment = 'Top'; [Windows.Controls.DockPanel]::SetDock($dot, 'Left'); $r.Children.Add($dot) | Out-Null
+        $r.Children.Add((New-Text -Text $rc.text -Size 11.5 -Wrap $true)) | Out-Null
+        $b.Children.Add($r) | Out-Null
+    }
+    $grid.Children.Add((New-Card -Title 'Tony Recommendations' -Body $b -Col 0 -Row 1)) | Out-Null
+
+    # Agency Overview (placeholder)
+    $b = New-Object Windows.Controls.StackPanel
+    foreach ($mt in $m.agencyMetrics.items) { $b.Children.Add((New-KeyValueRow -Key $mt.label -Value $mt.value)) | Out-Null }
+    $grid.Children.Add((New-Card -Title 'Agency Overview' -Body $b -Tag 'SAMPLE' -Col 1 -Row 1)) | Out-Null
+
+    # Upcoming Appointments (placeholder)
+    $b = New-Object Windows.Controls.StackPanel
+    foreach ($ap in $m.appointments.items) {
+        $b.Children.Add((New-Text -Text ("{0}  {1}" -f $ap.time, $ap.title) -Size 12 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+        $b.Children.Add((New-Text -Text $ap.who -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
+    }
+    $grid.Children.Add((New-Card -Title 'Upcoming Appointments' -Body $b -Tag 'SAMPLE' -Col 2 -Row 1)) | Out-Null
+
+    # System Status
+    $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-KeyValueRow -Key 'Registry' -Value ("v{0}" -f $reg.meta.version))) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'Verified vs scheduler' -Value $(if ($h.verified) { 'Yes' } else { 'No' }) -ValueColor $(if ($h.verified) { '#34D399' } else { '#F87171' }))) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'Health measured' -Value $h.healthCoverage)) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'Open issues' -Value ([string]$m.issueCount))) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'Registry updated' -Value $reg.meta.last_updated)) | Out-Null
+    $b.Children.Add((New-KeyValueRow -Key 'As of' -Value ("{0}  {1}" -f $m.dateText, $m.timeText))) | Out-Null
+    $grid.Children.Add((New-Card -Title 'System Status' -Body $b -Col 3 -Row 1)) | Out-Null
+
+    $outer.Children.Add($grid) | Out-Null
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $outer
+    return $scroll
+}
+
+# =====================  MULTI-WINDOW ("Mission Control" popouts)  =====================
+$script:OpenWindows = @()
+
+function New-PopoutSection {
+    param([string]$Title, [string]$Subtitle, [Windows.UIElement]$Body)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text $Title -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    if ($Subtitle) { $sp.Children.Add((New-Text -Text $Subtitle -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 10)))) | Out-Null }
+    $sp.Children.Add($Body) | Out-Null
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $sp
+    return $scroll
+}
+
+# Builds a self-contained, read-only live view for a separate window (no shared state).
+function New-WindowContent {
+    param([Parameter(Mandatory)][string]$Name)
+    $root = New-Object Windows.Controls.DockPanel
+
+    # branded header strip
+    $hdr = New-Object Windows.Controls.Border; $hdr.Background = New-Brush $script:Col.Primary; $hdr.Padding = New-Object Windows.Thickness (18, 12, 18, 12)
+    $hdrDock = New-Object Windows.Controls.DockPanel
+    $left = New-Object Windows.Controls.StackPanel; $left.Orientation = 'Horizontal'
+    $logoSrc = New-ImageSource $script:Theme.logoPath
+    if ($logoSrc) {
+        $img = New-Object Windows.Controls.Image; $img.Source = $logoSrc; $img.Height = 26; $img.Width = 26; $img.Margin = New-Object Windows.Thickness (0, 0, 10, 0)
+        $lb = New-Object Windows.Controls.Border; $lb.CornerRadius = New-Object Windows.CornerRadius 6; $lb.ClipToBounds = $true; $lb.Child = $img; $lb.VerticalAlignment = 'Center'; $left.Children.Add($lb) | Out-Null
+    }
+    $left.Children.Add((New-Text -Text 'GIOK' -Size 15 -Weight 'Bold' -Color $script:Col.OnPrimary)) | Out-Null
+    $left.Children.Add((New-Text -Text (' - ' + $Name) -Size 15 -Weight 'SemiBold' -Color $script:Col.Accent)) | Out-Null
+    $left2 = $left; $left2.VerticalAlignment = 'Center'
+    [Windows.Controls.DockPanel]::SetDock($left, 'Left'); $hdrDock.Children.Add($left) | Out-Null
+    $stamp = New-Text -Text ('{0}  -  {1}' -f (Get-Date).ToString('ddd, MMM d'), (Get-Date).ToString('h:mm tt')) -Size 11.5 -Color $script:Col.OnPrimaryMuted; $stamp.HorizontalAlignment = 'Right'; $stamp.VerticalAlignment = 'Center'
+    $hdrDock.Children.Add($stamp) | Out-Null
+    $hdr.Child = $hdrDock
+    [Windows.Controls.DockPanel]::SetDock($hdr, 'Top'); $root.Children.Add($hdr) | Out-Null
+
+    # body
+    $bodyBorder = New-Object Windows.Controls.Border; $bodyBorder.Background = New-Brush $script:Col.AppBg; $bodyBorder.Padding = New-Object Windows.Thickness (20, 16, 20, 18)
+    $content = switch ($Name) {
+        'Mission Control' { New-MissionControlView }
+        'Agents'          { New-AgentsView -Agents (Get-AgentsList) }
+        'Issues'          { New-MarkdownView -Title 'Open Issues'   -Text (Get-DocText 'issues_log.md') }
+        'Weekly Review'   { New-MarkdownView -Title 'Weekly Review' -Text (Get-DocText 'weekly_status.md') }
+        'Roadmap'         { New-MarkdownView -Title 'Roadmap'       -Text (Get-DocText 'ROADMAP.md') }
+        'Action Items'    { New-PopoutSection -Title 'Action Items'         -Subtitle 'Live view - edit in the main window' -Body (New-ActionItemsSnapshot) }
+        'Recommendations' { New-PopoutSection -Title 'Tony Recommends'      -Subtitle 'Live signals + sample nudges'        -Body (New-RecommendationsBody) }
+        'Agency'          { New-PopoutSection -Title 'Agency Overview'      -Subtitle 'Coming soon - sample data'           -Body (New-AgencyBody) }
+        'Appointments'    { New-PopoutSection -Title 'Upcoming Appointments'-Subtitle 'Coming soon - sample data'           -Body (New-AppointmentsBody) }
+        default           { New-MissionControlView }
+    }
+    $bodyBorder.Child = $content
+    $root.Children.Add($bodyBorder) | Out-Null
+    return $root
+}
+
+function Open-TonyWindow {
+    param([Parameter(Mandatory)][string]$Name)
+    # Home/Settings don't have a meaningful standalone popout -> use Mission Control
+    $target = if ($Name -in @('Home', 'Settings')) { 'Mission Control' } else { $Name }
+    $win = New-Object Windows.Window
+    $win.Title = "GIOK - $target"
+    $win.WindowStartupLocation = 'CenterScreen'
+    if ($target -eq 'Mission Control') { $win.Width = 1400; $win.Height = 900 } else { $win.Width = 1000; $win.Height = 780 }
+    $win.MinWidth = 720; $win.MinHeight = 520
+    $win.Background = New-Brush $script:Col.AppBg
+    if ($script:Theme.logoPath -and (Test-Path $script:Theme.logoPath)) {
+        $ico = New-Object Windows.Media.Imaging.BitmapImage; $ico.BeginInit(); $ico.CacheOption = 'OnLoad'; $ico.UriSource = New-Object Uri($script:Theme.logoPath); $ico.EndInit(); $win.Icon = $ico
+    }
+    $win.Content = New-WindowContent -Name $target
+    $script:OpenWindows += $win
+    $win.Add_Closed({ param($s, $e) $script:OpenWindows = @($script:OpenWindows | Where-Object { $_ -ne $s }) }) | Out-Null
+    $null = $win.Show()
+    return $win
+}
+
 # =====================  NAV + SHELL  =====================
 function Set-ActiveView {
     param([Parameter(Mandatory)][string]$Name)
@@ -618,6 +808,7 @@ function Set-ActiveView {
         'Agency'         { New-AgencyView }
         'Appointments'   { New-AppointmentsView }
         'Recommendations'{ New-RecommendationsView }
+        'Mission Control'{ New-MissionControlView }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
@@ -689,7 +880,7 @@ function New-TonyShell {
 
     # nav
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
-    foreach ($name in @('Home', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
+    foreach ($name in @('Home', 'Mission Control', 'Agents', 'Issues', 'Action Items', 'Weekly Review', 'Roadmap')) {
         $item = New-SidebarNavItem -Name $name; $script:TonyNav += $item; $nav.Children.Add($item.Border) | Out-Null
     }
     [Windows.Controls.Grid]::SetRow($nav, 2); $sideGrid.Children.Add($nav) | Out-Null
@@ -706,10 +897,23 @@ function New-TonyShell {
     $ver = New-Text -Text ("v{0}" -f $Theme.version) -Size 10.5 -Color $script:Col.OnPrimaryMuted -Margin (New-Object Windows.Thickness (2, 4, 0, 0))
     [Windows.Controls.Grid]::SetRow($ver, 5); $sideGrid.Children.Add($ver) | Out-Null
 
-    # ---------- main body ----------
-    $body = New-Object Windows.Controls.Border; $body.Background = New-Brush $script:Col.AppBg; $body.Padding = New-Object Windows.Thickness (22, 20, 22, 20)
-    [Windows.Controls.Grid]::SetColumn($body, 1); $root.Children.Add($body) | Out-Null
-    $script:TonyBody = $body
+    # ---------- main body: persistent toolbar + swappable view host ----------
+    $bodyOuter = New-Object Windows.Controls.Border; $bodyOuter.Background = New-Brush $script:Col.AppBg
+    [Windows.Controls.Grid]::SetColumn($bodyOuter, 1); $root.Children.Add($bodyOuter) | Out-Null
+    $bodyDock = New-Object Windows.Controls.DockPanel; $bodyOuter.Child = $bodyDock
+
+    $toolbar = New-Object Windows.Controls.Border; $toolbar.Padding = New-Object Windows.Thickness (22, 12, 22, 6)
+    $tbDock = New-Object Windows.Controls.DockPanel
+    $tbBtns = New-Object Windows.Controls.StackPanel; $tbBtns.Orientation = 'Horizontal'; $tbBtns.HorizontalAlignment = 'Right'
+    $tbBtns.Children.Add((New-MiniButton -Text 'Open Mission Control' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) Open-TonyWindow -Name 'Mission Control' | Out-Null })) | Out-Null
+    $tbBtns.Children.Add((New-MiniButton -Text 'Open in New Window' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) Open-TonyWindow -Name $script:TonyActiveView | Out-Null })) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($tbBtns, 'Right'); $tbDock.Children.Add($tbBtns) | Out-Null
+    $toolbar.Child = $tbDock
+    [Windows.Controls.DockPanel]::SetDock($toolbar, 'Top'); $bodyDock.Children.Add($toolbar) | Out-Null
+
+    $viewHost = New-Object Windows.Controls.Border; $viewHost.Padding = New-Object Windows.Thickness (22, 8, 22, 18)
+    $bodyDock.Children.Add($viewHost) | Out-Null
+    $script:TonyBody = $viewHost
 
     Set-ActiveView $InitialView
     return [pscustomobject]@{ Root = $root; ClockBlock = $clock }
