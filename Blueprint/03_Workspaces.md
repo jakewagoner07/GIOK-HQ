@@ -167,3 +167,8 @@ Home
 **Rule for adding a workspace:** it must have a genuinely distinct purpose and a clear "does not
 belong" boundary. If a proposed workspace overlaps an existing one, extend the existing one
 instead. Calm comes from fewer, sharper spaces — not more.
+
+**Every workspace is held to [Project Diamond](13_Project_Diamond.md):** it must be
+self-contained (Diamond Rule 6), and every one of its screens must answer *"Where am I? What's
+most important? What's my best next action?"* (Rule 7), with every widget carrying an action and
+no dead ends (Rule 8). A workspace that doesn't clear that bar isn't finished.

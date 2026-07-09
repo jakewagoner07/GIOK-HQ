@@ -11,6 +11,10 @@ The specifications live in the rest of the [Blueprint](../00_README.md). This ch
 to** those documents; it never repeats them. Read the Blueprint to know *what* GIOK is. Read this
 to know *why* it became that.
 
+Every entry from Project Diamond forward is held to **[Project Diamond](../13_Project_Diamond.md)** —
+the standard that GIOK stopped chasing features and began perfecting experiences. Quality over
+quantity, always.
+
 > **People Matter More Than Money.**
 > **Your brain is for thinking, not remembering.**
 > **GIOK helps you become better, not busy.**

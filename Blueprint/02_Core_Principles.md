@@ -81,6 +81,14 @@ adds motion without adding progress fails this principle.
 
 ---
 
+## The quality bar: Project Diamond
+
+These principles define what GIOK *is*. **[Project Diamond](13_Project_Diamond.md)** defines how
+*well* it must be built — the standard that features are easy but experiences are hard, and nothing
+ships unless it's useful, beautiful, simple, fast, and time-saving. Several principles here
+(Single Source of Truth, Capture Before Organize, Every Workspace Is Self-Contained, People First)
+are restated as **Diamond Rules** and held to that higher bar.
+
 ## How to apply these
 
 - **Design review:** every proposal states which principles it upholds and which it risks.

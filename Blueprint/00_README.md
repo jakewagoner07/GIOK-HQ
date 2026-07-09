@@ -25,6 +25,9 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
   don't quietly invent a contradicting rule in code.
 - This is a *living* document. It evolves deliberately, through explicit revision — never by
   drift.
+- **Hold every sprint to [Project Diamond](13_Project_Diamond.md)** — the quality standard for
+  GIOK. Features are easy; experiences are hard. Nothing ships unless it's useful, beautiful,
+  simple, fast, time-saving, and something Jake would use every day.
 
 ## Contents
 
@@ -42,6 +45,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | 10 | [Design System](10_Design_System.md) | Branding, color, type, components |
 | 11 | [Mobile Vision](11_Mobile_Vision.md) | The future mobile experience |
 | 12 | [Future Architecture](12_Future_Architecture.md) | Long-horizon architectural concepts |
+| 13 | [Project Diamond](13_Project_Diamond.md) | The standard for building GIOK — quality over quantity |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
