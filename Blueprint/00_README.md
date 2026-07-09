@@ -47,6 +47,12 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Capture](Capture.md) | How Capture is built, version by version (companion to 05) |
 | — | [Tony Memory](Tony_Memory.md) | How Tony's structured memory evolves through V3 |
 
+## The story behind it
+
+The [Founder Changelog](Founder-Changelog/00_INDEX.md) is the journal of *why* GIOK is being
+built the way it is — the problems, decisions, reasoning, and lessons behind each milestone. The
+Blueprint says what GIOK is; the changelog says why it became that.
+
 ## Status of the product today (context, not constitution)
 
 The first working product — **Tony Alpha** (`tony-alpha/`) — already exists: a dark executive
