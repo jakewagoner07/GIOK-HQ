@@ -73,12 +73,26 @@ relationship. In priority order:
 - **Newsletters and promotions (low priority)** - Gmail `CATEGORY_PROMOTIONS/SOCIAL/FORUMS` or a
   `List-Unsubscribe` header. Deliberately **not** `CATEGORY_UPDATES`, where transactional carrier
   mail lands.
+- **One-time codes / sign-in notices (low priority)** - verification/login/security codes and
+  automated identity mail. Transient machine noise, never attention-worthy - even though they often
+  say a code "expires" (which would otherwise trip the urgency heuristic).
 - **Carrier / underwriting updates** - insurance vocabulary (underwriting, policy, premium, claim,
   renewal, binder, commission, E&O, ...) or a configured carrier domain. High value for an agent.
+  Checked *before* the bulk demotion below, so a carrier notice sent via an ESP still surfaces.
+- **Bulk / mailing-list / ESP senders (low priority)** - standard bulk headers (`List-Id`,
+  `Feedback-ID`, `Precedence: bulk`, `Auto-Submitted`, and ESP markers like Amazon SES / SendGrid /
+  Mailgun). Catches marketing and newsletters that carry no `List-Unsubscribe` UI yet clearly expect
+  no reply. A person on a known list still surfaces via the important-contacts path.
 - **Urgent** - conservative time-sensitive language (urgent, ASAP, action required, past due,
-  deadline, by end of day, ...).
+  deadline, ...), but only from a real person or addressed directly to Jake - not automated blasts.
 - **Likely needs a reply** - a real person wrote directly to Jake and it is still unread.
 - **Everything else** - read or informational; nothing needed now.
+
+**Alias resolution ("addressed to me").** A GIOK Workspace mailbox often aggregates mail sent to
+several of Jake's addresses (personal Gmail, other aliases). A message counts as "to me" when the
+`To`/`Cc` contains the connected account, the per-message `Delivered-To` (which names the address
+that actually received it), or any alias Jake lists in `myAddresses`. Without this, mail to an alias
+would never register as a direct message and the "needs a reply" path could not fire.
 
 **needs attention** = the high-priority set (needs-reply + carrier/underwriting + important-contact +
 urgent). Invitations are counted and surfaced separately ("arrived"). The summary also lists at most

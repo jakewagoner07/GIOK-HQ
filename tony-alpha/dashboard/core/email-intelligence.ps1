@@ -12,10 +12,12 @@
 # A NORMALIZED message (what every backend must produce):
 #   id, threadId, from (email), fromName, subject, snippet, date (datetime),
 #   unread (bool), important (bool: the backend's own importance marker),
-#   fromMe (bool), toMe (bool: Jake is a direct To/Cc recipient),
-#   promo (bool: backend category = promotions/social/forums/updates, or a
-#         List-Unsubscribe header), invite (bool: carries a calendar invite),
-#   labels (string[])
+#   fromMe (bool), toMe (bool: one of Jake's addresses is a direct To/Cc
+#         recipient - backends resolve aliases, e.g. via Delivered-To),
+#   promo (bool: explicit marketing - promotions/social/forums category or a
+#         List-Unsubscribe header), bulk (bool: mailing-list / ESP / automated
+#         sender - List-Id, Feedback-ID, Precedence: bulk, etc.),
+#   invite (bool: carries a calendar invite), labels (string[])
 #
 # Classification is honest: it uses signals we can actually observe
 # (the backend's categories/flags, sender shape, a calendar-invite marker,
@@ -65,6 +67,16 @@ function Test-EmailUrgent {
     return [bool]($hay -match '(?i)\b(urgent|asap|immediately|time[- ]sensitive|action required|response needed|final notice|last notice|past due|overdue|expir(e|es|ing|ed)|deadline|by (today|tomorrow|end of day|eod))\b')
 }
 
+# One-time codes, verification/login/security codes, and automated identity
+# messages. These are transient machine noise - NOT things that "need
+# attention" - even though they often say a code "expires." Detecting them
+# stops them from tripping the urgency heuristic.
+function Test-EmailAutomatedCode {
+    param([string]$Subject, [string]$Snippet)
+    $hay = (("{0} {1}" -f $Subject, $Snippet)).ToLower()
+    return [bool]($hay -match '(?i)(one-?time (code|password|passcode|pin)|verification code|login code|security code|access code|confirmation code|authentication code|is your .{0,40}code|your .{0,30}code is|\botp\b|passcode|two-?factor|2fa|verify your (email|account|identity)|confirm your (email|account)|sign-?in (code|attempt)|new sign-?in)')
+}
+
 # Is the sender one of Jake's important contacts / client domains?
 function Test-EmailImportantContact {
     param([string]$From, $ImportantContacts = @(), $ClientDomains = @())
@@ -103,13 +115,31 @@ function Get-EmailClassification {
         return [pscustomobject]@{ category = 'newsletter-promo'; priority = 'low'; why = 'Newsletter or promotional; it can wait.' }
     }
 
+    # 3.5) one-time codes / verification / sign-in noise - automated and
+    #      transient; never "needs attention" even if it says it expires.
+    if (Test-EmailAutomatedCode -Subject $subject -Snippet $snippet) {
+        return [pscustomobject]@{ category = 'automated'; priority = 'low'; why = 'One-time code or automated sign-in notice; nothing to do.' }
+    }
+
     # 4) carrier / underwriting business updates
     if (Test-EmailCarrier -Subject $subject -Snippet $snippet -From $Msg.from -Hints $hints -CarrierDomains $carrierDomains) {
         return [pscustomobject]@{ category = 'carrier-underwriting'; priority = 'high'; why = 'Looks like a carrier or underwriting update.' }
     }
 
-    # 5) explicit urgency
-    if (Test-EmailUrgent -Subject $subject -Snippet $snippet) {
+    # 4.5) bulk / automated senders (mailing lists, ESPs like SES/SendGrid,
+    #      Precedence: bulk) that carry no unsubscribe UI but are clearly not a
+    #      person expecting a reply. Checked AFTER carrier (so business updates
+    #      survive) and BEFORE needs-reply (so newsletters don't masquerade as
+    #      people). A real person on a known list is still surfaced via the
+    #      important-contacts path above.
+    if ($Msg.bulk) {
+        return [pscustomobject]@{ category = 'newsletter-promo'; priority = 'low'; why = 'Bulk or automated sender; low priority.' }
+    }
+
+    # 5) explicit urgency - but only from a real person (or addressed directly
+    #    to Jake). Automated bulk blasts that merely contain "urgent"/"expires"
+    #    are not attention-worthy; genuine carrier urgency is already caught above.
+    if ((Test-EmailUrgent -Subject $subject -Snippet $snippet) -and ($kind -eq 'person' -or $Msg.toMe)) {
         return [pscustomobject]@{ category = 'urgent'; priority = 'high'; why = 'Language suggests it is urgent or time-sensitive.' }
     }
 

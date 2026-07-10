@@ -34,7 +34,7 @@ function Get-GmailTokenPath  { return (Join-Path $PSScriptRoot '..\..\gmail.toke
 # Full config, including the optional triage lists Jake can curate locally.
 function Get-GmailConfig {
     $clientId = $null; $clientSecret = $null; $source = 'none'
-    $importantContacts = @(); $clientDomains = @(); $carrierDomains = @(); $carrierHints = $null
+    $importantContacts = @(); $clientDomains = @(); $carrierDomains = @(); $carrierHints = $null; $myAddresses = @()
     $p = Get-GmailConfigPath
     if (Test-Path $p) {
         try {
@@ -46,6 +46,7 @@ function Get-GmailConfig {
             if ($c.PSObject.Properties.Name -contains 'clientDomains' -and $c.clientDomains) { $clientDomains = @($c.clientDomains) }
             if ($c.PSObject.Properties.Name -contains 'carrierDomains' -and $c.carrierDomains) { $carrierDomains = @($c.carrierDomains) }
             if ($c.PSObject.Properties.Name -contains 'carrierHints' -and $c.carrierHints) { $carrierHints = @($c.carrierHints) }
+            if ($c.PSObject.Properties.Name -contains 'myAddresses' -and $c.myAddresses) { $myAddresses = @($c.myAddresses) }
         } catch { }
     }
     return [pscustomobject]@{
@@ -66,6 +67,7 @@ function Get-GmailConfig {
         clientDomains     = $clientDomains
         carrierDomains    = $carrierDomains
         carrierHints      = $carrierHints
+        myAddresses       = $myAddresses
         analyzeCap        = 60   # analyze the most recent N of today's inbox
     }
 }
@@ -138,16 +140,41 @@ function Test-GmailPromo {
     return $false
 }
 
+# Mailing-list / ESP / automated bulk sender - a message no human is waiting
+# on a reply to, even without a List-Unsubscribe UI. Standard bulk headers:
+# List-Id, Feedback-ID, Precedence: bulk/list/junk, Auto-Submitted, and common
+# ESP markers (Amazon SES, SendGrid, Mailgun, Mandrill). Checked in the engine
+# AFTER carrier/underwriting, so business updates from an ESP still survive.
+function Test-GmailBulk {
+    param($Headers)
+    $val = { param($n) Get-GmailHeaderValue -Headers $Headers -Name $n }
+    foreach ($h in @('List-Id', 'Feedback-ID', 'X-SES-Outgoing', 'X-SG-EID', 'X-SG-ID', 'X-Mailgun-Sid', 'X-Mandrill-User', 'X-Campaign', 'X-CSA-Complaints')) {
+        if (-not [string]::IsNullOrWhiteSpace((& $val $h))) { return $true }
+    }
+    $prec = ([string](& $val 'Precedence')).ToLower()
+    if ($prec -match 'bulk|list|junk') { return $true }
+    $auto = ([string](& $val 'Auto-Submitted')).ToLower().Trim()
+    if ($auto -and $auto -ne 'no') { return $true }
+    return $false
+}
+
 # Convert a raw Gmail message (format=metadata) into a NORMALIZED message
 # for the provider-neutral Email Intelligence engine. Read only.
+#
+# toMe resolves Jake's ALIASES: a GIOK Workspace mailbox often aggregates mail
+# addressed to several of his addresses (personal Gmail, other aliases). The
+# per-message Delivered-To header names the address that actually received it
+# in this mailbox, so a message counts as "to me" when the To/Cc contains the
+# connected account, this message's Delivered-To, or any configured alias.
 function Convert-GmailMessage {
-    param($Raw, [string]$Account)
+    param($Raw, [string]$Account, $Aliases = @())
     $headers = $Raw.payload.headers
     $fromRaw = Get-GmailHeaderValue -Headers $headers -Name 'From'
     $from = Split-EmailFrom -Value $fromRaw
     $subject = Get-GmailHeaderValue -Headers $headers -Name 'Subject'
     $to = Get-GmailHeaderValue -Headers $headers -Name 'To'
     $cc = Get-GmailHeaderValue -Headers $headers -Name 'Cc'
+    $deliveredTo = Get-GmailHeaderValue -Headers $headers -Name 'Delivered-To'
     $listUnsub = Get-GmailHeaderValue -Headers $headers -Name 'List-Unsubscribe'
     $contentType = Get-GmailHeaderValue -Headers $headers -Name 'Content-Type'
     $labels = @($Raw.labelIds)
@@ -156,7 +183,10 @@ function Convert-GmailMessage {
     if ($Raw.internalDate) { try { $date = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$Raw.internalDate).LocalDateTime } catch { } }
 
     $acct = ([string]$Account).ToLower()
-    $toMe = [bool]($acct -and (("{0} {1}" -f $to, $cc).ToLower() -match [regex]::Escape($acct)))
+    $recips = ("{0} {1}" -f $to, $cc).ToLower()
+    $myAddrs = @(); foreach ($a in (@($acct) + @($Aliases) + @($deliveredTo))) { $al = ([string]$a).ToLower().Trim(); if ($al -and ($myAddrs -notcontains $al)) { $myAddrs += $al } }
+    $toMe = $false
+    foreach ($a in $myAddrs) { if ($a -and $recips.Contains($a)) { $toMe = $true; break } }
     $fromMe = [bool]($acct -and ($from.email.ToLower() -eq $acct))
 
     return [pscustomobject]@{
@@ -172,6 +202,7 @@ function Convert-GmailMessage {
         fromMe   = $fromMe
         toMe     = $toMe
         promo    = (Test-GmailPromo -LabelIds $labels -ListUnsub $listUnsub)
+        bulk     = (Test-GmailBulk -Headers $headers)
         invite   = (Test-GmailInvite -Raw $Raw -Subject $subject -FromEmail $from.email -ContentType $contentType)
         labels   = $labels
     }
@@ -219,7 +250,7 @@ function Get-Email {
         $messages = @()
         foreach ($id in $toAnalyze) {
             $raw = Invoke-GoogleApi -Token $at.token -BaseUrl $cfg.apiBase -Path ("/users/me/messages/{0}" -f $id) -Query @{ format = 'metadata' }
-            $messages += (Convert-GmailMessage -Raw $raw -Account $account)
+            $messages += (Convert-GmailMessage -Raw $raw -Account $account -Aliases @($cfg.myAddresses))
         }
         $analyzedCapped = [bool]($totalToday -gt $toAnalyze.Count)
 
