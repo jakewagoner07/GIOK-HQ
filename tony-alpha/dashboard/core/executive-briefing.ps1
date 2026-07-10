@@ -1,0 +1,159 @@
+# =====================================================================
+# executive-briefing.ps1  —  Tony's Executive Briefing (the morning letter)
+# ---------------------------------------------------------------------
+# The single best moment in GIOK: Tony beginning the day as an executive
+# chief of staff. Not another dashboard - a short, personal letter that
+# is calm, confident, encouraging, honest, and executive. Never
+# overwhelming, never robotic, never just a list.
+#
+# It is composed ENTIRELY from the Executive Context Engine
+# (Get-TonyExecutiveContext) - the single source of situational
+# awareness. It creates no new context object, stores nothing, and
+# writes nothing. Pure read-and-compose over the source of truth.
+#
+# Sections: Greeting - Today's Executive Summary (<=3 sentences: what
+# matters, biggest opportunity, biggest risk) - Top Three Priorities
+# (ranked, each with a WHY) - exactly ONE Observation - Today's Focus
+# (one sentence) - One Encouragement (short, human, never cheesy).
+# =====================================================================
+
+$ErrorActionPreference = 'Stop'
+
+function Get-BriefingGreeting {
+    param([string]$PartOfDay, [string]$Name)
+    $n = $Name; if ($n) { $n = ", $n" }
+    switch ($PartOfDay) {
+        'morning'   { "Good morning$n." }
+        'afternoon' { "Good afternoon$n." }
+        'evening'   { "Good evening$n." }
+        default     { "Still at it$n." }   # night
+    }
+}
+
+# Today's Executive Summary - at most three sentences: what matters, the
+# biggest opportunity, the biggest risk. Honest, never alarmist.
+function Get-BriefingSummary {
+    param($Exec)
+    $a = $Exec.assessment
+    $priorities = @($Exec.priorities)
+
+    if ($priorities.Count -gt 0) { $s1 = ('Today is mostly about "{0}".' -f $priorities[0]) }
+    else { $s1 = 'Today is open - a good day to get out ahead of what matters most.' }
+
+    $nearGoal = @($Exec.activeGoals | Where-Object { $null -ne $_.progress -and [int]$_.progress -ge 70 } | Select-Object -First 1)
+    if ($nearGoal.Count -gt 0) { $s2 = ('Your biggest opportunity is "{0}" - close enough to finish with one focused push.' -f $nearGoal[0].title) }
+    elseif ($a.makingProgress.any) { $s2 = ('The momentum is real ({0}), so today is a chance to build on it.' -f $a.makingProgress.reasons[0]) }
+    else { $s2 = 'The opportunity today is simply to move the vital few forward before the noise arrives.' }
+
+    if ($a.conflict.any) { $s3 = ('The risk to watch: {0}' -f $a.conflict.items[0]) }
+    elseif ($a.offTrack.any) { $s3 = ('The one thing to keep an eye on: {0}.' -f $a.offTrack.reasons[0]) }
+    elseif ($a.overdue.any) { $s3 = ('The only real risk is letting {0} older item(s) keep drifting.' -f $a.overdue.count) }
+    else { $s3 = 'The only real risk today is letting a full list crowd out the few things that actually matter.' }
+
+    return [pscustomobject]@{
+        text        = (($s1, $s2, $s3) -join ' ')
+        mattersMost = $a.whatMattersMost
+        opportunity = $s2
+        risk        = $s3
+    }
+}
+
+# The WHY behind a priority - grounded in a real goal when the words line
+# up, otherwise in the annual theme or an honest rank-based reason. Never
+# fabricated specificity.
+function Get-PriorityReason {
+    param([string]$Title, $Goals, $AnnualTheme, [int]$Rank)
+    $tl = ($Title.ToLower() -replace '[^a-z0-9 ]', ' ')
+    $words = @($tl -split '\s+' | Where-Object { $_.Length -gt 3 })
+    foreach ($g in @($Goals)) {
+        $gt = ([string]$g.title).ToLower()
+        foreach ($w in $words) { if ($gt -match [regex]::Escape($w)) { return ('Moves your goal "{0}" forward - that''s why it earns a top slot today.' -f $g.title) } }
+    }
+    switch ($Rank) {
+        1 { 'Your top open item - clearing it first makes everything after it easier.' }
+        2 { 'Keeps real momentum going without waiting on anything else to happen.' }
+        default {
+            if ($AnnualTheme -and $AnnualTheme.description) { ('Worth moving today so it stays consistent with this year''s focus.') }
+            else { 'Worth moving today so it doesn''t quietly become tomorrow''s fire.' }
+        }
+    }
+}
+
+function Get-BriefingPriorities {
+    param($Exec)
+    $out = @()
+    $rank = 1
+    foreach ($p in @($Exec.priorities | Select-Object -First 3)) {
+        $out += [pscustomobject]@{ rank = $rank; title = $p; why = (Get-PriorityReason -Title $p -Goals $Exec.goals -AnnualTheme $Exec.annualTheme -Rank $rank) }
+        $rank++
+    }
+    return @($out)
+}
+
+# Today's Focus - one sentence, shaped by the moment.
+function Get-BriefingFocus {
+    param($Exec)
+    $a = $Exec.assessment
+    if ($a.conflict.any) { return 'If today goes well, it will be because you kept family ahead of the work when it counted.' }
+    if ($Exec.time.partOfDay -eq 'morning') { return 'If today goes well, it will be because you protected your morning focus before the day filled up.' }
+    if (@($Exec.priorities).Count -gt 0) { return ('If today goes well, it will be because you moved "{0}" forward instead of chasing the noise.' -f $Exec.priorities[0]) }
+    return 'If today goes well, it will be because you did a few important things well - not many things frantically.'
+}
+
+# One Encouragement - short, human, never cheesy. Deterministic by day so
+# it varies without randomness.
+function Get-BriefingEncouragement {
+    param([datetime]$Now)
+    $lines = @(
+        'Progress compounds.',
+        "You don't have to do everything today - you only need to move the important things forward.",
+        "Consistency over intensity. That's the whole game.",
+        'Small, on-time, boring wins add up faster than heroics.',
+        "Do the next right thing. That's always enough.",
+        'Better, not busy.',
+        'The disciplined day is the one you barely notice - it just gets done.'
+    )
+    return $lines[($Now.DayOfYear % $lines.Count)]
+}
+
+# THE briefing. Consumes the single Executive Context (never creates a new
+# one) and composes the letter model. Data only - no UI, no writes.
+function Get-TonyExecutiveBriefing {
+    param(
+        [string]$CurrentWorkspace = 'Home',
+        [datetime]$Now = (Get-Date),
+        [string]$Name = 'Jake',
+        $ExecutiveContext = $null
+    )
+    $exec = $ExecutiveContext
+    if (-not $exec -and (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue)) {
+        $exec = Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion 'Prepare my executive briefing for today.' -Now $Now
+    }
+    if (-not $exec) { return $null }
+
+    $first = (([string]$Name).Trim() -split '\s+')[0]
+    $partOfDay = $exec.time.partOfDay
+
+    $observation = $null
+    $topObs = @($exec.observations | Select-Object -First 1)
+    if ($topObs.Count -gt 0) {
+        $o = $topObs[0]
+        $observation = [pscustomobject]@{ headline = $o.headline; message = $o.message; why = $o.why; tone = $o.tone; confidence = $o.confidence; category = $o.category }
+    }
+
+    return [pscustomobject]@{
+        source        = 'executive-briefing'
+        generatedAt   = $Now
+        dateText      = $Now.ToString('dddd, MMMM d, yyyy')
+        timeText      = $Now.ToString('h:mm tt')
+        partOfDay     = $partOfDay
+        greeting      = (Get-BriefingGreeting -PartOfDay $partOfDay -Name $first)
+        summary       = (Get-BriefingSummary -Exec $exec)
+        priorities    = (Get-BriefingPriorities -Exec $exec)
+        observation   = $observation
+        focus         = (Get-BriefingFocus -Exec $exec)
+        encouragement = (Get-BriefingEncouragement -Now $Now)
+        # reference back to the single context (not a copy) for any consumer that wants detail
+        context       = $exec
+    }
+}

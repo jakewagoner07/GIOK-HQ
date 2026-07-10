@@ -735,6 +735,80 @@ function New-ObservationsSection {
     return $wrap
 }
 
+# =====================  EXECUTIVE BRIEFING (D11)  =====================
+# The centerpiece of Home: a calm morning letter from Tony, composed by
+# core/executive-briefing.ps1 from the single Executive Context. Reads
+# top-to-bottom like a letter - greeting, summary, top three, one
+# observation, focus, and a short sign-off. Never a dashboard.
+function New-BriefingLabel {
+    param([string]$Text)
+    return (New-Text -Text $Text -Size 10 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 18, 0, 6)))
+}
+function New-BriefingHairline {
+    $b = New-Object Windows.Controls.Border; $b.Height = 1; $b.Background = New-Brush $script:Col.Line; $b.Margin = New-Object Windows.Thickness (0, 18, 0, 0)
+    return $b
+}
+
+function New-ExecutiveBriefingCard {
+    param([Parameter(Mandatory)] $Model)
+    $m = $Model
+
+    $card = New-Object Windows.Controls.Border
+    $card.Background = New-Brush $script:Col.CardBg
+    $card.BorderBrush = New-Brush $script:Col.Accent; $card.BorderThickness = New-Object Windows.Thickness 1
+    $card.CornerRadius = New-Object Windows.CornerRadius 16
+    $card.Padding = New-Object Windows.Thickness (30, 24, 30, 26); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 16)
+
+    $sp = New-Object Windows.Controls.StackPanel
+
+    # header: label (left) + date/time (right)
+    $hdr = New-Object Windows.Controls.DockPanel
+    $stamp = New-Text -Text ("{0}  -  {1}" -f $m.dateText, $m.timeText) -Size 11 -Color $script:Col.Muted
+    $stamp.HorizontalAlignment = 'Right'; [Windows.Controls.DockPanel]::SetDock($stamp, 'Right'); $hdr.Children.Add($stamp) | Out-Null
+    $hdr.Children.Add((New-Text -Text "TONY'S EXECUTIVE BRIEFING" -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $sp.Children.Add($hdr) | Out-Null
+
+    # greeting + summary (the lede)
+    $sp.Children.Add((New-Text -Text $m.greeting -Size 30 -Weight 'Bold' -Color $script:Col.Heading -Margin (New-Object Windows.Thickness (0, 8, 0, 0)))) | Out-Null
+    $sp.Children.Add((New-Text -Text $m.summary.text -Size 14.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)))) | Out-Null
+
+    # today's top three, each with its WHY
+    if (@($m.priorities).Count -gt 0) {
+        $sp.Children.Add((New-BriefingLabel -Text 'TODAY''S TOP THREE')) | Out-Null
+        foreach ($p in $m.priorities) {
+            $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 11)
+            $badge = New-NumBadge -N $p.rank; [Windows.Controls.DockPanel]::SetDock($badge, 'Left'); $row.Children.Add($badge) | Out-Null
+            $col = New-Object Windows.Controls.StackPanel
+            $col.Children.Add((New-Text -Text $p.title -Size 14 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+            $col.Children.Add((New-Text -Text $p.why -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 1, 0, 0)))) | Out-Null
+            $row.Children.Add($col) | Out-Null
+            $sp.Children.Add($row) | Out-Null
+        }
+    }
+
+    # exactly one observation
+    if ($m.observation) {
+        $o = $m.observation
+        $sp.Children.Add((New-BriefingLabel -Text 'TONY''S OBSERVATION')) | Out-Null
+        $toneCol = if (Get-Command Get-ObsToneColor -ErrorAction SilentlyContinue) { Get-ObsToneColor $o.tone } else { $script:Col.AccentInk }
+        $sp.Children.Add((New-Text -Text $o.headline -Size 14 -Weight 'Bold' -Color $toneCol -Wrap $true)) | Out-Null
+        $sp.Children.Add((New-Text -Text $o.message -Size 12.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null
+        if ($o.why) { $sp.Children.Add((New-Text -Text $o.why -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null }
+    }
+
+    # today's focus
+    $sp.Children.Add((New-BriefingLabel -Text "TODAY'S FOCUS")) | Out-Null
+    $sp.Children.Add((New-Text -Text $m.focus -Size 15 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)) | Out-Null
+
+    # encouragement sign-off
+    $sp.Children.Add((New-BriefingHairline)) | Out-Null
+    $sp.Children.Add((New-Text -Text $m.encouragement -Size 14 -Weight 'SemiBold' -Color $script:Col.Accent -Wrap $true -Margin (New-Object Windows.Thickness (0, 14, 0, 0)))) | Out-Null
+    $sp.Children.Add((New-Text -Text '- Tony' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null
+
+    $card.Child = $sp
+    return $card
+}
+
 function New-HomeView {
     param([Parameter(Mandatory)] $Model)
     $stack = New-Object Windows.Controls.StackPanel; $stack.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -755,12 +829,15 @@ function New-HomeView {
         $script:CommandResult = $null
     }
 
-    # Morning Briefing (replaces the greeting) - renders ONLY from the Morning Brief model
-    $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null
-
-    # Tony's Observations - up to 3 cards, highest impact first (D9)
-    $obsSection = New-ObservationsSection
-    if ($obsSection) { $stack.Children.Add($obsSection) | Out-Null }
+    # Executive Briefing - THE centerpiece of Home: a calm morning letter from
+    # Tony (D11), composed from the single Executive Context. It surfaces the
+    # one observation that matters, so the separate observations row is retired
+    # here to keep Home calm and letter-centered. Falls back to the Morning
+    # Briefing if the engine isn't available.
+    $briefName = if ($script:Theme -and $script:Theme.profileName) { $script:Theme.profileName } else { 'Jake' }
+    $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName } else { $null }
+    if ($briefing) { $stack.Children.Add((New-ExecutiveBriefingCard -Model $briefing)) | Out-Null }
+    else { $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null }
 
     # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
     $cap = Get-CaptureStats

@@ -41,6 +41,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-observations.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-context.ps1')
+. (Join-Path $PSScriptRoot 'core\executive-briefing.ps1')
 . (Join-Path $PSScriptRoot 'core\document-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'providers\claude-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')

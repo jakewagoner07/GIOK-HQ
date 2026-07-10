@@ -55,6 +55,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Tony Is Helpful First](Tony_Helpful_First.md) | Tony answers the question first, guides second — and never makes you feel you asked wrong |
 | — | [Tony Observation Engine](Tony_Observation_Engine.md) | Tony notices patterns — observations, not reminders; celebrate, guide, never criticize |
 | — | [Executive Context Engine](Executive_Context_Engine.md) | Tony's single, live situational awareness — assembled before every response, never stored |
+| — | [Executive Briefing](Executive_Briefing.md) | The morning letter from Tony — Home's centerpiece; calm, personal, never a dashboard |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
