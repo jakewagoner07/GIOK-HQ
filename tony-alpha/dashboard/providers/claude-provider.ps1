@@ -145,12 +145,24 @@ function Get-ClaudeUserContent {
     param($Request)
     $lines = @()
     $lines += "Question: $($Request.userQuestion)"
-    if ($Request.currentWorkspace) { $lines += "Current workspace: $($Request.currentWorkspace)" }
+
+    # Prefer Tony's assembled EXECUTIVE CONTEXT (a concise, situational summary)
+    # over reconstructing the picture from raw fields. The Executive Context
+    # Engine is the single source of truth; here we simply relay its read.
+    $exec = if ($Request.context -and $Request.context.executiveSummary) { [string]$Request.context.executiveSummary } else { '' }
+    if ($exec.Trim()) {
+        $lines += ''
+        $lines += "Current situation (Tony's executive read): $exec"
+    } else {
+        # fallback: reconstruct minimally when no executive summary is present
+        if ($Request.currentWorkspace) { $lines += "Current workspace: $($Request.currentWorkspace)" }
+        if ($Request.mission) { $lines += "Mission: $($Request.mission)" }
+        if (@($Request.goals).Count -gt 0) { $lines += "Goals: " + ((@($Request.goals) | ForEach-Object { if ($_.title) { $_.title } else { [string]$_ } }) -join '; ') }
+        if (@($Request.todaysPriorities).Count -gt 0) { $lines += "Today's priorities: " + (@($Request.todaysPriorities) -join '; ') }
+        if (@($Request.openTasks).Count -gt 0) { $lines += ("Open action items ({0}): {1}" -f @($Request.openTasks).Count, ((@($Request.openTasks) | Select-Object -First 8) -join '; ')) }
+    }
+    # A durable fact worth keeping even alongside the summary: who Jake is.
     if ($Request.identity -and $Request.identity.tonyReflection -and $Request.identity.tonyReflection.text) { $lines += "About the user (from their first conversation): $($Request.identity.tonyReflection.text)" }
-    if ($Request.mission) { $lines += "Mission: $($Request.mission)" }
-    if (@($Request.goals).Count -gt 0) { $lines += "Goals: " + ((@($Request.goals) | ForEach-Object { if ($_.title) { $_.title } else { [string]$_ } }) -join '; ') }
-    if (@($Request.todaysPriorities).Count -gt 0) { $lines += "Today's priorities: " + (@($Request.todaysPriorities) -join '; ') }
-    if (@($Request.openTasks).Count -gt 0) { $lines += ("Open action items ({0}): {1}" -f @($Request.openTasks).Count, ((@($Request.openTasks) | Select-Object -First 8) -join '; ')) }
     if ($Request.reasoningHint) { $lines += "Intent: $($Request.reasoningHint)" }
     # Tony's judgment-layer guidance (evaluated before this call) - honor it in the recommendation.
     if ($Request.guidance) {
