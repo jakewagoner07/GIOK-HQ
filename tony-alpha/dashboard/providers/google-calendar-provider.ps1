@@ -344,7 +344,7 @@ function Get-Calendar {
             calendars   = @($cals | ForEach-Object { [pscustomobject]@{ id = $_.id; summary = [string]$_.summary; primary = [bool]$_.primary } })
             events      = @($events); nextEvent = @($next)[0]
             todayCount  = $today.Count; tomorrowCount = $tomorrow.Count
-            freeWindows = @($freeToday + $freeTomorrow)
+            freeWindows = @(@($freeToday) + @($freeTomorrow))
             conflicts   = @(Get-GCalConflicts -Events $events)
             insights    = $insights
         }
