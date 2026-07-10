@@ -22,3 +22,11 @@ tony-alpha/logs/
 
 # Optional per-user provider location config — stays local.
 **/weather.config.json
+
+# Google Calendar OAuth client config + tokens — PRIVATE, local only, never
+# committed. Keep only the safe example. Tokens/refresh tokens never on GitHub.
+tony-alpha/dashboard/providers/calendar.config.json
+**/calendar.config.json
+!**/calendar.config.example.json
+tony-alpha/calendar.tokens.json
+**/calendar.tokens.json

@@ -47,6 +47,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\document-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'providers\claude-provider.ps1')
 . (Join-Path $PSScriptRoot 'providers\weather-provider.ps1')
+. (Join-Path $PSScriptRoot 'providers\google-calendar-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 

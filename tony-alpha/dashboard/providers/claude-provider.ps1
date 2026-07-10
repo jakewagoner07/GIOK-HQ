@@ -161,10 +161,11 @@ function Get-ClaudeUserContent {
         if (@($Request.todaysPriorities).Count -gt 0) { $lines += "Today's priorities: " + (@($Request.todaysPriorities) -join '; ') }
         if (@($Request.openTasks).Count -gt 0) { $lines += ("Open action items ({0}): {1}" -f @($Request.openTasks).Count, ((@($Request.openTasks) | Select-Object -First 8) -join '; ')) }
     }
-    # Live weather signal (from the Weather Provider) - answer the weather first,
-    # naturally, then reconnect only if it fits. On failure, be honest; never guess.
-    if ($Request.context -and $Request.context.weather) {
-        $w = $Request.context.weather
+    # Live-provider signals (Weather, Calendar, ...). Answer the live question
+    # first, naturally and specifically; on failure be honest and never guess.
+    $ls = if ($Request.context -and $Request.context.liveSignals) { $Request.context.liveSignals } else { $null }
+    $w = if ($ls) { $ls['weather'] } else { $null }
+    if ($w) {
         if ($w.ok) {
             $lines += ''
             $lines += ("LIVE WEATHER for {0} (fetched {1}): right now {2}, {3}F (feels {4}F), humidity {5}%, wind {6} mph {7}. {8}: {9}, high {10}F / low {11}F, rain chance {12}%. Sunrise {13}, sunset {14}." -f $w.location, $w.timestamp, $w.current.conditions, $w.current.temperature, $w.current.feelsLike, $w.current.humidity, $w.current.windMph, $w.current.windDir, $w.forecast.when, $w.forecast.conditions, $w.forecast.high, $w.forecast.low, $w.forecast.rainChancePct, $w.sunrise, $w.sunset)
@@ -172,6 +173,24 @@ function Get-ClaudeUserContent {
         } else {
             $lines += ''
             $lines += ("LIVE WEATHER UNAVAILABLE ({0}). Tell Jake honestly that you can't retrieve live weather right now, that once the provider reconnects you'll answer these automatically, and do NOT guess the forecast." -f $w.status.detail)
+        }
+    }
+    $c = if ($ls) { $ls['calendar'] } else { $null }
+    if ($c) {
+        if ($c.ok) {
+            $lines += ''
+            $lines += ("LIVE CALENDAR ({0}, fetched {1}, timezone {2}): {3} event(s) today, {4} tomorrow." -f $c.account, $c.timestamp, $c.timezone, $c.todayCount, $c.tomorrowCount)
+            if ($c.nextEvent) { $lines += ("Next: ""{0}"" {1}-{2}{3}." -f $c.nextEvent.title, $c.nextEvent.start.ToString('ddd h:mm tt'), $c.nextEvent.end.ToString('h:mm tt'), $(if ($c.nextEvent.location) { ' at ' + $c.nextEvent.location } else { '' })) }
+            foreach ($ev in @($c.events | Select-Object -First 12)) {
+                $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd') + ', all day' } else { $ev.start.ToString('ddd h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
+                $lines += (" - {0}: {1}{2}{3}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }))
+            }
+            if (@($c.freeWindows).Count -gt 0) { $lines += ('Free windows: ' + ((@($c.freeWindows) | ForEach-Object { $_.start.ToString('ddd h:mm tt') + '-' + $_.end.ToString('h:mm tt') + ' (' + $_.minutes + 'm)' }) -join '; ')) }
+            if (@($c.conflicts).Count -gt 0) { $lines += ('Scheduling conflicts: ' + ((@($c.conflicts) | ForEach-Object { $_.a + ' overlaps ' + $_.b }) -join '; ')) }
+            $lines += "Answer the calendar question first, naturally - use dates/times ONLY from this data, never invent any. Then add brief executive guidance (e.g. which free block to protect) only if it fits. If the wording is ambiguous, ask one concise clarifying question. Never mention how the calendar is connected or any technical/implementation details."
+        } else {
+            $lines += ''
+            $lines += ("LIVE CALENDAR UNAVAILABLE ({0}). Tell Jake honestly using exactly this reason; do NOT guess his schedule and do NOT use sample events." -f $c.status.detail)
         }
     }
     # A durable fact worth keeping even alongside the summary: who Jake is.

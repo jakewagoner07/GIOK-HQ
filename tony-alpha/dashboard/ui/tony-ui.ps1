@@ -1150,6 +1150,72 @@ function New-LiveProvidersCard {
     return $card
 }
 
+# ---- Google Calendar (read-only) status card ----
+$script:CalPill = $null; $script:CalPillText = $null; $script:CalDetail = $null; $script:CalAccount = $null; $script:CalRefresh = $null; $script:CalError = $null
+function Get-CalStateColors {
+    param([string]$State)
+    switch ($State) {
+        'connected'      { @('#DEF7EC', '#03543F') }
+        'not-connected'  { @($script:Col.AccentSoft, $script:Col.AccentInk) }
+        'not-configured' { @('#FDF6B2', '#8E4B10') }
+        default          { @('#FDE2E1', '#9B1C1C') }   # needs-attention / denied / error / network-error
+    }
+}
+function Get-CalStateLabel {
+    param([string]$State)
+    switch ($State) {
+        'connected'      { 'Connected' }
+        'not-connected'  { 'Not Connected' }
+        'not-configured' { 'Not Configured' }
+        'needs-attention' { 'Needs Attention' }
+        'denied'         { 'Access Denied' }
+        default          { 'Needs Attention' }
+    }
+}
+function Set-CalStatusDisplay {
+    param($Status)
+    if (-not $script:CalPill) { return }
+    $cols = Get-CalStateColors $Status.state
+    $script:CalPill.Background = New-Brush $cols[0]
+    $script:CalPillText.Text = (Get-CalStateLabel $Status.state); $script:CalPillText.Foreground = New-Brush $cols[1]
+    if ($script:CalDetail) { $script:CalDetail.Text = $Status.detail }
+    if ($script:CalAccount) { $script:CalAccount.Text = ('Account: {0}' -f $(if ($Status.account) { $Status.account } else { 'not connected' })) }
+    if ($script:CalRefresh) { $script:CalRefresh.Text = ('Last successful refresh: {0}' -f $(if ($Status.lastRefresh) { $Status.lastRefresh } else { 'never' })) }
+    if ($script:CalError) { $script:CalError.Text = ('Last error: {0}' -f $(if ($Status.lastError) { $Status.lastError } else { 'none' })) }
+}
+function New-CalendarProviderCard {
+    $body = New-Object Windows.Controls.StackPanel
+    $body.Children.Add((New-KeyValueRow -Key 'Provider' -Value 'Google Calendar (read-only)')) | Out-Null
+
+    if (Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) { $st = Get-GCalStatus } else { $st = [pscustomobject]@{ state = 'not-configured'; detail = 'Calendar provider not loaded.'; account = $null; lastRefresh = $null; lastError = $null } }
+
+    $body.Children.Add((New-Text -Text 'STATUS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
+    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 9; $pill.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $pill.HorizontalAlignment = 'Left'
+    $pillText = New-Text -Text (Get-CalStateLabel $st.state) -Size 12.5 -Weight 'Bold' -Color '#03543F'
+    $pill.Child = $pillText; $script:CalPill = $pill; $script:CalPillText = $pillText
+    $body.Children.Add($pill) | Out-Null
+
+    $detail = New-Text -Text $st.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)); $script:CalDetail = $detail; $body.Children.Add($detail) | Out-Null
+    $acct = New-Text -Text 'Account: not connected' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)); $script:CalAccount = $acct; $body.Children.Add($acct) | Out-Null
+    $body.Children.Add((New-Text -Text 'Access: read-only (Tony can view your schedule, never change it)' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+    $refresh = New-Text -Text 'Last successful refresh: never' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:CalRefresh = $refresh; $body.Children.Add($refresh) | Out-Null
+    $err = New-Text -Text 'Last error: none' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:CalError = $err; $body.Children.Add($err) | Out-Null
+
+    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    $btns.Children.Add((New-MiniButton -Text 'Connect Google Calendar' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-GoogleCalendar -ErrorAction SilentlyContinue) { Connect-GoogleCalendar | Out-Null; Set-CalStatusDisplay (Get-GCalStatus -Live) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Test Connection' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) { Set-CalStatusDisplay (Get-GCalStatus -Live) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Disconnect' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) if (Get-Command Disconnect-GoogleCalendar -ErrorAction SilentlyContinue) { Disconnect-GoogleCalendar | Out-Null; Set-CalStatusDisplay (Get-GCalStatus) } })) | Out-Null
+    $body.Children.Add($btns) | Out-Null
+
+    $note = New-Text -Text 'Setup: create a Google Cloud OAuth client (Desktop app), enable the Calendar API, and put its id/secret in providers\calendar.config.json. Sign-in happens in your browser; Tony never sees your password and requests only read-only access.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
+    $body.Children.Add($note) | Out-Null
+
+    Set-CalStatusDisplay $st
+    $card = New-Card -Title 'Google Calendar' -Body $body
+    $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    return $card
+}
+
 function New-SettingsView {
     $t = $script:Theme
     $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -1184,6 +1250,9 @@ function New-SettingsView {
 
     # Live Providers - Weather (and future live services)
     $outer.Children.Add((New-LiveProvidersCard)) | Out-Null
+
+    # Google Calendar (read-only) - Connect / Test / Disconnect
+    $outer.Children.Add((New-CalendarProviderCard)) | Out-Null
 
     $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $outer
     return $scroll

@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this file to calendar.config.json (which is gitignored) and fill in your own values. In Google Cloud Console: create a project, enable the Google Calendar API, configure the OAuth consent screen (External, add yourself as a test user), then create an OAuth 2.0 Client ID of type 'Desktop app'. Paste its client id and secret below. This provider requests ONLY read-only calendar access (calendar.readonly). For an installed desktop app the client secret is not truly confidential, but calendar.config.json stays local and gitignored regardless.",
+  "clientId": "YOUR_DESKTOP_APP_CLIENT_ID.apps.googleusercontent.com",
+  "clientSecret": "YOUR_DESKTOP_APP_CLIENT_SECRET"
+}

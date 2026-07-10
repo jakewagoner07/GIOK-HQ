@@ -291,13 +291,14 @@ function Invoke-TonyBrain {
         $whenAsked = if ($UserInput -match '(?i)\btomorrow\b') { 'tomorrow' } else { 'today' }
         try { $liveSignals = Get-RelevantLiveSignals -Text $UserInput -Options @{ When = $whenAsked } } catch { $liveSignals = @{} }
     }
-    $weather = if ($liveSignals -and $liveSignals.ContainsKey('weather')) { $liveSignals['weather'] } else { $null }
+    # The Brain stays generic: it never names weather or calendar - it just carries
+    # whatever live signals the registry returned to the context and the provider.
 
     # EXECUTIVE CONTEXT: Tony's single source of situational awareness, assembled
     # once (time, priorities, briefing, audit, goals, identity, observations, and
     # the Decision Framework judgment). Before every response Tony "gets it."
     $exec = if (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue) {
-        Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion $UserInput -Now $Now -History $History -Weather $weather
+        Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion $UserInput -Now $Now -History $History -LiveSignals $liveSignals
     } else { $null }
 
     # reuse the referenced base context for the reasoning engine (no re-assembly)
@@ -337,7 +338,7 @@ function Invoke-TonyBrain {
         partOfDay = if ($exec) { $exec.time.partOfDay } else { '' }
         workspace = $CurrentWorkspace
         openTaskCount = @($openTasks).Count
-        weather = $weather   # live weather signal (or null); the provider explains it naturally
+        liveSignals = $liveSignals   # generic live-provider signals (weather, calendar, ...); explained naturally
     }
 
     $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxForProvider -Identity $identity -Goals $goals -Mission $mission `
