@@ -26,8 +26,8 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ Document Intelligence foundation — read for meaning, approval-gated (D6)
 - ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
 
-**Remaining in Phase 1 (small):** retire the dormant `tony-memory.ps1`; a real **Projects model**
-(unblocks the reserved `project` context field and sharpens priority reasons).
+**Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
+field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
 
 ---
 

@@ -42,17 +42,17 @@ function Get-ConversationSteps {
 }
 
 # ---- state (progress + working answers) ----
-function Get-ConversationPath { return (Join-Path $PSScriptRoot '..\..\first_conversation.json') }
+function Get-FirstConversationPath { return (Join-Path $PSScriptRoot '..\..\first_conversation.json') }
 
 function Get-ConversationState {
-    $p = Get-ConversationPath
+    $p = Get-FirstConversationPath
     if (Test-Path $p) {
         try { return (Get-Content -Path $p -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
     }
     return [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0' }; completed = $false; currentStep = 0; startedAt = $null; completedAt = $null; answers = [pscustomobject]@{} }
 }
 
-function Save-ConversationState { param([Parameter(Mandatory)] $State) ($State | ConvertTo-Json -Depth 8) | Set-Content -Path (Get-ConversationPath) -Encoding UTF8 }
+function Save-ConversationState { param([Parameter(Mandatory)] $State) ($State | ConvertTo-Json -Depth 8) | Set-Content -Path (Get-FirstConversationPath) -Encoding UTF8 }
 
 function Get-ConversationAnswer {
     param($State, [string]$Id)

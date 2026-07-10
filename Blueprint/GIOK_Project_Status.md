@@ -3,7 +3,7 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D16** (Gmail Provider - Executive Email Intelligence).
+Last updated: **RC1** (Alpha Cleanup and Release Review), after Sprint D16 (Gmail Provider).
 
 ---
 
@@ -15,8 +15,8 @@ Last updated: end of **Sprint D16** (Gmail Provider - Executive Email Intelligen
 | **Current version** | **0.8 Alpha** (`tony-alpha/dashboard/theme/theme.json`) |
 | **Current branch** | `feature/dashboard-alpha` |
 | **Current PR** | **#1** — https://github.com/jakewagoner07/GIOK-HQ/pull/1 — **open, not merged**, base `main` |
-| **Latest commit** | `722dce4` pushed (*Calendar free-window fix*); **D16 Gmail Provider committed on top, unpushed** (this checkpoint) |
-| **Remote sync** | D14/D15 pushed; **D16 local-only until Jake approves a push** |
+| **Latest commit** | `9cbe816` pushed (*D16 Gmail live-data fixes*); **RC1 cleanup committed on top, unpushed** (this checkpoint) |
+| **Remote sync** | D14/D15/D16 pushed; **RC1 local-only until Jake approves a push** |
 | **Platform** | Windows PowerShell 5.1 (STA) + .NET WPF. No Node/Python. Entry point: `tony-alpha/dashboard/dashboard.ps1`. |
 
 ---
@@ -171,8 +171,12 @@ Projects, Learning.
 
 ## Technical debt
 
-- **`core/tony-memory.ps1`** (old structured-memory framework) is superseded by
-  `memory-manager.ps1` but still dot-sourced and dormant — safe to retire.
+- **`core/tony-memory.ps1`** (old structured-memory framework) — **retired at RC1** (deleted; its
+  functions were never called and it declared a conflicting schema on `tony_memory.json`, which
+  `memory-manager.ps1` owns).
+- **`Get-ConversationPath` name collision** — **fixed at RC1**: `first-conversation.ps1` now uses
+  `Get-FirstConversationPath` so onboarding state stays in `first_conversation.json` and can never
+  be routed into (or clobber) the Talk-with-Tony `conversation.json`.
 - **Reserved-but-empty fields:** `project` (no projects model yet) and `recentDocument` (no
   document-activity store) in the Executive Context.
 - **Overdue detection** is a "open 2+ weeks" proxy because Action Items have no due-date field.

@@ -150,11 +150,13 @@ Appointments for future expansion. Dark executive branding throughout.
   (placeholder destinations), Archive, Delete, Restore.
 - **Home** shows Today's / Unprocessed / Recent captures.
 
-**Tony Memory** — structured memory (not conversation memory). A framework workspace with nine
-categories (People, Ideas, Preferences, Business, Family, Goals, Relationships, Lessons,
-Patterns) backed by `tony_memory.json`. Framework only for now; Tony populates it over time.
+**Tony Memory** — permission-based permanent memory (not conversation memory), Sprint D12. Tony
+never remembers without asking: detection surfaces a single candidate, you approve, and only then is
+it stored in `tony_memory.json`. Review, edit, disable, delete, or export any memory in the **Tony**
+workspace (the Memory Review). `memory-manager.ps1` is the sole writer; the Executive Context only
+reads. (The earlier nine-category framework stub was retired at RC1.)
 
-See `Blueprint/Capture.md` and `Blueprint/Tony_Memory.md` for how these evolve through Version 3.
+See `Blueprint/Tony_Memory_With_Permission.md`, `Blueprint/Capture.md`, and `Blueprint/Tony_Memory.md`.
 
 ![Capture Inbox](docs/capture-view.png)
 ![Capture window](docs/capture-window.png)

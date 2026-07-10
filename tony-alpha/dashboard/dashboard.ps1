@@ -28,7 +28,6 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-core.ps1')
 . (Join-Path $PSScriptRoot 'core\action-items.ps1')
 . (Join-Path $PSScriptRoot 'core\capture.ps1')
-. (Join-Path $PSScriptRoot 'core\tony-memory.ps1')
 . (Join-Path $PSScriptRoot 'core\morning-brief.ps1')
 . (Join-Path $PSScriptRoot 'core\morning-experience.ps1')
 . (Join-Path $PSScriptRoot 'core\identity.ps1')
