@@ -161,6 +161,19 @@ function Get-ClaudeUserContent {
         if (@($Request.todaysPriorities).Count -gt 0) { $lines += "Today's priorities: " + (@($Request.todaysPriorities) -join '; ') }
         if (@($Request.openTasks).Count -gt 0) { $lines += ("Open action items ({0}): {1}" -f @($Request.openTasks).Count, ((@($Request.openTasks) | Select-Object -First 8) -join '; ')) }
     }
+    # Live weather signal (from the Weather Provider) - answer the weather first,
+    # naturally, then reconnect only if it fits. On failure, be honest; never guess.
+    if ($Request.context -and $Request.context.weather) {
+        $w = $Request.context.weather
+        if ($w.ok) {
+            $lines += ''
+            $lines += ("LIVE WEATHER for {0} (fetched {1}): right now {2}, {3}F (feels {4}F), humidity {5}%, wind {6} mph {7}. {8}: {9}, high {10}F / low {11}F, rain chance {12}%. Sunrise {13}, sunset {14}." -f $w.location, $w.timestamp, $w.current.conditions, $w.current.temperature, $w.current.feelsLike, $w.current.humidity, $w.current.windMph, $w.current.windDir, $w.forecast.when, $w.forecast.conditions, $w.forecast.high, $w.forecast.low, $w.forecast.rainChancePct, $w.sunrise, $w.sunset)
+            $lines += "Answer the weather question first, naturally and specifically, then reconnect to Jake's day only if it genuinely fits."
+        } else {
+            $lines += ''
+            $lines += ("LIVE WEATHER UNAVAILABLE ({0}). Tell Jake honestly that you can't retrieve live weather right now, that once the provider reconnects you'll answer these automatically, and do NOT guess the forecast." -f $w.status.detail)
+        }
+    }
     # A durable fact worth keeping even alongside the summary: who Jake is.
     if ($Request.identity -and $Request.identity.tonyReflection -and $Request.identity.tonyReflection.text) { $lines += "About the user (from their first conversation): $($Request.identity.tonyReflection.text)" }
     if ($Request.reasoningHint) { $lines += "Intent: $($Request.reasoningHint)" }

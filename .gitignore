@@ -19,3 +19,6 @@ tony-alpha/tony_memory.json
 # Local diagnostics logs — runtime only, never committed.
 tony-alpha/logs/
 **/tony-diagnostics.log
+
+# Optional per-user provider location config — stays local.
+**/weather.config.json

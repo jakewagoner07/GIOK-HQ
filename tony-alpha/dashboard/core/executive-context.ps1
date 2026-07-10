@@ -101,7 +101,7 @@ function Get-ExecutiveAssessment {
 # situational. This is what lets the provider answer WITHOUT rebuilding
 # context from raw fields.
 function Get-ExecutiveSummaryText {
-    param($Time, $Workspace, $Project, $Priorities, $OpenCount, $LatestAudit, $AnnualTheme, $Assessment, $Guidance, $Memory = @())
+    param($Time, $Workspace, $Project, $Priorities, $OpenCount, $LatestAudit, $AnnualTheme, $Assessment, $Guidance, $Memory = @(), $Weather = $null)
     $parts = @()
     $parts += ("It's {0} {1}, {2}." -f $Time.dayOfWeek, $Time.partOfDay, $Time.time)
     $where = if ($Project) { "working on $Project" }
@@ -115,6 +115,7 @@ function Get-ExecutiveSummaryText {
     if ($Assessment.overdue.any) { $parts += ("{0} item(s) have lingered two weeks or more." -f $Assessment.overdue.count) }
     if ($Assessment.conflict.any) { $parts += ('Watch (values): ' + ($Assessment.conflict.items -join ' | ')) }
     if ($AnnualTheme -and $AnnualTheme.description) { $parts += ('Long game (annual theme): ' + $AnnualTheme.description) }
+    if ($Weather -and $Weather.ok) { $parts += ('Weather ({0}): now {1}, {2}F; {3} high {4}/low {5}, rain {6}%.' -f $Weather.location, $Weather.current.conditions, $Weather.current.temperature, $Weather.forecast.when, $Weather.forecast.high, $Weather.forecast.low, $Weather.forecast.rainChancePct) }
     if (@($Memory).Count -gt 0) { $parts += ('Remembered (approved): ' + ((@($Memory) | Select-Object -First 3 | ForEach-Object { $_.value }) -join '; ') + '.') }
     if ($Guidance) { $parts += ('Tony''s judgment on this question: alignment {0}/100, priority {1}.' -f $Guidance.alignmentScore, $Guidance.priority) }
     return ($parts -join ' ')
@@ -127,7 +128,8 @@ function Get-TonyExecutiveContext {
         [string]$CurrentQuestion = '',
         [datetime]$Now = (Get-Date),
         $History = @(),
-        [string]$CurrentProject = $null
+        [string]$CurrentProject = $null,
+        $Weather = $null   # optional live weather signal, passed in when relevant (never auto-fetched here)
     )
     $has = { param($n) [bool](Get-Command $n -ErrorAction SilentlyContinue) }
 
@@ -195,7 +197,7 @@ function Get-TonyExecutiveContext {
         -LatestAudit $latestAudit -ActiveGoals $activeGoals -Observations $observations -Guidance $guidance -Question $CurrentQuestion
     $summary = Get-ExecutiveSummaryText -Time $time -Workspace $CurrentWorkspace -Project $CurrentProject `
         -Priorities $priorities -OpenCount $openCount -LatestAudit $latestAudit -AnnualTheme $annualTheme `
-        -Assessment $assessment -Guidance $guidance -Memory $memory
+        -Assessment $assessment -Guidance $guidance -Memory $memory -Weather $Weather
 
     return [pscustomobject]@{
         source             = 'executive-context'
@@ -222,6 +224,7 @@ function Get-TonyExecutiveContext {
         recentConversation = $recentConversation
         recentDocument     = $recentDocument
         memory             = $memory   # approved memories (read-only reference; Memory Manager owns writes)
+        weather            = $Weather  # live weather signal when relevant (or null); provided, never fetched here
         assessment         = $assessment
         executiveSummary   = $summary
         base               = $base   # the referenced base context, reused by the reasoning engine (no re-assembly)

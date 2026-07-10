@@ -1092,6 +1092,64 @@ function New-ProviderStatusCard {
     return $card
 }
 
+# ---- live provider status (Weather, and future providers) for Settings ----
+$script:WxPill = $null; $script:WxPillText = $null; $script:WxDetail = $null; $script:WxUpdated = $null
+
+function Get-WxStateColors {
+    param([string]$State)
+    switch ($State) {
+        'connected'    { @('#DEF7EC', '#03543F') }
+        'ready'        { @($script:Col.AccentSoft, $script:Col.AccentInk) }
+        'disconnected' { @('#FDF6B2', '#8E4B10') }
+        default        { @('#FDE2E1', '#9B1C1C') }   # error / network-error
+    }
+}
+function Get-WxStateLabel {
+    param([string]$State)
+    switch ($State) {
+        'connected'    { 'Weather Connected' }
+        'ready'        { 'Weather Ready' }
+        'disconnected' { 'Weather Disconnected' }
+        default        { 'Weather Error' }
+    }
+}
+function Set-WxStatusDisplay {
+    param($Status)
+    if (-not $script:WxPill) { return }
+    $cols = Get-WxStateColors $Status.state
+    $script:WxPill.Background = New-Brush $cols[0]
+    $script:WxPillText.Text = (Get-WxStateLabel $Status.state); $script:WxPillText.Foreground = New-Brush $cols[1]
+    if ($script:WxDetail) { $script:WxDetail.Text = $Status.detail }
+    if ($script:WxUpdated) { $script:WxUpdated.Text = ('Last updated: {0}' -f $(if ($Status.lastUpdated) { $Status.lastUpdated } else { 'not checked yet' })) }
+}
+
+function New-LiveProvidersCard {
+    $body = New-Object Windows.Controls.StackPanel
+    $body.Children.Add((New-KeyValueRow -Key 'Provider' -Value 'Weather (Open-Meteo)')) | Out-Null
+
+    if (Get-Command Get-WeatherStatus -ErrorAction SilentlyContinue) { $st = Get-WeatherStatus } else { $st = [pscustomobject]@{ state = 'error'; detail = 'Weather provider not loaded.'; lastUpdated = $null } }
+
+    $body.Children.Add((New-Text -Text 'STATUS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
+    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 9; $pill.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $pill.HorizontalAlignment = 'Left'
+    $pillText = New-Text -Text (Get-WxStateLabel $st.state) -Size 12.5 -Weight 'Bold' -Color '#03543F'
+    $pill.Child = $pillText; $script:WxPill = $pill; $script:WxPillText = $pillText
+    $body.Children.Add($pill) | Out-Null
+
+    $detail = New-Text -Text $st.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)); $script:WxDetail = $detail; $body.Children.Add($detail) | Out-Null
+    $upd = New-Text -Text 'Last updated: not checked yet' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 0, 0)); $script:WxUpdated = $upd; $body.Children.Add($upd) | Out-Null
+
+    $btn = New-MiniButton -Text 'Check Weather' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Get-WeatherStatus -ErrorAction SilentlyContinue) { Set-WxStatusDisplay (Get-WeatherStatus -Live) } }
+    $btn.Margin = New-Object Windows.Thickness (0, 14, 0, 0); $btn.HorizontalAlignment = 'Left'; $body.Children.Add($btn) | Out-Null
+
+    $note = New-Text -Text 'Weather is Tony''s first live provider. Calendar, email, maps, news and more will follow the same architecture - Tony explains them; you never talk to a weather app.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 14, 0, 0))
+    $body.Children.Add($note) | Out-Null
+
+    Set-WxStatusDisplay $st
+    $card = New-Card -Title 'Live Providers' -Body $body
+    $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    return $card
+}
+
 function New-SettingsView {
     $t = $script:Theme
     $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -1123,6 +1181,9 @@ function New-SettingsView {
 
     # Tony's Reasoning - live provider status (Claude Connected / Not Configured / ...)
     $outer.Children.Add((New-ProviderStatusCard)) | Out-Null
+
+    # Live Providers - Weather (and future live services)
+    $outer.Children.Add((New-LiveProvidersCard)) | Out-Null
 
     $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $outer
     return $scroll

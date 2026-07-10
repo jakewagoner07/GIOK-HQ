@@ -57,6 +57,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Executive Context Engine](Executive_Context_Engine.md) | Tony's single, live situational awareness — assembled before every response, never stored |
 | — | [Executive Briefing](Executive_Briefing.md) | The morning letter from Tony — Home's centerpiece; calm, personal, never a dashboard |
 | — | [Tony Memory, With Permission](Tony_Memory_With_Permission.md) | Tony never remembers without asking — the permission model, Memory Review, and user control |
+| — | [Weather Provider](Weather_Provider.md) | Tony's first live provider — the permanent architecture every future live service follows |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |

@@ -282,11 +282,22 @@ Register-TonyProvider -Provider ([pscustomobject]@{
 function Invoke-TonyBrain {
     param([string]$UserInput, [string]$CurrentWorkspace = 'unknown', [datetime]$Now = (Get-Date), $History = @())
 
+    # LIVE PROVIDERS: Tony Brain decides WHEN a live signal is needed. Each
+    # registered provider judges its own relevance, so a non-weather question
+    # makes no weather call. Weather is the first; future providers plug in
+    # identically and are consumed here without changing this code.
+    $liveSignals = @{}
+    if (Get-Command Get-RelevantLiveSignals -ErrorAction SilentlyContinue) {
+        $whenAsked = if ($UserInput -match '(?i)\btomorrow\b') { 'tomorrow' } else { 'today' }
+        try { $liveSignals = Get-RelevantLiveSignals -Text $UserInput -Options @{ When = $whenAsked } } catch { $liveSignals = @{} }
+    }
+    $weather = if ($liveSignals -and $liveSignals.ContainsKey('weather')) { $liveSignals['weather'] } else { $null }
+
     # EXECUTIVE CONTEXT: Tony's single source of situational awareness, assembled
     # once (time, priorities, briefing, audit, goals, identity, observations, and
     # the Decision Framework judgment). Before every response Tony "gets it."
     $exec = if (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue) {
-        Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion $UserInput -Now $Now -History $History
+        Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion $UserInput -Now $Now -History $History -Weather $weather
     } else { $null }
 
     # reuse the referenced base context for the reasoning engine (no re-assembly)
@@ -326,6 +337,7 @@ function Invoke-TonyBrain {
         partOfDay = if ($exec) { $exec.time.partOfDay } else { '' }
         workspace = $CurrentWorkspace
         openTaskCount = @($openTasks).Count
+        weather = $weather   # live weather signal (or null); the provider explains it naturally
     }
 
     $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxForProvider -Identity $identity -Goals $goals -Mission $mission `
