@@ -97,53 +97,16 @@ function Get-TonyPersona {
     }
 }
 
-# Clean provider text so it always displays correctly in the Windows (WPF)
-# app. Two problems are handled: (1) defensively repair any UTF-8-decoded-
-# as-Latin1 mojibake (the stray accented-a sequences) in case any slips
-# through; (2) normalize smart punctuation (em/en dashes, curly quotes,
-# ellipsis, non-breaking space) to plain ASCII so nothing renders as a bad
-# glyph. Regex patterns use \uXXXX escapes so this source stays pure ASCII
-# (PS 5.1 safe). Idempotent and safe on already-clean text.
-function ConvertTo-TonyCleanText {
-    param([string]$Text)
-    if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    $t = $Text
-
-    # (1) repair common mojibake: UTF-8 bytes E2 80 xx read as Latin-1 -> "a-circumflex" + two chars.
-    $p = [string][char]0x00E2 + [char]0x0080
-    $t = $t.Replace($p + [char]0x0094, ' - ')   # em dash
-    $t = $t.Replace($p + [char]0x0093, '-')     # en dash
-    $t = $t.Replace($p + [char]0x0099, "'")     # right single quote
-    $t = $t.Replace($p + [char]0x0098, "'")     # left single quote
-    $t = $t.Replace($p + [char]0x009C, '"')     # left double quote
-    $t = $t.Replace($p + [char]0x009D, '"')     # right double quote
-    $t = $t.Replace($p + [char]0x00A6, '...')   # ellipsis
-    $t = $t.Replace($p, '-')                    # any leftover prefix
-
-    # (2) normalize genuine smart punctuation to clean ASCII. Built via [char]
-    #     codes so this source stays pure ASCII (PS 5.1 reads a no-BOM .ps1 as ANSI).
-    $t = $t.Replace([string][char]0x2014, ' - ')   # em dash
-    $t = $t.Replace([string][char]0x2013, '-')     # en dash
-    $t = $t.Replace([string][char]0x2018, "'")     # left single quote
-    $t = $t.Replace([string][char]0x2019, "'")     # right single quote
-    $t = $t.Replace([string][char]0x201A, "'")     # single low-9 quote
-    $t = $t.Replace([string][char]0x201B, "'")     # single reversed-9 quote
-    $t = $t.Replace([string][char]0x201C, '"')     # left double quote
-    $t = $t.Replace([string][char]0x201D, '"')     # right double quote
-    $t = $t.Replace([string][char]0x201E, '"')     # double low-9 quote
-    $t = $t.Replace([string][char]0x2026, '...')   # ellipsis
-    $t = $t.Replace([string][char]0x2022, '-')     # bullet
-    $t = $t.Replace([string][char]0x00A0, ' ')     # non-breaking space
-    $t = $t -replace '[ ]{2,}', ' '                # collapse runs of spaces (leaves newlines)
-    return $t
-}
-
-# Light tone-shaping of a raw provider response - keeps Tony's voice consistent
-# and guarantees clean, correctly-encoded text for the Windows app.
+# Light tone-shaping of a raw provider response - keeps Tony's voice consistent.
+# Text flows through as native UTF-8: the provider decodes Claude's response as
+# UTF-8 (Invoke-ClaudeApi) and JSON storage round-trips Unicode losslessly, so
+# em dashes and smart quotes render natively in the Windows app. No ASCII
+# rewriting - that was masking the old Latin-1 decode bug, which is now fixed at
+# the source, so no cleanup pass is needed here.
 function Format-TonyVoice {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return "I'm here, Jake. What would you like to do?" }
-    return (ConvertTo-TonyCleanText -Text ($Text.Trim()))
+    return $Text.Trim()
 }
 
 # ---------------------------------------------------------------------
