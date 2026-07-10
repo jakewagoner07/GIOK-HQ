@@ -40,6 +40,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-brain.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-observations.ps1')
+. (Join-Path $PSScriptRoot 'core\memory-manager.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-context.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-briefing.ps1')
 . (Join-Path $PSScriptRoot 'core\document-intelligence.ps1')

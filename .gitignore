@@ -10,6 +10,12 @@ tony-alpha/dashboard/providers/claude.config.json
 tony-alpha/conversation.json
 **/conversation.json
 
+# Private permanent memory (permission-based) and exports — the user owns
+# their memories; they stay local, never on GitHub.
+tony-alpha/tony_memory.json
+**/tony_memory.json
+**/memory-export-*.json
+
 # Local diagnostics logs — runtime only, never committed.
 tony-alpha/logs/
 **/tony-diagnostics.log

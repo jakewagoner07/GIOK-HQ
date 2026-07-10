@@ -284,6 +284,90 @@ function Hide-ConvThinking {
 # Send a turn: persist + show the user bubble, execute quick commands
 # instantly, otherwise ask Tony Brain (deferred so the thinking indicator
 # paints before any blocking call).
+# ---- memory permission prompt (D12): Tony asks, never assumes ----
+$script:MemPromptInner = $null
+$script:MemPromptCandidate = $null
+$script:MemEditPromptBox = $null
+
+function New-MemChoiceChip {
+    param([string]$Text, [scriptblock]$OnClick, [bool]$Primary = $false)
+    $b = New-Object Windows.Controls.Border
+    $b.CornerRadius = New-Object Windows.CornerRadius 9; $b.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $b.Margin = New-Object Windows.Thickness (0, 0, 7, 7); $b.Cursor = 'Hand'
+    if ($Primary) { $b.Background = New-Brush $script:Col.Accent; $fg = $script:Col.OnPrimary } else { $b.Background = New-Brush $script:Col.AccentSoft; $fg = $script:Col.AccentInk }
+    $b.Child = (New-Text -Text $Text -Size 12 -Weight 'SemiBold' -Color $fg)
+    if ($OnClick) { $b.Add_MouseLeftButtonUp($OnClick) | Out-Null }
+    return $b
+}
+
+# Replace the live prompt content with a short confirmation once resolved.
+function Set-MemPromptDone {
+    param([string]$Msg)
+    if (-not $script:MemPromptInner) { return }
+    $script:MemPromptInner.Children.Clear()
+    $script:MemPromptInner.Children.Add((New-Text -Text 'TONY' -Size 9.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null
+    $script:MemPromptInner.Children.Add((New-Text -Text $Msg -Size 13.5 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+    $script:MemPromptInner = $null; $script:MemPromptCandidate = $null; $script:MemEditPromptBox = $null
+    if ($script:ConvScroll) { $script:ConvScroll.ScrollToEnd() }
+}
+
+# "Edit" turns the prompt into an editable value + Save, so the user
+# remembers exactly what they mean - Tony still only saves on Save.
+function Build-MemPromptEdit {
+    $inner = $script:MemPromptInner; $c = $script:MemPromptCandidate
+    if (-not $inner -or -not $c) { return }
+    $inner.Children.Clear()
+    $inner.Children.Add((New-Text -Text 'TONY' -Size 9.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null
+    $inner.Children.Add((New-Text -Text 'Adjust what I should remember, then save it:' -Size 13 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+    $tb = New-Object Windows.Controls.TextBox
+    $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 13; $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.MinHeight = 44
+    $tb.Padding = New-Object Windows.Thickness (9, 6, 9, 6); $tb.Background = New-Brush $script:Col.PrimaryMid; $tb.Foreground = New-Brush $script:Col.Ink; $tb.BorderBrush = New-Brush $script:Col.Accent; $tb.CaretBrush = New-Brush $script:Col.Accent
+    $tb.Text = [string]$c.value; $tb.Margin = New-Object Windows.Thickness (0, 6, 0, 6)
+    $script:MemEditPromptBox = $tb
+    $inner.Children.Add($tb) | Out-Null
+    $wrap = New-Object Windows.Controls.WrapPanel
+    $wrap.Children.Add((New-MemChoiceChip -Text 'Save to memory' -Primary $true -OnClick { param($s, $e) $c = $script:MemPromptCandidate; $val = if ($script:MemEditPromptBox) { $script:MemEditPromptBox.Text } else { $c.value }; Approve-Memory -Category $c.category -Value $val -Why $c.why -Source 'talk-with-tony' | Out-Null; Set-MemPromptDone 'Saved - I''ll remember that. You can change or remove it anytime in Memory.' })) | Out-Null
+    $wrap.Children.Add((New-MemChoiceChip -Text 'Cancel' -OnClick { param($s, $e) Set-MemPromptDone 'No problem - I won''t keep that.' })) | Out-Null
+    $inner.Children.Add($wrap) | Out-Null
+    if ($script:ConvScroll) { $script:ConvScroll.ScrollToEnd() }
+}
+
+function New-MemoryPromptRow {
+    param($Candidate)
+    $bubble = New-Object Windows.Controls.Border
+    $bubble.CornerRadius = New-Object Windows.CornerRadius 14; $bubble.Padding = New-Object Windows.Thickness (14, 10, 14, 12); $bubble.MaxWidth = 440
+    $bubble.Background = New-Brush $script:Col.CardBg; $bubble.BorderBrush = New-Brush $script:Col.Accent; $bubble.BorderThickness = New-Object Windows.Thickness 1
+    $inner = New-Object Windows.Controls.StackPanel
+    $script:MemPromptInner = $inner; $script:MemPromptCandidate = $Candidate
+    $inner.Children.Add((New-Text -Text 'TONY' -Size 9.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null
+    $prompt = New-MemoryPermissionPrompt $Candidate
+    $inner.Children.Add((New-Text -Text $prompt.question -Size 13.5 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+    $inner.Children.Add((New-Text -Text ("[{0}]  {1}" -f $Candidate.category, $Candidate.value) -Size 12 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true -Margin (New-Object Windows.Thickness (0, 5, 0, 0)))) | Out-Null
+    $wrap = New-Object Windows.Controls.WrapPanel; $wrap.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+    $wrap.Children.Add((New-MemChoiceChip -Text 'Remember' -Primary $true -OnClick { param($s, $e) $c = $script:MemPromptCandidate; Approve-Memory -Category $c.category -Value $c.value -Why $c.why -Source 'talk-with-tony' | Out-Null; Set-MemPromptDone 'Done - I''ll remember that. You can edit or remove it anytime in Memory.' })) | Out-Null
+    $wrap.Children.Add((New-MemChoiceChip -Text 'Edit' -OnClick { param($s, $e) Build-MemPromptEdit })) | Out-Null
+    $wrap.Children.Add((New-MemChoiceChip -Text 'Not Now' -OnClick { param($s, $e) Set-MemPromptDone 'No problem - I won''t keep that.' })) | Out-Null
+    $wrap.Children.Add((New-MemChoiceChip -Text 'Never Ask Again' -OnClick { param($s, $e) $c = $script:MemPromptCandidate; Set-MemoryNeverAsk -Value $c.value -Category $c.category | Out-Null; Set-MemPromptDone 'Understood - I won''t ask about that again.' })) | Out-Null
+    $inner.Children.Add($wrap) | Out-Null
+    $bubble.Child = $inner
+    $row = New-Object Windows.Controls.StackPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 10); $row.HorizontalAlignment = 'Left'
+    $row.Children.Add($bubble) | Out-Null
+    return $row
+}
+
+# After a reply, if the user's message contains something worth remembering
+# (and Tony hasn't been told to stop asking), surface the permission prompt.
+# Tony ASKS - he never saves on his own.
+function Add-MemoryPromptIfAny {
+    param([string]$Text)
+    if (-not $script:ConvMessagesPanel) { return }
+    if (-not (Get-Command Find-MemoryCandidates -ErrorAction SilentlyContinue)) { return }
+    $c = @(Find-MemoryCandidates -Text $Text)
+    if ($c.Count -eq 0) { return }
+    if (-not (Test-MemoryShouldAsk $c[0])) { return }
+    $script:ConvMessagesPanel.Children.Add((New-MemoryPromptRow -Candidate $c[0])) | Out-Null
+    if ($script:ConvScroll) { $script:ConvScroll.ScrollToEnd() }
+}
+
 function Send-TonyMessage {
     param([string]$Text)
     $t = ''; if ($null -ne $Text) { $t = $Text.Trim() }
@@ -312,6 +396,7 @@ function Send-TonyMessage {
     if ($reply) {
         $rd = Get-ConversationLog; Add-ConversationMessage -Data $rd -Role 'tony' -Text $reply -Provider 'quick-command' | Out-Null; Save-ConversationLog -Data $rd
         Add-ConvBubble -Role 'tony' -Text $reply -Time (Get-Date).ToString('h:mm tt') -Animate $true
+        Add-MemoryPromptIfAny -Text $t
         return
     }
 
@@ -330,6 +415,7 @@ function Send-TonyMessage {
         Hide-ConvThinking
         $rd = Get-ConversationLog; Add-ConversationMessage -Data $rd -Role 'tony' -Text $msg -Provider $provider | Out-Null; Save-ConversationLog -Data $rd
         Add-ConvBubble -Role 'tony' -Text $msg -Time (Get-Date).ToString('h:mm tt') -Animate $true
+        Add-MemoryPromptIfAny -Text $t
     }.GetNewClosure()
 
     if ($script:ConvWindow) { $script:ConvWindow.Dispatcher.BeginInvoke([Action]$respond, [Windows.Threading.DispatcherPriority]::Background) | Out-Null }
@@ -1675,35 +1761,101 @@ function New-CaptureView {
     return $outer
 }
 
+# =====================  MEMORY REVIEW (D12: memory with permission)  =====================
+# Everything Tony remembers - only with the user's permission. The user
+# owns all of it: edit, disable, delete, export. The Memory Manager is the
+# only write path; this view just calls into it.
+$script:MemoryEditId  = $null
+$script:MemoryEditBox = $null
+$script:MemoryNotice  = $null
+
+function Refresh-MemoryReview { Set-ActiveView 'Tony Memory' }
+
+function New-MemoryRow {
+    param($Mem)
+    $disabled = ($Mem.status -ne 'active')
+    $card = New-Object Windows.Controls.Border
+    $card.Background = New-Brush $script:Col.CardBg; $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+    $card.CornerRadius = New-Object Windows.CornerRadius 12; $card.Padding = New-Object Windows.Thickness (16, 12, 16, 13); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+    $sp = New-Object Windows.Controls.StackPanel
+
+    # header: category chip (+ disabled tag) on the left, actions on the right
+    $top = New-Object Windows.Controls.DockPanel
+    $actions = New-Object Windows.Controls.StackPanel; $actions.Orientation = 'Horizontal'; $actions.HorizontalAlignment = 'Right'
+    if ($script:MemoryEditId -eq $Mem.id) {
+        $actions.Children.Add((New-MiniButton -Text 'Save' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -Tag $Mem.id -OnClick { param($s, $e) if ($script:MemoryEditBox) { Update-Memory -Id $s.Tag -Value $script:MemoryEditBox.Text | Out-Null }; $script:MemoryEditId = $null; Refresh-MemoryReview })) | Out-Null
+        $actions.Children.Add((New-MiniButton -Text 'Cancel' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) $script:MemoryEditId = $null; Refresh-MemoryReview })) | Out-Null
+    } else {
+        $actions.Children.Add((New-MiniButton -Text 'Edit' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $Mem.id -OnClick { param($s, $e) $script:MemoryEditId = $s.Tag; Refresh-MemoryReview })) | Out-Null
+        $toggle = if ($disabled) { 'Enable' } else { 'Disable' }
+        $newStatus = if ($disabled) { 'active' } else { 'disabled' }
+        $tb2 = New-MiniButton -Text $toggle -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag ($Mem.id + '|' + $newStatus) -OnClick { param($s, $e) $parts = $s.Tag -split '\|'; Set-MemoryStatus -Id $parts[0] -Status $parts[1] | Out-Null; Refresh-MemoryReview }
+        $actions.Children.Add($tb2) | Out-Null
+        $actions.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -Tag $Mem.id -OnClick { param($s, $e) Remove-Memory -Id $s.Tag | Out-Null; if ($script:MemoryEditId -eq $s.Tag) { $script:MemoryEditId = $null }; Refresh-MemoryReview })) | Out-Null
+    }
+    [Windows.Controls.DockPanel]::SetDock($actions, 'Right'); $top.Children.Add($actions) | Out-Null
+    $chips = New-Object Windows.Controls.StackPanel; $chips.Orientation = 'Horizontal'
+    $chips.Children.Add((New-Chip -Text $Mem.category -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+    if ($disabled) { $chips.Children.Add((New-Chip -Text 'DISABLED' -Bg '#E5E7EB' -Fg '#4B5563')) | Out-Null }
+    $top.Children.Add($chips) | Out-Null
+    $sp.Children.Add($top) | Out-Null
+
+    # value - editable when this row is in edit mode
+    if ($script:MemoryEditId -eq $Mem.id) {
+        $tb = New-Object Windows.Controls.TextBox
+        $tb.FontFamily = New-Object Windows.Media.FontFamily $script:Font; $tb.FontSize = 14; $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.MinHeight = 46
+        $tb.Padding = New-Object Windows.Thickness (10, 7, 10, 7); $tb.Background = New-Brush $script:Col.PrimaryMid; $tb.Foreground = New-Brush $script:Col.Ink; $tb.BorderBrush = New-Brush $script:Col.Accent; $tb.CaretBrush = New-Brush $script:Col.Accent
+        $tb.Text = [string]$Mem.value; $tb.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
+        $script:MemoryEditBox = $tb
+        $sp.Children.Add($tb) | Out-Null
+    } else {
+        $valCol = if ($disabled) { $script:Col.Muted } else { $script:Col.Heading }
+        $sp.Children.Add((New-Text -Text $Mem.value -Size 14.5 -Weight 'SemiBold' -Color $valCol -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+    }
+
+    # meta + why + source
+    $sp.Children.Add((New-Text -Text ("Remembered {0}  -  from {1}" -f $Mem.created, $Mem.source) -Size 10.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+    if ($Mem.why) { $sp.Children.Add((New-Text -Text ("Why Tony remembers it: {0}" -f $Mem.why) -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null }
+
+    $card.Child = $sp
+    return $card
+}
+
 function New-TonyMemoryView {
     $head = New-Object Windows.Controls.StackPanel; $head.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
-    $head.Children.Add((New-Text -Text 'Tony Memory' -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
-    $head.Children.Add((New-Text -Text 'Structured memory - NOT conversation memory. What Tony durably knows about your world.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $headRow = New-Object Windows.Controls.DockPanel
+    $exportBtn = New-MiniButton -Text 'Export' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Export-Memories -ErrorAction SilentlyContinue) { $p = Export-Memories; $script:MemoryNotice = ('Exported your memories to ' + (Split-Path $p -Leaf)); Refresh-MemoryReview } }
+    $exportBtn.VerticalAlignment = 'Center'; [Windows.Controls.DockPanel]::SetDock($exportBtn, 'Right'); $headRow.Children.Add($exportBtn) | Out-Null
+    $titleCol = New-Object Windows.Controls.StackPanel
+    $titleCol.Children.Add((New-Text -Text 'Memory' -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $titleCol.Children.Add((New-Text -Text 'Everything Tony remembers - and he only remembers with your permission.' -Size 12.5 -Color $script:Col.Muted)) | Out-Null
+    $headRow.Children.Add($titleCol) | Out-Null
+    $head.Children.Add($headRow) | Out-Null
 
     $banner = New-Object Windows.Controls.Border; $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8
     $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (0, 8, 0, 12)
-    $banner.Child = (New-Text -Text 'Framework only for now. The categories exist; Tony builds this memory over time as you capture and work. Nothing is populated yet.' -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)
+    $banner.Child = (New-Text -Text "Tony never saves a permanent memory without asking first. You own all of it - edit it, disable it, delete it, or export it anytime." -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)
 
-    $grid = New-Object Windows.Controls.Grid
-    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $grid.ColumnDefinitions.Add($cd) | Out-Null }
-    $cats = Get-TonyMemoryCategories
-    for ($i = 0; $i -lt $cats.Count; $i++) {
-        $col = $i % 3
-        if ($col -eq 0) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $grid.RowDefinitions.Add($rd) | Out-Null }
-        $cat = $cats[$i]
-        $body = New-Object Windows.Controls.StackPanel
-        $countRow = New-Object Windows.Controls.StackPanel; $countRow.Orientation = 'Horizontal'
-        $countRow.Children.Add((New-Text -Text ([string](Get-TonyMemoryCount -Key $cat.key)) -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
-        $countRow.Children.Add((New-Text -Text 'entries' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 10, 0, 0)))) | Out-Null
-        $body.Children.Add($countRow) | Out-Null
-        $body.Children.Add((New-Text -Text $cat.desc -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
-        $card = New-Card -Title $cat.name -Body $body -Tag 'FRAMEWORK'
-        [Windows.Controls.Grid]::SetColumn($card, $col); [Windows.Controls.Grid]::SetRow($card, [int][math]::Floor($i / 3)); $grid.Children.Add($card) | Out-Null
+    $list = New-Object Windows.Controls.StackPanel
+    $list.Children.Add($banner) | Out-Null
+    if ($script:MemoryNotice) {
+        $list.Children.Add((New-Text -Text $script:MemoryNotice -Size 12 -Weight 'SemiBold' -Color $script:Col.AccentInk -Margin (New-Object Windows.Thickness (2, 0, 0, 10)))) | Out-Null
+        $script:MemoryNotice = $null
     }
 
-    $outerStack = New-Object Windows.Controls.StackPanel
-    $outerStack.Children.Add($banner) | Out-Null; $outerStack.Children.Add($grid) | Out-Null
-    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $outerStack
+    $mems = if (Get-Command Get-Memories -ErrorAction SilentlyContinue) { @(Get-Memories -IncludeDisabled) } else { @() }
+    if ($mems.Count -eq 0) {
+        $empty = New-Object Windows.Controls.Border; $empty.Background = New-Brush $script:Col.CardBg; $empty.BorderBrush = New-Brush $script:Col.Line; $empty.BorderThickness = New-Object Windows.Thickness 1
+        $empty.CornerRadius = New-Object Windows.CornerRadius 12; $empty.Padding = New-Object Windows.Thickness (18, 20, 18, 20)
+        $es = New-Object Windows.Controls.StackPanel
+        $es.Children.Add((New-Text -Text "Tony hasn't been asked to remember anything yet." -Size 14 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+        $es.Children.Add((New-Text -Text "When something in a conversation would help him make better recommendations, he'll ask - and it only lands here if you say yes." -Size 12.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+        $empty.Child = $es; $list.Children.Add($empty) | Out-Null
+    } else {
+        foreach ($m in $mems) { $list.Children.Add((New-MemoryRow -Mem $m)) | Out-Null }
+    }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.Content = $list
     $outer = New-Object Windows.Controls.DockPanel
     [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null; $outer.Children.Add($scroll) | Out-Null
     return $outer
