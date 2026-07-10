@@ -1,0 +1,13 @@
+{
+  "meta": { "version": "1.0.0", "note": "Identity overview - identity score, Tony's reflection, and recent wins. Other overview figures are derived from the other identity files." },
+  "identityScore": { "value": 74, "trend": "up", "source": "placeholder" },
+  "tonyReflection": {
+    "text": "You're becoming more consistent, Jake. The discipline you bring to the business is starting to show up at home too. Protect your mornings, keep the Checkups on time, and the identity you're building takes care of itself.",
+    "source": "placeholder"
+  },
+  "recentWins": [
+    "Completed 3 Giok Checkups this week",
+    "Hit a 12-day training streak",
+    "Closed a family term policy for the Millers"
+  ]
+}

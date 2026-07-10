@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this file to claude.config.json (which is git-ignored) and add your Anthropic key to connect Tony to Claude. Alternatively set the ANTHROPIC_API_KEY environment variable. The model id lives here only - Tony never sees it.",
+  "apiKey": "sk-ant-...your-key-here...",
+  "model": "claude-sonnet-5"
+}

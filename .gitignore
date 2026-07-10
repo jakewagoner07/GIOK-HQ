@@ -1,0 +1,40 @@
+# Secrets — never commit provider keys. Covers any claude.config*.json
+# variant (incl. accidental typos like claude.config..json) but keeps the
+# committed example template visible.
+tony-alpha/dashboard/providers/claude.config.json
+**/claude.config.json
+**/claude.config*.json
+!**/claude.config.example.json
+
+# Private conversation history — Talk with Tony stays local, never on GitHub.
+tony-alpha/conversation.json
+**/conversation.json
+
+# Private permanent memory (permission-based) and exports — the user owns
+# their memories; they stay local, never on GitHub.
+tony-alpha/tony_memory.json
+**/tony_memory.json
+**/memory-export-*.json
+
+# Local diagnostics logs — runtime only, never committed.
+tony-alpha/logs/
+**/tony-diagnostics.log
+
+# Optional per-user provider location config — stays local.
+**/weather.config.json
+
+# Google Calendar OAuth client config + tokens — PRIVATE, local only, never
+# committed. Keep only the safe example. Tokens/refresh tokens never on GitHub.
+tony-alpha/dashboard/providers/calendar.config.json
+**/calendar.config.json
+!**/calendar.config.example.json
+tony-alpha/calendar.tokens.json
+**/calendar.tokens.json
+
+# Gmail OAuth client config + tokens — PRIVATE, local only, never committed.
+# Same rule as Calendar: only the safe example is tracked; tokens never on GitHub.
+tony-alpha/dashboard/providers/gmail.config.json
+**/gmail.config.json
+!**/gmail.config.example.json
+tony-alpha/gmail.tokens.json
+**/gmail.tokens.json

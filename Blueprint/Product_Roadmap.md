@@ -1,0 +1,142 @@
+# GIOK — Product Roadmap (Phased)
+
+*The prioritized build plan, organized by phase. Complements the version-oriented
+`09_Product_Roadmap.md`; this one tracks the four capability phases and the near-term sprint queue.
+Update the checkboxes and the "next five" each sprint.*
+
+Legend: ✅ done · 🔄 in progress · ⬜ not started
+
+---
+
+## Phase 1 — Tony Core  *(the mind)*  — ✅ essentially complete
+
+Give Tony judgment, voice, memory, and situational awareness — entirely local, no integrations.
+
+- ✅ First Conversation onboarding (D1)
+- ✅ Tony Brain + engine architecture (D2)
+- ✅ Model-agnostic AI Provider Contract (D3)
+- ✅ Claude provider connected, honest, live (D4, D7.1, D7.2)
+- ✅ Decision Framework — judgment, Family before Financial, final authority (D5)
+- ✅ Conversation experience — Talk with Tony, persistent local history (D7)
+- ✅ Executive personality — broadly capable, purposefully grounded (D8)
+- ✅ Observation Engine — notices patterns; celebrate/guide/question (D9)
+- ✅ Executive Context Engine — single situational awareness (D10)
+- ✅ Executive Briefing — the morning letter, Home centerpiece (D11)
+- ✅ Memory With Permission — ask-first, Memory Review, user control (D12)
+- ✅ Document Intelligence foundation — read for meaning, approval-gated (D6)
+- ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
+
+**Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
+field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
+
+---
+
+## Phase 2 — Connected Tony  *(live signals)*  — 🔄 in progress
+
+Tony understands the real world through read-only providers, all on one reusable architecture.
+
+- ✅ Live-provider registry — `relevant`/`query`/`status`, generic consumption (D13)
+- ✅ Weather provider — Open-Meteo, keyless, live (D13)
+- ✅ Google Calendar provider (read-only) — OAuth+PKCE, contract, Settings (D14)
+- ✅ Calendar Intelligence — first/last/total, free blocks, meeting-heavy days (D15)
+- ✅ Calendar-aware Executive Briefing (on demand, connected-only) (D15)
+- ✅ **Google Calendar go-live** — live-connected + validated against Jake's real account (D15)
+- ✅ Shared Google OAuth module + provider-neutral Email Intelligence (D16)
+- ✅ Gmail provider (read-only) — Executive Email Summary, generic `email` signal (D16)
+- ✅ Email-aware Executive Briefing (on demand, connected-only) (D16)
+- 🔄 **Gmail go-live** — needs Jake's Gmail-API enable + Connect + live triage validation
+- ⬜ Outlook / Microsoft 365 / Yahoo mail — plug into the same `email` architecture
+- ⬜ Maps provider (travel time; pairs with Calendar)
+- ⬜ News / Stocks providers (read-only signals)
+
+**Boundary:** everything read-only. Any write-back (RSVP, send, create event) is Phase 3+ and
+consent-gated.
+
+---
+
+## Phase 3 — Executive Automation  *(Tony acts ahead of you)*  — ⬜ not started
+
+Tony prepares and protects the day proactively, still proposing rather than acting unilaterally.
+
+- ⬜ Local scheduler — pre-compose the morning briefing ("prepared while you slept")
+- ⬜ Proactive, calendar-aware daily planning (free-block protection, workload assessment)
+- ⬜ Meeting preparation (context + attendees + suggested agenda from Calendar/Gmail)
+- ⬜ Automated End-of-Day Audit assistance and week-ahead letters
+- ⬜ **Write capabilities with approval** — the first actions Tony takes on Jake's behalf (create
+  event, RSVP, draft email), each behind an explicit confirm-before-act model
+- ⬜ Life Score framework activation (replace sample scores with real signals)
+
+---
+
+## Phase 4 — Tony OS  *(everywhere, for the whole operation)*  — ⬜ future
+
+GIOK becomes the operating layer across devices and the agency.
+
+- ⬜ Desktop-icon launch / installer; keep core UI-agnostic, wrap it later
+- ⬜ Mobile / web / Android surfaces (per the alpha roadmap)
+- ⬜ Agent Workforce activated (the "AI Workforce" becomes real)
+- ⬜ Agency integrations (e.g., GoHighLevel) — read then, later, act-with-approval
+- ⬜ Cross-workspace automation; document ingestion into memory (approval-gated)
+
+---
+
+## Next five recommended sprints
+
+0. **Gmail go-live (Jake, manual).** Enable the Gmail API on the existing Google Cloud project, add a
+   Desktop-app client to `gmail.config.json`, then Settings -> Gmail -> Connect. Validate the
+   Executive Email Summary on real mail (needs-reply / carrier / invitations / low-priority).
+   *Not a code sprint — a prerequisite Jake performs (steps in `Gmail_Provider.md`).*
+
+1. **Migrate Calendar onto the shared OAuth module (small, low-risk).**
+   Point `google-calendar-provider.ps1` at `core/google-oauth.ps1` so Google auth lives in exactly
+   one place. *Why now:* finishes the D16 SSOT move; deferred during D16 to protect the freshly
+   validated live Calendar connection.
+
+2. **D17 — Executive Automation Foundation (local scheduler).**
+   Pre-compose the morning briefing (now Calendar- AND Gmail-aware) so it's ready the instant GIOK
+   opens; the seam already exists in the briefing/context engines.
+   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it needs the
+   connected signals from D15/D16 to be worth pre-computing.
+
+3. **D18 — Projects Model.**
+   A real projects store so the Executive Context `project` field is live, Action Items can link to a
+   project/goal, and priority "why" gets specific.
+   *Why next:* removes standing technical debt and sharpens judgment across Home, briefing, and
+   context — compounding value for every later sprint.
+
+4. **D19 — Meeting Prep + Focus-Block Protection.**
+   Using Calendar + Gmail, Tony drafts a short prep for the next meeting and proposes protecting the
+   clearest free block.
+   *Why next:* the first genuinely "chief-of-staff" proactive help, and a natural on-ramp to
+   consent-gated write actions later.
+
+---
+
+## Deferred ideas
+
+Maps / News / Stocks providers · write-back to Calendar/Gmail (consent-gated) · GoHighLevel
+integration · document ingestion into permanent memory · agent-workforce activation · Mission Control
+as a true second screen · Life Score real signals · mobile/web/Android surfaces · multi-user /
+per-user personalization.
+
+## Dependencies
+
+- **D15** depended on Jake's Google Cloud OAuth setup (manual) from D14 — done; Calendar is live.
+- **D16 (Gmail)** reused the OAuth + live-provider pattern on a shared `core/google-oauth.ps1` +
+  provider-neutral `core/email-intelligence.ps1`; no Brain changes. Registered as the generic `email`
+  signal so **Outlook / Microsoft 365 / Yahoo** later implement only a backend + normalizer.
+- **D17 (automation)** depends on durable live connections (D15/D16) and a desktop scheduler (Windows
+  Task Scheduler or a lightweight loop) — a real desktop constraint to design for.
+- **D18 (projects)** unblocks the Executive Context `project` field and better priority reasons; no
+  external dependency.
+- **Write capabilities (Phase 3)** depend on the **permission model from D12** plus a
+  confirm-before-act UX — Tony proposes, Jake approves; never automatic.
+
+## Why this ordering
+
+Phase 1 gave Tony a mind; Phase 2 is giving him senses. The near-term queue finishes the sense that's
+half-built (Calendar), adds the next highest-value one (Gmail), then converts sensing into
+anticipation (automation) — but only after there's real data worth anticipating on. Projects is
+slotted early because it's cheap, retires debt, and makes every downstream judgment sharper. Write
+actions come last and slowest, deliberately: trust is the product, so Tony earns the right to *act*
+only after he has proven he can *understand* — and always by asking first.

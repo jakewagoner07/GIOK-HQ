@@ -1,0 +1,409 @@
+﻿{
+    "meta":  {
+                 "version":  "1.0.0",
+                 "updated":  "2026-07-09 13:29:10",
+                 "source":  "seeded from action_items.md"
+             },
+    "items":  [
+                  {
+                      "id":  "AI-R1",
+                      "title":  "Pull the list from CoWork.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R2",
+                      "title":  "Or export/paste manually.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R3",
+                      "title":  "Diff for MISSING agents.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R4",
+                      "title":  "Diff for DUPLICATES.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R5",
+                      "title":  "Fix INCORRECT schedules.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R6",
+                      "title":  "Link source_task_id.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R7",
+                      "title":  "Populate last_run/status.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-R8",
+                      "title":  "Flip the trust flag.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-A1",
+                      "title":  "Confirm owners.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-A2",
+                      "title":  "Confirm priorities.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-A3",
+                      "title":  "Confirm dependencies.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-A4",
+                      "title":  "Confirm downstream-impact map.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-G1",
+                      "title":  "Register departments\u0027 detail.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-G2",
+                      "title":  "Register integrations",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-G3",
+                      "title":  "Register modules",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-001",
+                      "title":  "Confirm schedules.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-002",
+                      "title":  "Confirm last-run + status.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-003",
+                      "title":  "GHL texting split (OVERLAP-001).",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-004",
+                      "title":  "Morning Digest vs. Tony Briefing (OVERLAP-003 / 004).",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-005",
+                      "title":  "Meta-agent split (OVERLAP-005).",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-006",
+                      "title":  "Weekly cluster (OVERLAP-006).",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-007",
+                      "title":  "Clarify Training Scanner purpose.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-008",
+                      "title":  "Completeness check.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-101",
+                      "title":  "Live status ingestion.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-102",
+                      "title":  "Auto-generate daily/weekly.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-103",
+                      "title":  "Alerting.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-104",
+                      "title":  "Windows desktop launch.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-105",
+                      "title":  "Mobile/web access.",
+                      "done":  false,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  null
+                  },
+                  {
+                      "id":  "AI-000",
+                      "title":  "Stand up Tony Alpha command center.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "AR-001",
+                      "title":  "Architecture Review 001 registry improvements.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-ALPHA",
+                      "title":  "Dashboard build.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-BRAVO",
+                      "title":  "Silent launch.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-CHARLIE",
+                      "title":  "Hub navigation + Agents view.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-DELTA",
+                      "title":  "GIOK theme system (Arch Review 002).",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT",
+                      "title":  "Interactive Action Items.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D5 — Tony Decision Framework.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D4 — Connect Tony to Claude Provider.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D3 — Tony AI Provider Contract.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D2 — Tony Brain Architecture.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / Sunday Night Usability (v0.8 Alpha).",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "",
+                      "title":  "PROJECT DIAMOND / SPRINT-D1 — Tony\u0027s First Conversation.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-NOVEMBER",
+                      "title":  "End of Day Audit.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-MIKE",
+                      "title":  "Identity Workspace.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-LIMA",
+                      "title":  "Morning Experience.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-KILO",
+                      "title":  "Morning Briefing.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-JULIET",
+                      "title":  "Capture \u0026 Tony Memory.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-HOTEL",
+                      "title":  "Multi-window + Mission Control.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-GOLF",
+                      "title":  "Dark executive UI + command bar.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-FOXTROT",
+                      "title":  "Clickable dashboard cards.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  },
+                  {
+                      "id":  "SPRINT-ECHO",
+                      "title":  "Executive home dashboard.",
+                      "done":  true,
+                      "archived":  false,
+                      "created":  "2026-07-08 08:00:00",
+                      "completedAt":  "2026-07-08 08:00:00"
+                  }
+              ]
+}

@@ -1,0 +1,10 @@
+{
+  "meta": { "version": "1.0.0", "source": "placeholder" },
+  "values": [
+    { "name": "Ownership", "desc": "Take responsibility on purpose, before it is needed." },
+    { "name": "People First", "desc": "People matter more than money." },
+    { "name": "Discipline", "desc": "Small, consistent, boring decisions compound." },
+    { "name": "Honesty", "desc": "Tell the truth, especially when it is hard." },
+    { "name": "Presence", "desc": "Be fully with the people in front of you." }
+  ]
+}

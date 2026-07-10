@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "note": "End of Day Audits, stored by date. Nothing is overwritten across days - every day's audit is a permanent record.",
+    "updated": "2026-07-08 21:30:00"
+  },
+  "audits": {
+    "2026-07-08": {
+      "date": "2026-07-08",
+      "scores": { "overall": 8, "business": 9, "health": 8, "family": 7, "financial": 8, "learning": 6, "consistency": 9, "relationship": 8 },
+      "wins": [
+        "Completed 2 Giok Checkups",
+        "Trained at 5am - streak intact",
+        "Called 6 prospects"
+      ],
+      "nonNegotiables": { "workout": true, "learning": true, "reading": false, "familyTime": true, "prospecting": true, "socialPosting": true, "water": true, "protein": true, "sleep": false },
+      "reflection": {
+        "largestWin": "The Millers thanked me for catching a coverage gap.",
+        "largestLesson": "I let the afternoon get away from me - protect the calendar.",
+        "better": "Start the highest-value follow-up first, not last.",
+        "grateful": "A healthy family and a business that helps people.",
+        "promise": "Bed by 10:30 so I'm sharp tomorrow.",
+        "tomorrowPriority": "Follow up with the group-policy lead."
+      },
+      "movedToTomorrow": [],
+      "tonyAudit": "Strong day, Jake. Business and consistency both high. The one thing to guard tomorrow is your afternoon - protect it for deep, high-value work.",
+      "savedAt": "2026-07-08 21:30:00"
+    }
+  }
+}
