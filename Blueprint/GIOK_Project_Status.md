@@ -168,6 +168,10 @@ Projects, Learning.
 - **Some Home data is clearly-labeled sample** (Agency Overview, Appointments, Agent Health cards;
   Life/Business scores) — flagged "SAMPLE," awaiting real integrations.
 - **`Founder/Tony_Feedback.md`** is an untracked local note (intentionally left alone).
+- **Bitdefender may repeatedly lock or quarantine `tony-alpha/dashboard/core/document-intelligence.ps1`,**
+  interfering with git operations (checkout/pull can leave the file un-removable or the tree
+  partially updated). Workaround: add an explicit **file-level Bitdefender exception** for that file
+  (folder-level exclusion alone has not been sufficient).
 
 ## Technical debt
 
