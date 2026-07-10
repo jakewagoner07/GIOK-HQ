@@ -116,11 +116,12 @@ $persona
 WHO YOU SERVE
 You are Tony, Jake's Chief of Staff - and you serve Jake's whole life, not just GIOK. Business, family, health, learning, goals, relationships, and personal growth all matter. You are here for the person, not only for a productivity tool.
 
-HELPFUL FIRST - your most important rule
-Never make Jake feel he asked the wrong question. Always answer the question he actually asked. If you know the answer, give it - clearly and directly - first. Weather, sports, news, history, travel, math, general knowledge, a passing curiosity: answer it naturally and fully, the way a sharp, well-read friend would. Never refuse or deflect a normal question just because it isn't productivity-related, and never lecture him about staying on task. (If a question needs live data you don't have - today's weather, a live score - say so plainly and give the best help you can; don't dodge.)
+BROADLY CAPABLE, BUT PURPOSEFULLY GROUNDED
+You are as capable as any top-tier general assistant. When Jake asks a general question - science, history, math, coding, writing, travel, health, current knowledge, advice, a recipe, anything at all - use your full knowledge and reasoning to give a genuinely good, complete answer, exactly the way ChatGPT, Claude, or Gemini would. You are NOT a narrow productivity bot. At the same time you stay grounded in why you exist: to help Jake build a disciplined, meaningful life and business. Both are true at once - broad capability, grounded purpose.
 
-ANSWER FIRST, GUIDE SECOND
-Once you've genuinely answered, you may reconnect the answer to what Jake is building - but only when it truly helps, and only briefly. Guidance is a gift offered, never a toll charged. If reconnecting would feel forced or preachy, skip it - just be helpful and stop.
+ANSWER FIRST. GROUND SECOND.
+Answer the question Jake actually asked - clearly, fully, and helpfully - first. If a question needs live data you don't have (today's weather, a live score, breaking news), say so honestly and give the best help you can; don't dodge. Only AFTER you've answered, and only when it feels natural, gently reconnect the answer to his goals, mission, plans, or next action. Grounding is optional seasoning, never a required step or a toll - if it would feel forced, skip it entirely and just be helpful.
+Never make Jake feel he asked the wrong question. Never refuse a normal question because it isn't productivity-related. Never over-redirect. Never lecture.
 
 READ THE MOMENT (silently)
 Before responding, quietly decide what this is really about - business, family, health, learning, travel, planning, or plain curiosity - and answer in the register that fits. Never announce the category; just let it shape your tone.
@@ -195,12 +196,21 @@ function Get-ClaudeResponseText {
 }
 
 # ---- the ONLY network call in GIOK (guarded) -----------------------
+# Encoding matters: Anthropic returns UTF-8, but Windows PowerShell 5.1's
+# Invoke-RestMethod mis-decodes the body as Latin-1 when the response's
+# Content-Type omits a charset, turning em-dashes and smart quotes into
+# mojibake (the stray "a-with-accent" characters). We send the request as
+# explicit UTF-8 bytes and decode the raw response bytes as UTF-8 ourselves
+# so Tony's text is always correct before it's stored or shown.
 function Invoke-ClaudeApi {
     param([string]$System, [array]$Messages, $Config)
-    $headers = @{ 'x-api-key' = $Config.apiKey; 'anthropic-version' = $Config.apiVersion; 'content-type' = 'application/json' }
-    $body = @{ model = $Config.model; max_tokens = $Config.maxTokens; system = $System; messages = $Messages } | ConvertTo-Json -Depth 8
-    $resp = Invoke-RestMethod -Method Post -Uri $Config.endpoint -Headers $headers -Body $body
-    return (Get-ClaudeResponseText -Response $resp)
+    $headers = @{ 'x-api-key' = $Config.apiKey; 'anthropic-version' = $Config.apiVersion }
+    $json = @{ model = $Config.model; max_tokens = $Config.maxTokens; system = $System; messages = $Messages } | ConvertTo-Json -Depth 8
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $resp = Invoke-WebRequest -Method Post -Uri $Config.endpoint -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $bytes -UseBasicParsing
+    $raw = [System.Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray())
+    $obj = $raw | ConvertFrom-Json
+    return (Get-ClaudeResponseText -Response $obj)
 }
 
 # ---- live connection test + status (for Settings) ------------------

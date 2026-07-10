@@ -83,24 +83,67 @@ function Get-TonyPersona {
         role = "Jake's AI Chief of Staff"
         tone = @('Friendly', 'Professional', 'Warm', 'Executive', 'Concise', 'Encouraging')
         rules = @(
+            'Broadly capable, but purposefully grounded: as capable as any top-tier general assistant on any topic, yet always anchored to helping Jake build his life and business. Not a narrow productivity bot.',
+            'Answer first. Ground second: answer the question Jake actually asked - fully - then reconnect to his goals, mission, plans, or next action only when it is natural. Do not over-redirect. Do not lecture.',
             'Helpful first: always answer the question Jake actually asked. Never make him feel he asked the wrong one.',
-            'Answer first, guide second - reconnect to his goals only when it genuinely helps, never as a toll.',
             "Serve Jake's whole life - business, family, health, learning, relationships, growth - not just GIOK.",
-            'Answer normal questions (weather, sports, news, history, travel, math, general knowledge) naturally and fully.',
+            'Answer normal questions (weather, sports, news, history, travel, math, general knowledge) naturally and fully; use connected providers when available.',
             'Recommend a clear next step, not a menu. One warm follow-up when useful - never an interrogation.',
             'Weigh Family before Financial; if a recommendation conflicts, explain why. People matter more than money.',
             'Coach, never judge. Be honest about what you do not know; never fabricate.'
         )
         # system-prompt-style summary a future provider would receive
-        systemPrompt = "You are Tony, Jake's executive AI Chief of Staff, here for his whole life - business, family, health, learning, relationships, and growth. Be helpful first: always answer the question he actually asked, clearly and directly, and never make him feel he asked the wrong one. Answer normal questions naturally; reconnect to his goals only when it truly helps. Weigh Family before Financial and explain any conflict. Warm, concise, executive. Coach, don't judge. People matter more than money."
+        systemPrompt = "You are Tony, Jake's executive AI Chief of Staff, here for his whole life - business, family, health, learning, relationships, and growth. You are broadly capable, but purposefully grounded: as capable as any top-tier general assistant on any topic, yet always anchored to helping Jake build his life and business. Answer first, ground second: answer the question he actually asked - fully - then reconnect to his goals, mission, plans, or next action only when natural; do not over-redirect or lecture, and never make him feel he asked the wrong one. Answer normal questions naturally and use connected providers when available. Weigh Family before Financial and explain any conflict. Warm, concise, executive. Coach, don't judge. People matter more than money."
     }
 }
 
-# Light tone-shaping of a raw provider response (placeholder - keeps Tony's voice consistent).
+# Clean provider text so it always displays correctly in the Windows (WPF)
+# app. Two problems are handled: (1) defensively repair any UTF-8-decoded-
+# as-Latin1 mojibake (the stray accented-a sequences) in case any slips
+# through; (2) normalize smart punctuation (em/en dashes, curly quotes,
+# ellipsis, non-breaking space) to plain ASCII so nothing renders as a bad
+# glyph. Regex patterns use \uXXXX escapes so this source stays pure ASCII
+# (PS 5.1 safe). Idempotent and safe on already-clean text.
+function ConvertTo-TonyCleanText {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $t = $Text
+
+    # (1) repair common mojibake: UTF-8 bytes E2 80 xx read as Latin-1 -> "a-circumflex" + two chars.
+    $p = [string][char]0x00E2 + [char]0x0080
+    $t = $t.Replace($p + [char]0x0094, ' - ')   # em dash
+    $t = $t.Replace($p + [char]0x0093, '-')     # en dash
+    $t = $t.Replace($p + [char]0x0099, "'")     # right single quote
+    $t = $t.Replace($p + [char]0x0098, "'")     # left single quote
+    $t = $t.Replace($p + [char]0x009C, '"')     # left double quote
+    $t = $t.Replace($p + [char]0x009D, '"')     # right double quote
+    $t = $t.Replace($p + [char]0x00A6, '...')   # ellipsis
+    $t = $t.Replace($p, '-')                    # any leftover prefix
+
+    # (2) normalize genuine smart punctuation to clean ASCII. Built via [char]
+    #     codes so this source stays pure ASCII (PS 5.1 reads a no-BOM .ps1 as ANSI).
+    $t = $t.Replace([string][char]0x2014, ' - ')   # em dash
+    $t = $t.Replace([string][char]0x2013, '-')     # en dash
+    $t = $t.Replace([string][char]0x2018, "'")     # left single quote
+    $t = $t.Replace([string][char]0x2019, "'")     # right single quote
+    $t = $t.Replace([string][char]0x201A, "'")     # single low-9 quote
+    $t = $t.Replace([string][char]0x201B, "'")     # single reversed-9 quote
+    $t = $t.Replace([string][char]0x201C, '"')     # left double quote
+    $t = $t.Replace([string][char]0x201D, '"')     # right double quote
+    $t = $t.Replace([string][char]0x201E, '"')     # double low-9 quote
+    $t = $t.Replace([string][char]0x2026, '...')   # ellipsis
+    $t = $t.Replace([string][char]0x2022, '-')     # bullet
+    $t = $t.Replace([string][char]0x00A0, ' ')     # non-breaking space
+    $t = $t -replace '[ ]{2,}', ' '                # collapse runs of spaces (leaves newlines)
+    return $t
+}
+
+# Light tone-shaping of a raw provider response - keeps Tony's voice consistent
+# and guarantees clean, correctly-encoded text for the Windows app.
 function Format-TonyVoice {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return "I'm here, Jake. What would you like to do?" }
-    return $Text.Trim()
+    return (ConvertTo-TonyCleanText -Text ($Text.Trim()))
 }
 
 # ---------------------------------------------------------------------
