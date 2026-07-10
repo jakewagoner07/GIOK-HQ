@@ -1,28 +1,25 @@
 # =====================================================================
-# gmail-provider.ps1  —  Read-ONLY Gmail (live provider)
+# gmail-provider.ps1  —  Read-ONLY Gmail (live provider, MULTI-ACCOUNT)
 # ---------------------------------------------------------------------
 # Tony understands Jake's inbox well enough to say what deserves his
-# attention - he is NOT an email client. This provider retrieves messages
-# and hands them to the provider-neutral Email Intelligence engine
-# (core/email-intelligence.ps1), which produces the Executive Email
-# Summary. Tony owns the conversation; Gmail owns the data; the provider
-# is an implementation detail.
+# attention - he is NOT an email client. ONE Gmail provider serves ALL
+# connected Google accounts (D17): it fetches each account read-only,
+# tags every message with its source account, and hands the combined set
+# to the provider-neutral Email Intelligence engine
+# (core/email-intelligence.ps1), which MERGES + DEDUPES and produces one
+# Executive Email Summary. Never a provider per account.
 #
 # READ ONLY. It never composes, sends, replies, forwards, labels, marks,
-# archives, or deletes. The only scope requested is gmail.readonly. Any
-# write capability is out of scope and would need separate, explicit,
-# consent-gated approval (mirroring Memory With Permission).
+# archives, or deletes. The only scope requested is gmail.readonly.
 #
-# Auth: the SHARED Google OAuth module (core/google-oauth.ps1) - the exact
-# same installed-desktop-app flow (PKCE + loopback + offline refresh) that
-# Calendar uses. Built so Outlook / Microsoft 365 / Yahoo can plug into the
-# same shape later: swap endpoints + scope, normalize messages to the same
-# fields, reuse this engine and this registry entry ('email') unchanged.
+# Auth: the SHARED account-aware Google OAuth module (core/google-oauth.ps1)
+# - installed-desktop-app flow (PKCE + loopback + offline refresh), with
+# each account's tokens stored separately (keyed by email) in the gitignored
+# gmail.tokens.json. One expired account never breaks the others.
 #
 # Private local files (gitignored, never printed/committed/logged):
-#   gmail.config.json  - OAuth client id/secret (+ optional important
-#                        contacts / client domains for smarter triage)
-#   gmail.tokens.json  - access/refresh tokens
+#   gmail.config.json  - OAuth client id/secret (+ optional triage lists)
+#   gmail.tokens.json  - per-account access/refresh tokens
 # Registers as the generic 'email' live signal (backend = gmail).
 # =====================================================================
 
@@ -68,7 +65,7 @@ function Get-GmailConfig {
         carrierDomains    = $carrierDomains
         carrierHints      = $carrierHints
         myAddresses       = $myAddresses
-        analyzeCap        = 60   # analyze the most recent N of today's inbox
+        analyzeCap        = 60   # analyze the most recent N of each account's inbox today
     }
 }
 
@@ -91,15 +88,27 @@ function Get-GmailOAuthConfig {
 
 function Write-GmailDiag { param([string]$Level = 'info', [string]$Message = '') if (Get-Command Write-TonyDiag -ErrorAction SilentlyContinue) { Write-TonyDiag -Level $Level -Source 'gmail' -Message $Message } }
 
-# ---- connect / token / disconnect (delegated to the shared module) --
+# Resolve an account's identity (email) from a token - read-only.
+function Resolve-GmailIdentity {
+    param([Parameter(Mandatory)][string]$Token)
+    $p = Invoke-GoogleApi -Token $Token -BaseUrl (Get-GmailConfig).apiBase -Path '/users/me/profile'
+    return [string]$p.emailAddress
+}
+
+# ---- connect / token / disconnect (per account) --------------------
+# Connect adds ANOTHER account (the browser lets Jake pick which one).
 function Connect-Gmail {
-    if (-not (Get-Command Connect-GoogleOAuth -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'OAuth module not loaded.' } }
+    if (-not (Get-Command Connect-GoogleAccount -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'OAuth module not loaded.' } }
     $cfg = Get-GmailConfig
     if (-not $cfg.configured) { return [pscustomobject]@{ ok = $false; state = 'not-configured'; detail = 'No OAuth client configured. Add gmail.config.json (client id/secret for a Desktop app).' } }
-    return (Connect-GoogleOAuth -Config (Get-GmailOAuthConfig))
+    return (Connect-GoogleAccount -Config (Get-GmailOAuthConfig) -ResolveIdentity { param($tok) Resolve-GmailIdentity -Token $tok })
 }
-function Get-GmailAccessToken { return (Get-GoogleOAuthAccessToken -Config (Get-GmailOAuthConfig)) }
-function Disconnect-Gmail { return (Disconnect-GoogleOAuth -Config (Get-GmailOAuthConfig)) }
+function Disconnect-Gmail {
+    param([Parameter(Mandatory)][string]$Account)
+    return (Disconnect-GoogleAccount -Config (Get-GmailOAuthConfig) -Id $Account)
+}
+# Ids of all connected Gmail accounts.
+function Get-GmailAccountIds { return @(Get-GoogleAccountIds -Path (Get-GmailTokenPath)) }
 
 # ---- header + parsing helpers --------------------------------------
 function Get-GmailHeaderValue {
@@ -159,15 +168,11 @@ function Test-GmailBulk {
 }
 
 # Convert a raw Gmail message (format=metadata) into a NORMALIZED message
-# for the provider-neutral Email Intelligence engine. Read only.
-#
-# toMe resolves Jake's ALIASES: a GIOK Workspace mailbox often aggregates mail
-# addressed to several of his addresses (personal Gmail, other aliases). The
-# per-message Delivered-To header names the address that actually received it
-# in this mailbox, so a message counts as "to me" when the To/Cc contains the
-# connected account, this message's Delivered-To, or any configured alias.
+# for the provider-neutral Email Intelligence engine. Read only. Every
+# message carries its sourceAccount and the RFC822 Message-ID (messageId),
+# which the intelligence layer uses to dedupe the same email across accounts.
 function Convert-GmailMessage {
-    param($Raw, [string]$Account, $Aliases = @())
+    param($Raw, [string]$Account, $Aliases = @(), [string]$SourceAccount = '')
     $headers = $Raw.payload.headers
     $fromRaw = Get-GmailHeaderValue -Headers $headers -Name 'From'
     $from = Split-EmailFrom -Value $fromRaw
@@ -177,6 +182,7 @@ function Convert-GmailMessage {
     $deliveredTo = Get-GmailHeaderValue -Headers $headers -Name 'Delivered-To'
     $listUnsub = Get-GmailHeaderValue -Headers $headers -Name 'List-Unsubscribe'
     $contentType = Get-GmailHeaderValue -Headers $headers -Name 'Content-Type'
+    $messageId = (Get-GmailHeaderValue -Headers $headers -Name 'Message-ID').Trim()
     $labels = @($Raw.labelIds)
 
     $date = (Get-Date)
@@ -190,46 +196,42 @@ function Convert-GmailMessage {
     $fromMe = [bool]($acct -and ($from.email.ToLower() -eq $acct))
 
     return [pscustomobject]@{
-        id       = [string]$Raw.id
-        threadId = [string]$Raw.threadId
-        from     = $from.email
-        fromName = $from.name
-        subject  = $subject
-        snippet  = [string]$Raw.snippet
-        date     = $date
-        unread   = ($labels -contains 'UNREAD')
-        important = ($labels -contains 'IMPORTANT')
-        fromMe   = $fromMe
-        toMe     = $toMe
-        promo    = (Test-GmailPromo -LabelIds $labels -ListUnsub $listUnsub)
-        bulk     = (Test-GmailBulk -Headers $headers)
-        invite   = (Test-GmailInvite -Raw $Raw -Subject $subject -FromEmail $from.email -ContentType $contentType)
-        labels   = $labels
+        id            = [string]$Raw.id
+        threadId      = [string]$Raw.threadId
+        messageId     = $messageId
+        sourceAccount = $SourceAccount
+        from          = $from.email
+        fromName      = $from.name
+        subject       = $subject
+        snippet       = [string]$Raw.snippet
+        date          = $date
+        unread        = ($labels -contains 'UNREAD')
+        important     = ($labels -contains 'IMPORTANT')
+        fromMe        = $fromMe
+        toMe          = $toMe
+        promo         = (Test-GmailPromo -LabelIds $labels -ListUnsub $listUnsub)
+        bulk          = (Test-GmailBulk -Headers $headers)
+        invite        = (Test-GmailInvite -Raw $Raw -Subject $subject -FromEmail $from.email -ContentType $contentType)
+        labels        = $labels
     }
 }
 
-# ---- THE contract: Executive Email Summary (or an honest failure) --
-function Get-Email {
-    param([string]$When = 'today', [datetime]$Now = (Get-Date))
+# Fetch today's inbox for ONE account (read-only). Returns normalized
+# messages tagged with the account, plus its status. Errors are captured
+# per account so one failure never blocks the others.
+function Get-GmailAccountData {
+    param([Parameter(Mandatory)][string]$Id, [datetime]$Now = (Get-Date))
     $cfg = Get-GmailConfig
-    $nowStr = $Now.ToString('yyyy-MM-dd HH:mm:ss')
-    $fail = {
-        param($state, $detail)
-        [pscustomobject]@{ provider = 'email'; backend = 'gmail'; ok = $false; errorState = $state; status = [pscustomobject]@{ state = $state; detail = $detail; lastRefresh = $null; lastError = $detail }; timestamp = $nowStr; account = $null; totalToday = 0; analyzed = 0; capped = $false; messages = @(); summary = $null }
-    }
-    if (-not $cfg.configured) { return (& $fail 'not-configured' 'Gmail is not connected yet.') }
-    $at = Get-GmailAccessToken
-    if (-not $at.ok) { return (& $fail $at.state $at.detail) }
-
+    $at = Get-GoogleAccountAccessToken -Config (Get-GmailOAuthConfig) -Id $Id
+    if (-not $at.ok) { return [pscustomobject]@{ ok = $false; id = $Id; email = $Id; state = $at.state; detail = $at.detail; messages = @(); total = 0; capped = $false } }
     try {
         $profile = Invoke-GoogleApi -Token $at.token -BaseUrl $cfg.apiBase -Path '/users/me/profile'
-        $account = [string]$profile.emailAddress
+        $email = [string]$profile.emailAddress
+        # migrate a legacy/placeholder id to the real email (seamless upgrade)
+        if (($Id -eq 'default' -or $Id -like 'account-*') -and $email) { Rename-GoogleAccountRecord -Path $cfg.tokenPath -OldId $Id -NewId $email }
 
-        # today's received mail: inbox, on/after local midnight
         $midnight = [int]([DateTimeOffset]$Now.Date).ToUnixTimeSeconds()
         $q = ("in:inbox after:{0}" -f $midnight)
-
-        # page ids for an EXACT count (cap pages so a huge day never runs away)
         $ids = @(); $pageToken = $null; $pages = 0; $maxPages = 3
         do {
             $query = @{ q = $q; maxResults = '100' }
@@ -240,61 +242,94 @@ function Get-Email {
             $pages++
         } while ($pageToken -and $pages -lt $maxPages)
         $totalToday = $ids.Count
-        $pagedCapped = [bool]($pageToken)   # more pages existed than we counted
+        $pagedCapped = [bool]($pageToken)
 
-        # analyze the most recent N (Gmail returns newest first)
         $cap = [int]$cfg.analyzeCap
         $toAnalyze = @($ids | Select-Object -First $cap)
-        # format=metadata (no metadataHeaders) returns ALL headers + labelIds +
-        # snippet + internalDate, and never the message body - read-only and light.
         $messages = @()
-        foreach ($id in $toAnalyze) {
-            $raw = Invoke-GoogleApi -Token $at.token -BaseUrl $cfg.apiBase -Path ("/users/me/messages/{0}" -f $id) -Query @{ format = 'metadata' }
-            $messages += (Convert-GmailMessage -Raw $raw -Account $account -Aliases @($cfg.myAddresses))
+        foreach ($mid in $toAnalyze) {
+            $raw = Invoke-GoogleApi -Token $at.token -BaseUrl $cfg.apiBase -Path ("/users/me/messages/{0}" -f $mid) -Query @{ format = 'metadata' }
+            $messages += (Convert-GmailMessage -Raw $raw -Account $email -Aliases @($cfg.myAddresses) -SourceAccount $email)
         }
-        $analyzedCapped = [bool]($totalToday -gt $toAnalyze.Count)
-
-        $ctx = @{
-            userEmail         = $account
-            importantContacts = @($cfg.importantContacts)
-            clientDomains     = @($cfg.clientDomains)
-            carrierDomains    = @($cfg.carrierDomains)
-            carrierHints      = $cfg.carrierHints
-        }
-        $summary = Get-ExecutiveEmailSummary -Messages $messages -TotalToday $totalToday -Capped ($analyzedCapped -or $pagedCapped) -Context $ctx
-
-        return [pscustomobject]@{
-            provider   = 'email'; backend = 'gmail'; ok = $true; errorState = $null
-            status     = [pscustomobject]@{ state = 'connected'; detail = ('Live from Gmail ({0}).' -f $account); lastRefresh = $nowStr; lastError = $null }
-            timestamp  = $nowStr; account = $account
-            totalToday = $totalToday; analyzed = @($messages).Count; capped = ($analyzedCapped -or $pagedCapped)
-            messages   = @($messages)
-            summary    = $summary
-        }
+        $capped = [bool](($totalToday -gt $toAnalyze.Count) -or $pagedCapped)
+        return [pscustomobject]@{ ok = $true; id = $email; email = $email; state = 'connected'; detail = ('Live from Gmail ({0}).' -f $email); messages = @($messages); total = $totalToday; capped = $capped }
     } catch {
         $msg = $_.Exception.Message; $state = 'error'
         if ($_.Exception.Response -and ($_.Exception.Response.PSObject.Properties.Name -contains 'StatusCode')) {
             $sc = [int]$_.Exception.Response.StatusCode
-            if ($sc -eq 401) { $state = 'needs-attention'; $msg = 'Your Google authorization expired and needs to be renewed.' }
+            if ($sc -eq 401) { $state = 'needs-attention'; $msg = 'Authorization expired; reconnect this account.' }
             elseif ($sc -eq 403) { $state = 'denied'; $msg = 'I can reach Gmail, but the request was denied.' }
-        } elseif ($_.Exception -is [System.Net.WebException]) { $state = 'network-error'; $msg = 'I could not retrieve email because the network is unavailable.' }
-        Write-GmailDiag -Level 'error' -Message ("Gmail fetch {0}." -f $state)
-        return (& $fail $state $msg)
+        } elseif ($_.Exception -is [System.Net.WebException]) { $state = 'network-error'; $msg = 'The network is unavailable.' }
+        Write-GmailDiag -Level 'error' -Message ("Gmail fetch {0} for one account." -f $state)
+        return [pscustomobject]@{ ok = $false; id = $Id; email = $Id; state = $state; detail = $msg; messages = @(); total = 0; capped = $false }
     }
 }
 
-# Status for Settings. Without -Live: config/connection state, no network.
-# With -Live: a real read to confirm access.
+# ---- THE contract: one Executive Email Summary across ALL accounts --
+function Get-Email {
+    param([string]$When = 'today', [datetime]$Now = (Get-Date))
+    $cfg = Get-GmailConfig
+    $nowStr = $Now.ToString('yyyy-MM-dd HH:mm:ss')
+    $fail = {
+        param($state, $detail)
+        [pscustomobject]@{ provider = 'email'; backend = 'gmail'; ok = $false; errorState = $state; status = [pscustomobject]@{ state = $state; detail = $detail; lastRefresh = $null; lastError = $detail }; timestamp = $nowStr; account = $null; accounts = @(); accountCount = 0; totalToday = 0; analyzed = 0; capped = $false; messages = @(); summary = $null }
+    }
+    if (-not $cfg.configured) { return (& $fail 'not-configured' 'Gmail is not connected yet.') }
+    $ids = @(Get-GoogleAccountIds -Path $cfg.tokenPath)
+    if ($ids.Count -eq 0) { return (& $fail 'not-connected' 'Gmail is not connected yet.') }
+
+    $allMessages = @(); $accountsInfo = @(); $anyOk = $false; $totalToday = 0; $anyCapped = $false; $firstBadState = $null; $firstBadDetail = $null
+    foreach ($id in $ids) {
+        $d = Get-GmailAccountData -Id $id -Now $Now
+        $accountsInfo += [pscustomobject]@{ email = $d.email; state = $d.state; detail = $d.detail; total = $d.total; analyzed = @($d.messages).Count }
+        if ($d.ok) { $anyOk = $true; $allMessages += @($d.messages); $totalToday += [int]$d.total; $anyCapped = $anyCapped -or $d.capped }
+        elseif (-not $firstBadState) { $firstBadState = $d.state; $firstBadDetail = $d.detail }
+    }
+    if (-not $anyOk) { return (& $fail $firstBadState $firstBadDetail) }
+
+    $ctx = @{
+        userEmail         = ($accountsInfo | Where-Object { $_.state -eq 'connected' } | Select-Object -First 1).email
+        importantContacts = @($cfg.importantContacts)
+        clientDomains     = @($cfg.clientDomains)
+        carrierDomains    = @($cfg.carrierDomains)
+        carrierHints      = $cfg.carrierHints
+    }
+    # MERGE happens in the provider-neutral intelligence layer: it dedupes the
+    # same email across accounts (by Message-ID) and produces one summary.
+    $summary = Get-ExecutiveEmailSummary -Messages $allMessages -TotalToday $totalToday -Capped $anyCapped -Context $ctx
+
+    $connected = @($accountsInfo | Where-Object { $_.state -eq 'connected' })
+    $primary = if ($connected.Count -gt 0) { $connected[0].email } else { $null }
+    $degraded = @($accountsInfo | Where-Object { $_.state -ne 'connected' })
+    $detail = if ($degraded.Count -eq 0) { ('Live from Gmail ({0} account(s)).' -f $connected.Count) }
+    else { ('Live from Gmail ({0} of {1} account(s); {2} need attention).' -f $connected.Count, $accountsInfo.Count, $degraded.Count) }
+
+    return [pscustomobject]@{
+        provider   = 'email'; backend = 'gmail'; ok = $true; errorState = $null
+        status     = [pscustomobject]@{ state = 'connected'; detail = $detail; lastRefresh = $nowStr; lastError = $(if ($degraded.Count) { $degraded[0].detail } else { $null }) }
+        timestamp  = $nowStr; account = $primary; accounts = @($accountsInfo); accountCount = @($accountsInfo).Count
+        totalToday = $totalToday; analyzed = @($summary.attentionItems).Count; capped = $anyCapped
+        messages   = @($allMessages)
+        summary    = $summary
+    }
+}
+
+# Status for Settings. Without -Live: config/connection state (per account),
+# no network. With -Live: a real read to confirm access across all accounts.
 function Get-GmailStatus {
     param([switch]$Live)
     $cfg = Get-GmailConfig
-    $t = if (Get-Command Get-GoogleOAuthTokens -ErrorAction SilentlyContinue) { Get-GoogleOAuthTokens -Path $cfg.tokenPath } else { $null }
-    if (-not $cfg.configured) { return [pscustomobject]@{ name = 'Gmail'; state = 'not-configured'; detail = 'No OAuth client configured. Add a Desktop-app client id/secret to gmail.config.json, then Connect.'; account = $null; readOnly = $true; lastRefresh = $null; lastError = $null } }
-    if (-not $t) { return [pscustomobject]@{ name = 'Gmail'; state = 'not-connected'; detail = 'Configured but not connected. Click Connect Gmail.'; account = $null; readOnly = $true; lastRefresh = $null; lastError = $null } }
-    if (-not $Live) { return [pscustomobject]@{ name = 'Gmail'; state = 'connected'; detail = 'Connected (read-only). Run Test Connection to confirm live access.'; account = $null; readOnly = $true; lastRefresh = $null; lastError = $null } }
+    if (-not $cfg.configured) { return [pscustomobject]@{ name = 'Gmail'; state = 'not-configured'; detail = 'No OAuth client configured. Add a Desktop-app client id/secret to gmail.config.json, then Connect.'; account = $null; accounts = @(); readOnly = $true; lastRefresh = $null; lastError = $null } }
+    $ids = @(Get-GoogleAccountIds -Path $cfg.tokenPath)
+    if ($ids.Count -eq 0) { return [pscustomobject]@{ name = 'Gmail'; state = 'not-connected'; detail = 'Configured but not connected. Click Connect Gmail.'; account = $null; accounts = @(); readOnly = $true; lastRefresh = $null; lastError = $null } }
+    if (-not $Live) {
+        $accts = @($ids | ForEach-Object { [pscustomobject]@{ email = $_; state = 'connected'; detail = 'Connected (read-only).' } })
+        return [pscustomobject]@{ name = 'Gmail'; state = 'connected'; detail = ('{0} account(s) connected (read-only). Run Test Connection to confirm live access.' -f $ids.Count); account = $ids[0]; accounts = $accts; readOnly = $true; lastRefresh = $null; lastError = $null }
+    }
     $e = Get-Email -When 'today'
+    $accts = @($e.accounts | ForEach-Object { [pscustomobject]@{ email = $_.email; state = $_.state; detail = $_.detail } })
     $state = if ($e.ok) { 'connected' } else { $e.status.state }
-    return [pscustomobject]@{ name = 'Gmail'; state = $state; detail = $e.status.detail; account = $e.account; readOnly = $true; lastRefresh = $e.status.lastRefresh; lastError = $e.status.lastError }
+    return [pscustomobject]@{ name = 'Gmail'; state = $state; detail = $e.status.detail; account = $e.account; accounts = $accts; readOnly = $true; lastRefresh = $e.status.lastRefresh; lastError = $e.status.lastError }
 }
 
 # Is a question about email/inbox? Tony Brain uses this to route.
@@ -308,7 +343,7 @@ function Test-EmailRelevant {
 if (Get-Command Register-LiveProvider -ErrorAction SilentlyContinue) {
     Register-LiveProvider -Provider ([pscustomobject]@{
             name        = 'email'
-            description = 'Read-only Gmail via OAuth 2.0 (installed desktop app, PKCE). Backend = gmail. Explained by Tony as an Executive Email Summary.'
+            description = 'Read-only Gmail across one or more Google accounts (OAuth 2.0 desktop, PKCE). Backend = gmail. Explained by Tony as one Executive Email Summary.'
             relevant    = { param($text) Test-EmailRelevant $text }
             query       = { param($opts) Get-Email -When 'today' }
             status      = { param($live) Get-GmailStatus -Live:([bool]$live) }

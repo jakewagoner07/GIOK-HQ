@@ -44,8 +44,11 @@ Tony understands the real world through read-only providers, all on one reusable
 - ✅ Shared Google OAuth module + provider-neutral Email Intelligence (D16)
 - ✅ Gmail provider (read-only) — Executive Email Summary, generic `email` signal (D16)
 - ✅ Email-aware Executive Briefing (on demand, connected-only) (D16)
-- 🔄 **Gmail go-live** — needs Jake's Gmail-API enable + Connect + live triage validation
-- ⬜ Outlook / Microsoft 365 / Yahoo mail — plug into the same `email` architecture
+- ✅ **Gmail go-live** — live-validated on Jake's real account (D16)
+- ✅ **Multi-account Google (D17)** — one Calendar + one Gmail provider read MANY accounts (business +
+  personal); per-account tokens; merge/dedupe at the intelligence layer; Calendar migrated onto the
+  shared OAuth module; live-validated across two real accounts
+- ⬜ Outlook / Microsoft 365 / Yahoo mail — plug into the same `email` architecture (join the merge)
 - ⬜ Maps provider (travel time; pairs with Calendar)
 - ⬜ News / Stocks providers (read-only signals)
 
@@ -80,35 +83,28 @@ GIOK becomes the operating layer across devices and the agency.
 
 ---
 
-## Next five recommended sprints
+## Next recommended sprints
 
-0. **Gmail go-live (Jake, manual).** Enable the Gmail API on the existing Google Cloud project, add a
-   Desktop-app client to `gmail.config.json`, then Settings -> Gmail -> Connect. Validate the
-   Executive Email Summary on real mail (needs-reply / carrier / invitations / low-priority).
-   *Not a code sprint — a prerequisite Jake performs (steps in `Gmail_Provider.md`).*
+1. **D18 — Executive Automation Foundation (local scheduler).**
+   Pre-compose the morning briefing (now MULTI-ACCOUNT Calendar- AND Gmail-aware) so it's ready the
+   instant GIOK opens; the seam already exists in the briefing/context engines.
+   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it now has
+   rich multi-account signals worth pre-computing.
 
-1. **Migrate Calendar onto the shared OAuth module (small, low-risk).**
-   Point `google-calendar-provider.ps1` at `core/google-oauth.ps1` so Google auth lives in exactly
-   one place. *Why now:* finishes the D16 SSOT move; deferred during D16 to protect the freshly
-   validated live Calendar connection.
-
-2. **D17 — Executive Automation Foundation (local scheduler).**
-   Pre-compose the morning briefing (now Calendar- AND Gmail-aware) so it's ready the instant GIOK
-   opens; the seam already exists in the briefing/context engines.
-   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it needs the
-   connected signals from D15/D16 to be worth pre-computing.
-
-3. **D18 — Projects Model.**
+2. **D19 — Projects Model.**
    A real projects store so the Executive Context `project` field is live, Action Items can link to a
    project/goal, and priority "why" gets specific.
    *Why next:* removes standing technical debt and sharpens judgment across Home, briefing, and
    context — compounding value for every later sprint.
 
-4. **D19 — Meeting Prep + Focus-Block Protection.**
-   Using Calendar + Gmail, Tony drafts a short prep for the next meeting and proposes protecting the
-   clearest free block.
+3. **D20 — Meeting Prep + Focus-Block Protection.**
+   Using Calendar + Gmail (now across all accounts), Tony drafts a short prep for the next meeting and
+   proposes protecting the clearest free block.
    *Why next:* the first genuinely "chief-of-staff" proactive help, and a natural on-ramp to
    consent-gated write actions later.
+
+4. **Gmail/Calendar to Production (Jake, manual).** Publish the OAuth consent screen so refresh tokens
+   stop expiring every ~7 days; complete Google verification for the sensitive read-only scopes.
 
 ---
 

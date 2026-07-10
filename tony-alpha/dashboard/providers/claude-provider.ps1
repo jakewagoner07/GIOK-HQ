@@ -179,7 +179,8 @@ function Get-ClaudeUserContent {
     if ($c) {
         if ($c.ok) {
             $lines += ''
-            $lines += ("LIVE CALENDAR ({0}, fetched {1}, timezone {2}): {3} event(s) today, {4} tomorrow." -f $c.account, $c.timestamp, $c.timezone, $c.todayCount, $c.tomorrowCount)
+            $acctTxt = if ($c.accountCount -gt 1) { ('across {0} Google accounts (primary {1})' -f $c.accountCount, $c.account) } else { [string]$c.account }
+            $lines += ("LIVE CALENDAR ({0}, fetched {1}, timezone {2}): {3} event(s) today, {4} tomorrow." -f $acctTxt, $c.timestamp, $c.timezone, $c.todayCount, $c.tomorrowCount)
             if ($c.nextEvent) { $lines += ("Next: ""{0}"" {1}-{2}{3}." -f $c.nextEvent.title, $c.nextEvent.start.ToString('ddd h:mm tt'), $c.nextEvent.end.ToString('h:mm tt'), $(if ($c.nextEvent.location) { ' at ' + $c.nextEvent.location } else { '' })) }
             foreach ($ev in @($c.events | Select-Object -First 12)) {
                 $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd') + ', all day' } else { $ev.start.ToString('ddd h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
@@ -200,7 +201,8 @@ function Get-ClaudeUserContent {
         if ($em.ok -and $em.summary) {
             $s = $em.summary
             $lines += ''
-            $lines += ("LIVE EMAIL (Gmail, {0}, fetched {1}): {2} received today; {3} need attention, {4} awaiting a reply, {5} calendar invitation(s), {6} carrier/underwriting, {7} newsletter/promo (low priority)." -f $em.account, $em.timestamp, $s.total, $s.needsAttention, $s.waitingForReply, $s.invitations, $s.carrierUpdates, $s.lowPriority)
+            $emAcctTxt = if ($em.accountCount -gt 1) { ('across {0} Google accounts' -f $em.accountCount) } else { [string]$em.account }
+            $lines += ("LIVE EMAIL (Gmail {0}, fetched {1}): {2} received today; {3} need attention, {4} awaiting a reply, {5} calendar invitation(s), {6} carrier/underwriting, {7} newsletter/promo (low priority)." -f $emAcctTxt, $em.timestamp, $s.total, $s.needsAttention, $s.waitingForReply, $s.invitations, $s.carrierUpdates, $s.lowPriority)
             if ($s.capped) { $lines += ("(Analyzed the {0} most recent of today's inbox.)" -f $s.analyzed) }
             foreach ($it in @($s.attentionItems)) {
                 $lines += (" - [{0}]{1} {2}: ""{3}"" ({4})" -f $it.category, $(if ($it.unread) { ' unread' } else { '' }), $it.from, $it.subject, $it.why)

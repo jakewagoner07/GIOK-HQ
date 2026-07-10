@@ -1,5 +1,10 @@
 # The Gmail Provider (Read-Only) - Executive Email Intelligence
 
+> **Multi-account (D17):** this one provider now reads *all* connected Google accounts and merges them
+> into one Executive Email Summary (dedupe by Message-ID). See
+> [Multi_Account_Google.md](Multi_Account_Google.md). The description below covers the per-account
+> mechanics; multi-account is layered on top without a second provider.
+
 ## Tony tells you what deserves your attention
 
 *Project Diamond, Sprint D16. Tony's second Google integration - and the first proof that the
