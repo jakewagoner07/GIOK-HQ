@@ -270,6 +270,36 @@ function Get-GCalConflicts {
     return @($conflicts)
 }
 
+# Calendar Intelligence: the day at a glance, computed from events. Pure,
+# deterministic, testable. First/last meeting, totals, free focus blocks,
+# and which days in the window are meeting-heavy. All-day events are not
+# counted as "meetings" (they don't consume focus time).
+function Get-CalendarInsights {
+    param($Events, [datetime]$Now = (Get-Date), [int]$HeavyThreshold = 4)
+    $timed = @($Events | Where-Object { -not $_.allDay } | Sort-Object start)
+    $todayTimed = @($timed | Where-Object { $_.start.Date -eq $Now.Date })
+    $first = if ($todayTimed.Count -gt 0) { $todayTimed[0] } else { $null }
+    $last = if ($todayTimed.Count -gt 0) { @($todayTimed | Sort-Object end)[-1] } else { $null }
+    $busyMin = 0; foreach ($e in $todayTimed) { $busyMin += [int]([math]::Round(($e.end - $e.start).TotalMinutes)) }
+    $free = Get-GCalFreeWindows -Date $Now -Events $todayTimed
+    $longestFree = if (@($free).Count -gt 0) { @($free | Sort-Object minutes -Descending)[0] } else { $null }
+    $byDay = $timed | Group-Object { $_.start.Date.ToString('yyyy-MM-dd') }
+    $heavyDays = @($byDay | Where-Object { @($_.Group).Count -ge $HeavyThreshold } | ForEach-Object { [pscustomobject]@{ date = $_.Name; day = ([datetime]$_.Name).ToString('dddd'); count = @($_.Group).Count } } | Sort-Object date)
+    return [pscustomobject]@{
+        today            = [pscustomobject]@{
+            firstMeeting     = $first
+            lastMeeting      = $last
+            totalMeetings    = $todayTimed.Count
+            busyMinutes      = $busyMin
+            freeBlocks       = @($free)
+            longestFreeBlock = $longestFree
+            meetingHeavy     = ($todayTimed.Count -ge $HeavyThreshold)
+        }
+        meetingHeavyDays = $heavyDays
+        heavyThreshold   = $HeavyThreshold
+    }
+}
+
 # ---- THE contract: structured calendar info (or an honest failure) --
 function Get-Calendar {
     param([string]$When = 'today', [datetime]$Now = (Get-Date))
@@ -277,7 +307,7 @@ function Get-Calendar {
     $nowStr = $Now.ToString('yyyy-MM-dd HH:mm:ss')
     $fail = {
         param($state, $detail)
-        [pscustomobject]@{ provider = 'calendar'; ok = $false; errorState = $state; status = [pscustomobject]@{ state = $state; detail = $detail; lastRefresh = $null; lastError = $detail }; timestamp = $nowStr; account = $null; timezone = $null; calendars = @(); events = @(); nextEvent = $null; todayCount = 0; tomorrowCount = 0; freeWindows = @(); conflicts = @() }
+        [pscustomobject]@{ provider = 'calendar'; ok = $false; errorState = $state; status = [pscustomobject]@{ state = $state; detail = $detail; lastRefresh = $null; lastError = $detail }; timestamp = $nowStr; account = $null; timezone = $null; calendars = @(); events = @(); nextEvent = $null; todayCount = 0; tomorrowCount = 0; freeWindows = @(); conflicts = @(); insights = $null }
     }
     if (-not $cfg.configured) { return (& $fail 'not-configured' 'Google Calendar is not connected yet.') }
     $at = Get-GCalAccessToken
@@ -305,6 +335,7 @@ function Get-Calendar {
         $next = @($events | Where-Object { $_.start -gt $Now -and -not $_.allDay } | Sort-Object start | Select-Object -First 1)
         $freeToday = Get-GCalFreeWindows -Date $Now -Events $today
         $freeTomorrow = Get-GCalFreeWindows -Date $Now.AddDays(1) -Events $tomorrow
+        $insights = Get-CalendarInsights -Events $events -Now $Now
 
         return [pscustomobject]@{
             provider    = 'calendar'; ok = $true; errorState = $null
@@ -315,6 +346,7 @@ function Get-Calendar {
             todayCount  = $today.Count; tomorrowCount = $tomorrow.Count
             freeWindows = @($freeToday + $freeTomorrow)
             conflicts   = @(Get-GCalConflicts -Events $events)
+            insights    = $insights
         }
     } catch {
         $msg = $_.Exception.Message; $state = 'error'

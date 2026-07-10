@@ -67,6 +67,25 @@ or takes a direct dependency on this file.
    then adds brief executive guidance if it fits** ("your clearest block is 7:30-9:30 AM, so I'd
    protect that for prospecting"). Ambiguous wording gets one concise clarifying question.
 
+## Calendar Intelligence (D15)
+
+`Get-CalendarInsights` turns the fetched events into *the day at a glance* - pure, deterministic
+logic included in the `Get-Calendar` contract as `insights`:
+
+- **First meeting** and **last meeting** (today's earliest start / latest end).
+- **Total meetings** today (timed events; **all-day events are not counted** - they don't consume
+  focus time).
+- **Free focus blocks** (from `Get-GCalFreeWindows`) and the **longest** one.
+- **Busy minutes** today, and a **meeting-heavy** flag (>= 4 meetings).
+- **Meeting-heavy days** across the fetched window (which upcoming days are >= 4 meetings).
+
+These feed **Tony's Executive Briefing**: a calm "Today's Schedule" line ("2 meetings today,
+starting with the Miller renewal call at 10:00 AM; the last wraps up by 3:00 PM") plus one piece of
+guidance (protect the clearest focus block, or - on a meeting-heavy day - protect the gaps for
+recovery). The briefing consumes this signal **only when Calendar is connected** (a sanctioned
+"briefing requests a calendar signal" trigger) - it is never fetched on a disconnected or unrelated
+render.
+
 ## Executive Context
 
 Calendar is an **optional live signal**, passed into the Executive Context (a one-line note in the

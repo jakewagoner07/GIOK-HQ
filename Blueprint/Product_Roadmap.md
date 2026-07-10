@@ -38,8 +38,9 @@ Tony understands the real world through read-only providers, all on one reusable
 - ✅ Live-provider registry — `relevant`/`query`/`status`, generic consumption (D13)
 - ✅ Weather provider — Open-Meteo, keyless, live (D13)
 - ✅ Google Calendar provider (read-only) — OAuth+PKCE, contract, Settings (D14)
+- ✅ Calendar Intelligence — first/last/total, free blocks, meeting-heavy days (D15)
+- ✅ Calendar-aware Executive Briefing (on demand, connected-only) (D15)
 - 🔄 **Google Calendar go-live** — needs Jake's OAuth setup + live edge-case validation
-- ⬜ Calendar-aware Executive Briefing (on demand)
 - ⬜ Gmail provider (read-only)
 - ⬜ Maps provider (travel time; pairs with Calendar)
 - ⬜ News / Stocks providers (read-only signals)
@@ -77,30 +78,28 @@ GIOK becomes the operating layer across devices and the agency.
 
 ## Next five recommended sprints
 
-1. **D15 — Calendar Go-Live + Calendar-Aware Briefing.**
-   Jake completes OAuth; validate recurring/all-day/DST/multi-calendar live; then let the Executive
-   Briefing optionally weave in the first commitment and free blocks (on demand, never per render).
-   *Why next:* cashes in the D14 investment and makes the daily centerpiece materially better with the
-   smallest new surface.
+0. **Calendar go-live (Jake, manual).** Complete the Google OAuth setup so D15's Calendar
+   Intelligence runs on real data; validate recurring/all-day/DST/multi-calendar and refresh live.
+   *Not a code sprint — a prerequisite Jake performs (steps in `Google_Calendar_Provider.md`).*
 
-2. **D16 — Gmail Read-Only Provider.**
+1. **D16 — Gmail Read-Only Provider.**
    Same OAuth/registry/Settings pattern; Tony summarizes what needs attention.
    *Why next:* highest-value second Google signal; reuses D14 wholesale; proves the pattern
    generalizes (validating a permanent architecture decision).
 
-3. **D17 — Executive Automation Foundation (local scheduler).**
+2. **D17 — Executive Automation Foundation (local scheduler).**
    Pre-compose the morning briefing so it's ready the instant GIOK opens; the seam already exists in
    the briefing/context engines.
    *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it needs the
    connected signals from D15/D16 to be worth pre-computing.
 
-4. **D18 — Projects Model.**
+3. **D18 — Projects Model.**
    A real projects store so the Executive Context `project` field is live, Action Items can link to a
    project/goal, and priority "why" gets specific.
    *Why next:* removes standing technical debt and sharpens judgment across Home, briefing, and
    context — compounding value for every later sprint.
 
-5. **D19 — Meeting Prep + Focus-Block Protection.**
+4. **D19 — Meeting Prep + Focus-Block Protection.**
    Using Calendar (+ Gmail once present), Tony drafts a short prep for the next meeting and proposes
    protecting the clearest free block.
    *Why next:* the first genuinely "chief-of-staff" proactive help, and a natural on-ramp to

@@ -858,6 +858,13 @@ function New-ExecutiveBriefingCard {
     $sp.Children.Add((New-Text -Text $m.greeting -Size 30 -Weight 'Bold' -Color $script:Col.Heading -Margin (New-Object Windows.Thickness (0, 8, 0, 0)))) | Out-Null
     $sp.Children.Add((New-Text -Text $m.summary.text -Size 14.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)))) | Out-Null
 
+    # today's schedule (only when a live calendar signal was provided)
+    if ($m.PSObject.Properties.Name -contains 'schedule' -and $m.schedule) {
+        $sp.Children.Add((New-BriefingLabel -Text "TODAY'S SCHEDULE")) | Out-Null
+        $sp.Children.Add((New-Text -Text $m.schedule.line -Size 13.5 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+        if ($m.schedule.guidance) { $sp.Children.Add((New-Text -Text $m.schedule.guidance -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null }
+    }
+
     # today's top three, each with its WHY
     if (@($m.priorities).Count -gt 0) {
         $sp.Children.Add((New-BriefingLabel -Text 'TODAY''S TOP THREE')) | Out-Null
@@ -921,7 +928,13 @@ function New-HomeView {
     # here to keep Home calm and letter-centered. Falls back to the Morning
     # Briefing if the engine isn't available.
     $briefName = if ($script:Theme -and $script:Theme.profileName) { $script:Theme.profileName } else { 'Jake' }
-    $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName } else { $null }
+    # The briefing may request a calendar signal - a sanctioned trigger - but ONLY
+    # when Calendar is already connected (no fetch, no network when disconnected).
+    $briefCal = $null
+    if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
+        try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $script:TonyNow } } catch { $briefCal = $null }
+    }
+    $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName -Calendar $briefCal } else { $null }
     if ($briefing) { $stack.Children.Add((New-ExecutiveBriefingCard -Model $briefing)) | Out-Null }
     else { $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null }
 

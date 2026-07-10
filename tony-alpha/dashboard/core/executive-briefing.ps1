@@ -117,17 +117,54 @@ function Get-BriefingEncouragement {
 }
 
 # THE briefing. Consumes the single Executive Context (never creates a new
+# Today's Schedule for the briefing - composed from Calendar Intelligence
+# (Calendar Provider). Returns $null unless a live, ok calendar signal was
+# provided (never fetched here). Calm and specific: what today holds and the
+# one block worth protecting.
+function Get-BriefingSchedule {
+    param($Calendar)
+    if (-not $Calendar -or -not $Calendar.ok -or -not $Calendar.insights) { return $null }
+    $t = $Calendar.insights.today
+    $firstTxt = if ($t.firstMeeting) { ('{0} at {1}' -f $t.firstMeeting.title, $t.firstMeeting.start.ToString('h:mm tt')) } else { $null }
+    $freeTxt = if ($t.longestFreeBlock) { ('{0}-{1} ({2} min)' -f $t.longestFreeBlock.start.ToString('h:mm tt'), $t.longestFreeBlock.end.ToString('h:mm tt'), $t.longestFreeBlock.minutes) } else { $null }
+
+    if ($t.totalMeetings -eq 0) {
+        $line = 'No meetings on the calendar today - the day is yours to shape.'
+    } else {
+        $plural = if ($t.totalMeetings -eq 1) { '' } else { 's' }
+        $line = ('{0} meeting{1} today' -f $t.totalMeetings, $plural)
+        if ($firstTxt) { $line += (', starting with ' + $firstTxt) }
+        if ($t.lastMeeting) { $line += ('; the last wraps up by ' + $t.lastMeeting.end.ToString('h:mm tt')) }
+        $line += '.'
+    }
+    $guidance = $null
+    if ($t.meetingHeavy) { $guidance = 'A meeting-heavy day - protect the gaps for recovery, not more work.' }
+    elseif ($freeTxt) { $guidance = ('Your clearest focus block is ' + $freeTxt + ' - worth protecting for deep work.') }
+
+    return [pscustomobject]@{
+        line             = $line
+        totalMeetings    = $t.totalMeetings
+        firstMeeting     = $firstTxt
+        lastMeeting      = if ($t.lastMeeting) { $t.lastMeeting.end.ToString('h:mm tt') } else { $null }
+        longestFreeBlock = $freeTxt
+        meetingHeavy     = $t.meetingHeavy
+        guidance         = $guidance
+    }
+}
+
 # one) and composes the letter model. Data only - no UI, no writes.
 function Get-TonyExecutiveBriefing {
     param(
         [string]$CurrentWorkspace = 'Home',
         [datetime]$Now = (Get-Date),
         [string]$Name = 'Jake',
-        $ExecutiveContext = $null
+        $ExecutiveContext = $null,
+        $Calendar = $null   # optional live calendar signal (passed in when connected); never fetched here
     )
     $exec = $ExecutiveContext
     if (-not $exec -and (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue)) {
-        $exec = Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion 'Prepare my executive briefing for today.' -Now $Now
+        $ls = if ($Calendar) { @{ calendar = $Calendar } } else { @{} }
+        $exec = Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion 'Prepare my executive briefing for today.' -Now $Now -LiveSignals $ls
     }
     if (-not $exec) { return $null }
 
@@ -149,6 +186,7 @@ function Get-TonyExecutiveBriefing {
         partOfDay     = $partOfDay
         greeting      = (Get-BriefingGreeting -PartOfDay $partOfDay -Name $first)
         summary       = (Get-BriefingSummary -Exec $exec)
+        schedule      = (Get-BriefingSchedule -Calendar $Calendar)
         priorities    = (Get-BriefingPriorities -Exec $exec)
         observation   = $observation
         focus         = (Get-BriefingFocus -Exec $exec)

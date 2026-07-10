@@ -3,7 +3,7 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D14** (Read-Only Google Calendar Provider).
+Last updated: end of **Sprint D15** (Calendar Intelligence).
 
 ---
 
@@ -78,8 +78,16 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D12 | Tony Memory With Permission (ask-first; Memory Review) | `aced16c` |
 | D13 | Weather Provider (first live provider; Open-Meteo, keyless) | `a354a4b` |
 | D14 | Read-Only Google Calendar Provider (OAuth + PKCE, read-only) | `2a2d42a` |
+| D15 | Calendar Intelligence (first/last/total, free blocks, meeting-heavy days) fed into the Executive Briefing | (this checkpoint) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
+
+**D15 note (honest status):** the intelligence computations, event handling (all-day/recurring/
+cancelled), refresh-token expiry logic, and the calendar-aware Executive Briefing are built and
+verified with fixtures. The **live Google connection was NOT completed** — it needs Jake's Google
+Cloud OAuth client + browser consent (no `calendar.config.json`/`calendar.tokens.json` exist yet).
+Live validation of a real account, recurring/all-day/refresh against Google, is pending those manual
+steps (see `Google_Calendar_Provider.md`).
 
 ---
 
@@ -157,8 +165,7 @@ Projects, Learning.
 
 ## Next recommended sprint
 
-**D15 — Calendar Go-Live + Calendar-Aware Briefing.** Have Jake complete the Google OAuth setup;
-validate live edge cases (recurring/all-day/DST/multi-calendar); then let the Executive Briefing
-optionally weave in the day's first commitment and free blocks (on demand, not per render). This
-cashes in D14 and strengthens the morning experience. (Then **D16 — Gmail read-only provider**, same
-pattern.) See `Product_Roadmap.md` for the full ordering and rationale.
+**Calendar go-live (Jake) → then D16 — Gmail Read-Only Provider.** First, Jake completes the Google
+OAuth setup so the D15 intelligence runs on real data (validate recurring/all-day/DST/multi-calendar
+live). Then **D16 (Gmail)** reuses the exact OAuth + live-provider + Settings pattern. See
+`Product_Roadmap.md` for the full ordering and rationale.
