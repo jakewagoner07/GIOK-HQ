@@ -101,7 +101,7 @@ function Get-ExecutiveAssessment {
 # situational. This is what lets the provider answer WITHOUT rebuilding
 # context from raw fields.
 function Get-ExecutiveSummaryText {
-    param($Time, $Workspace, $Project, $Priorities, $OpenCount, $LatestAudit, $AnnualTheme, $Assessment, $Guidance, $Memory = @(), $Weather = $null, $Calendar = $null)
+    param($Time, $Workspace, $Project, $Priorities, $OpenCount, $LatestAudit, $AnnualTheme, $Assessment, $Guidance, $Memory = @(), $Weather = $null, $Calendar = $null, $Email = $null)
     $parts = @()
     $parts += ("It's {0} {1}, {2}." -f $Time.dayOfWeek, $Time.partOfDay, $Time.time)
     $where = if ($Project) { "working on $Project" }
@@ -119,6 +119,10 @@ function Get-ExecutiveSummaryText {
     if ($Calendar -and $Calendar.ok) {
         $nextTxt = if ($Calendar.nextEvent) { ('next: "{0}" at {1}' -f $Calendar.nextEvent.title, $Calendar.nextEvent.start.ToString('ddd h:mm tt')) } else { 'nothing upcoming today' }
         $parts += ('Calendar: {0} today, {1} tomorrow; {2}.' -f $Calendar.todayCount, $Calendar.tomorrowCount, $nextTxt)
+    }
+    if ($Email -and $Email.ok -and $Email.summary) {
+        $es = $Email.summary
+        $parts += ('Inbox: {0} today, {1} need attention, {2} awaiting a reply, {3} invitation(s).' -f $es.total, $es.needsAttention, $es.waitingForReply, $es.invitations)
     }
     if (@($Memory).Count -gt 0) { $parts += ('Remembered (approved): ' + ((@($Memory) | Select-Object -First 3 | ForEach-Object { $_.value }) -join '; ') + '.') }
     if ($Guidance) { $parts += ('Tony''s judgment on this question: alignment {0}/100, priority {1}.' -f $Guidance.alignmentScore, $Guidance.priority) }
@@ -188,6 +192,7 @@ function Get-TonyExecutiveContext {
     # -- live-provider signals (passed in, never fetched here): weather, calendar, ... --
     $weather  = if ($LiveSignals -and $LiveSignals.ContainsKey('weather'))  { $LiveSignals['weather'] }  else { $null }
     $calendar = if ($LiveSignals -and $LiveSignals.ContainsKey('calendar')) { $LiveSignals['calendar'] } else { $null }
+    $email    = if ($LiveSignals -and $LiveSignals.ContainsKey('email'))    { $LiveSignals['email'] }    else { $null }
 
     # -- Decision Framework output (Tony's judgment; retains FINAL authority downstream) --
     $guidance = $null
@@ -205,7 +210,7 @@ function Get-TonyExecutiveContext {
         -LatestAudit $latestAudit -ActiveGoals $activeGoals -Observations $observations -Guidance $guidance -Question $CurrentQuestion
     $summary = Get-ExecutiveSummaryText -Time $time -Workspace $CurrentWorkspace -Project $CurrentProject `
         -Priorities $priorities -OpenCount $openCount -LatestAudit $latestAudit -AnnualTheme $annualTheme `
-        -Assessment $assessment -Guidance $guidance -Memory $memory -Weather $weather -Calendar $calendar
+        -Assessment $assessment -Guidance $guidance -Memory $memory -Weather $weather -Calendar $calendar -Email $email
 
     return [pscustomobject]@{
         source             = 'executive-context'
@@ -232,9 +237,10 @@ function Get-TonyExecutiveContext {
         recentConversation = $recentConversation
         recentDocument     = $recentDocument
         memory             = $memory       # approved memories (read-only reference; Memory Manager owns writes)
-        liveSignals        = $LiveSignals  # generic live-provider signals map (weather, calendar, ...)
+        liveSignals        = $LiveSignals  # generic live-provider signals map (weather, calendar, email, ...)
         weather            = $weather      # derived convenience references (or null); provided, never fetched here
         calendar           = $calendar
+        email              = $email
         assessment         = $assessment
         executiveSummary   = $summary
         base               = $base   # the referenced base context, reused by the reasoning engine (no re-assembly)

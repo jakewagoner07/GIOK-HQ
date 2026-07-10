@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this file to gmail.config.json (which is gitignored) and fill in your own values. In Google Cloud Console (you can reuse the same project as Calendar): enable the Gmail API, keep the OAuth consent screen you already configured, then create (or reuse) an OAuth 2.0 Client ID of type 'Desktop app'. Paste its client id and secret below. This provider requests ONLY read-only Gmail access (gmail.readonly) - it never sends, replies, labels, or deletes. For an installed desktop app the client secret is not truly confidential, but gmail.config.json stays local and gitignored regardless.",
+  "clientId": "YOUR_DESKTOP_APP_CLIENT_ID.apps.googleusercontent.com",
+  "clientSecret": "YOUR_DESKTOP_APP_CLIENT_SECRET",
+  "_triage_comment": "OPTIONAL: help Tony triage. importantContacts = exact email addresses whose mail should always surface. clientDomains = domains you treat as clients. carrierDomains = insurance carrier/underwriting domains. carrierHints = extra keywords (added to the built-in insurance vocabulary). All optional; leave the arrays empty to use sensible defaults.",
+  "importantContacts": [],
+  "clientDomains": [],
+  "carrierDomains": [],
+  "carrierHints": []
+}

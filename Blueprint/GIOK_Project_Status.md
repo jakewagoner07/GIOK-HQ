@@ -3,7 +3,7 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D15** (Calendar Intelligence).
+Last updated: end of **Sprint D16** (Gmail Provider - Executive Email Intelligence).
 
 ---
 
@@ -15,8 +15,8 @@ Last updated: end of **Sprint D15** (Calendar Intelligence).
 | **Current version** | **0.8 Alpha** (`tony-alpha/dashboard/theme/theme.json`) |
 | **Current branch** | `feature/dashboard-alpha` |
 | **Current PR** | **#1** — https://github.com/jakewagoner07/GIOK-HQ/pull/1 — **open, not merged**, base `main` |
-| **Latest commit** | `2a2d42a` — *Build Read-Only Google Calendar Provider* |
-| **Remote sync** | local HEAD = remote HEAD (0 ahead / 0 behind) |
+| **Latest commit** | `722dce4` pushed (*Calendar free-window fix*); **D16 Gmail Provider committed on top, unpushed** (this checkpoint) |
+| **Remote sync** | D14/D15 pushed; **D16 local-only until Jake approves a push** |
 | **Platform** | Windows PowerShell 5.1 (STA) + .NET WPF. No Node/Python. Entry point: `tony-alpha/dashboard/dashboard.ps1`. |
 
 ---
@@ -48,13 +48,21 @@ Live-Provider registry (`live-providers.ps1`).
 
 **Two registries, deliberately separate:**
 - **AI provider registry** (in `tony-brain.ps1`): who *reasons* for Tony (Claude; auto-select).
-- **Live-provider registry** (`live-providers.ps1`): live *information* signals (weather, calendar).
-  Providers implement `relevant` / `query` / `status` and register; the Brain consumes them
+- **Live-provider registry** (`live-providers.ps1`): live *information* signals (weather, calendar,
+  email). Providers implement `relevant` / `query` / `status` and register; the Brain consumes them
   generically with no per-provider dependency.
+
+**Shared provider building blocks (added D16, Single Source of Truth):**
+- **`core/google-oauth.ps1`** — one installed-desktop-app OAuth mechanism (PKCE + loopback + offline
+  refresh + revoke + UTF-8 REST GET), parameterized per provider. Gmail uses it now; Calendar
+  migrates onto it next (low-risk follow-up).
+- **`core/email-intelligence.ps1`** — provider-neutral Executive Email Intelligence (classification +
+  summary). Gmail feeds it today; Outlook / Microsoft 365 / Yahoo feed the same engine later by
+  normalizing to a shared message shape and registering as the generic **`email`** signal.
 
 ---
 
-## Completed sprints D1–D14
+## Completed sprints D1–D16
 
 *(Foundation before the Diamond D-series: Capture + Tony Memory, Morning Briefing, Morning
 Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night Usability = v0.8.)*
@@ -78,16 +86,21 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D12 | Tony Memory With Permission (ask-first; Memory Review) | `aced16c` |
 | D13 | Weather Provider (first live provider; Open-Meteo, keyless) | `a354a4b` |
 | D14 | Read-Only Google Calendar Provider (OAuth + PKCE, read-only) | `2a2d42a` |
-| D15 | Calendar Intelligence (first/last/total, free blocks, meeting-heavy days) fed into the Executive Briefing | (this checkpoint) |
+| D15 | Calendar Intelligence (first/last/total, free blocks, meeting-heavy days) fed into the Executive Briefing | `7c73e10` (+`722dce4`) |
+| D16 | Gmail Provider — read-only Executive Email Summary on shared OAuth + provider-neutral email intelligence | (this checkpoint) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
 
-**D15 note (honest status):** the intelligence computations, event handling (all-day/recurring/
-cancelled), refresh-token expiry logic, and the calendar-aware Executive Briefing are built and
-verified with fixtures. The **live Google connection was NOT completed** — it needs Jake's Google
-Cloud OAuth client + browser consent (no `calendar.config.json`/`calendar.tokens.json` exist yet).
-Live validation of a real account, recurring/all-day/refresh against Google, is pending those manual
-steps (see `Google_Calendar_Provider.md`).
+**D15 note (now LIVE):** Calendar is connected to Jake's real Google account and validated live
+(today's events, all-day, recurring, meeting-heavy insights, calendar-aware briefing). A real bug
+found only against live data — `freeWindows` scalar `+` on single-window days — was fixed (`722dce4`).
+
+**D16 note (honest status):** the Gmail backend (OAuth, read-only fetch, normalization),
+provider-neutral Email Intelligence (classification + Executive Email Summary), and the
+email-aware Executive Briefing are built and **verified with fixtures + a stubbed-connected Home
+render** (the "Today's Email" section renders correctly). The **live Gmail connection is pending
+Jake's step**: enable the Gmail API on the existing Google Cloud project, add a Desktop-app client to
+`gmail.config.json`, then Settings -> Gmail -> Connect (see `Gmail_Provider.md`).
 
 ---
 
@@ -99,8 +112,14 @@ steps (see `Google_Calendar_Provider.md`).
 - **Live — Weather:** **Open-Meteo** (no key). Location defaults to Ogden, UT (overridable). Live and
   verified. Settings → Live Providers.
 - **Live — Google Calendar (read-only):** OAuth 2.0 installed-desktop-app flow (PKCE, loopback,
-  offline refresh), scope `calendar.readonly`. Architecture complete and tested; **live connection
-  pending Jake's Google Cloud setup** (see below). Settings → Google Calendar.
+  offline refresh), scope `calendar.readonly`. **Live and validated** against Jake's real account.
+  Settings → Google Calendar.
+- **Live — Gmail (read-only):** same installed-desktop-app OAuth (now on the shared
+  `core/google-oauth.ps1`), scope `gmail.readonly`. Produces an **Executive Email Summary** via the
+  provider-neutral `core/email-intelligence.ps1`; registered as the generic `email` signal. Read-only
+  (never sends/labels/deletes); message bodies never fetched. Architecture complete and
+  fixture-tested; **live connection pending Jake's Gmail-API enable + Connect** (see
+  `Gmail_Provider.md`). Settings → Gmail.
 
 ---
 
@@ -121,24 +140,31 @@ Projects, Learning.
 |---|---|
 | `tony-alpha/dashboard/providers/claude.config.json` | Anthropic API key + model |
 | `tony-alpha/dashboard/providers/calendar.config.json` | Google OAuth desktop client id/secret |
-| `tony-alpha/calendar.tokens.json` | Google access/refresh tokens |
+| `tony-alpha/calendar.tokens.json` | Google Calendar access/refresh tokens |
+| `tony-alpha/dashboard/providers/gmail.config.json` | Gmail OAuth client id/secret + optional triage lists |
+| `tony-alpha/gmail.tokens.json` | Gmail access/refresh tokens |
 | `tony-alpha/conversation.json` | Talk-with-Tony history |
 | `tony-alpha/tony_memory.json` | Approved permanent memories |
 | `**/memory-export-*.json` | User memory exports |
 | `**/weather.config.json` | Optional per-user location override |
 | `tony-alpha/logs/`, `**/tony-diagnostics.log` | Local diagnostics (never contain tokens/keys) |
 
-**Committed safe templates:** `claude.config.example.json`, `calendar.config.example.json` (placeholders only).
+**Committed safe templates:** `claude.config.example.json`, `calendar.config.example.json`,
+`gmail.config.example.json` (placeholders only).
 
 ---
 
 ## Known issues
 
-- **Google Calendar not yet live-connected.** Requires Jake's manual Google Cloud setup (OAuth
-  Desktop client + Calendar API + consent). While the OAuth app is in "Testing," Google expires
-  refresh tokens after ~7 days — publish to Production for durable personal use.
-- **Live-OAuth edge cases unvalidated** (recurring/all-day/DST/multi-calendar) until a real
-  connection exists.
+- **Google Calendar is live-connected and validated.** (Was the prior known issue; resolved D15.)
+- **Gmail not yet live-connected.** Requires Jake enabling the Gmail API on the existing Google Cloud
+  project + a Desktop-app client in `gmail.config.json` + Connect. Fixture-verified; live triage
+  accuracy (needs-reply / carrier / invitations) confirmed only once connected.
+- **OAuth "Testing" mode:** while the consent screen is in Testing, Google expires refresh tokens
+  after ~7 days for BOTH Calendar and Gmail — publish to Production for durable personal use.
+- **Email triage is heuristic + user-curated.** "Client"/"important contact" detection is honest only
+  to the extent Jake fills `importantContacts`/`clientDomains` in `gmail.config.json`; otherwise Tony
+  says "a person is waiting" rather than guessing a relationship.
 - **Some Home data is clearly-labeled sample** (Agency Overview, Appointments, Agent Health cards;
   Life/Business scores) — flagged "SAMPLE," awaiting real integrations.
 - **`Founder/Tony_Feedback.md`** is an untracked local note (intentionally left alone).
@@ -158,14 +184,18 @@ Projects, Learning.
 
 - **Method:** headless render verification (`dashboard.ps1 -Screenshot out.png -View <name>`) +
   targeted PowerShell harness tests dot-sourcing the modules. No CI.
-- **Live-verified:** Claude reasoning (real key, 200s), Weather (Open-Meteo live), full response
-  pipeline, native UTF-8 rendering, memory permission flow, observation/decision/context engines.
-- **Architecture-verified, live pending:** Google Calendar (routing, disconnected honesty,
-  free-time/conflict logic, fixture wiring all pass; live OAuth needs Jake).
+- **Live-verified:** Claude reasoning (real key, 200s), Weather (Open-Meteo live), **Google Calendar
+  (real account: today/all-day/recurring/insights/briefing)**, full response pipeline, native UTF-8
+  rendering, memory permission flow, observation/decision/context engines.
+- **Architecture-verified, live pending:** Gmail (classification + Executive Email Summary fixtures,
+  raw->normalized parse, routing, disconnected honesty, and a stubbed-connected Home render all pass;
+  live OAuth needs Jake to enable the Gmail API + Connect).
 
 ## Next recommended sprint
 
-**Calendar go-live (Jake) → then D16 — Gmail Read-Only Provider.** First, Jake completes the Google
-OAuth setup so the D15 intelligence runs on real data (validate recurring/all-day/DST/multi-calendar
-live). Then **D16 (Gmail)** reuses the exact OAuth + live-provider + Settings pattern. See
+**Gmail go-live (Jake) → then D17 — Executive Automation Foundation (local scheduler).** First, Jake
+enables the Gmail API and connects (Settings -> Gmail), so the D16 Executive Email Summary runs on
+real mail. Then **D17** pre-composes the morning briefing (now Calendar- and Gmail-aware) so it is
+ready the instant GIOK opens — the first Phase-3 "ahead of you" capability. A small, low-risk
+follow-up also migrates the Calendar provider onto the shared `core/google-oauth.ps1`. See
 `Product_Roadmap.md` for the full ordering and rationale.

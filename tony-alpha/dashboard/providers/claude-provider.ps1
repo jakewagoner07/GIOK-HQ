@@ -193,6 +193,24 @@ function Get-ClaudeUserContent {
             $lines += ("LIVE CALENDAR UNAVAILABLE ({0}). Tell Jake honestly using exactly this reason; do NOT guess his schedule and do NOT use sample events." -f $c.status.detail)
         }
     }
+    # Email is an EXECUTIVE SUMMARY, never a per-message readout. Tony says what
+    # deserves attention and lets the rest wait; he is not an email client.
+    $em = if ($ls) { $ls['email'] } else { $null }
+    if ($em) {
+        if ($em.ok -and $em.summary) {
+            $s = $em.summary
+            $lines += ''
+            $lines += ("LIVE EMAIL (Gmail, {0}, fetched {1}): {2} received today; {3} need attention, {4} awaiting a reply, {5} calendar invitation(s), {6} carrier/underwriting, {7} newsletter/promo (low priority)." -f $em.account, $em.timestamp, $s.total, $s.needsAttention, $s.waitingForReply, $s.invitations, $s.carrierUpdates, $s.lowPriority)
+            if ($s.capped) { $lines += ("(Analyzed the {0} most recent of today's inbox.)" -f $s.analyzed) }
+            foreach ($it in @($s.attentionItems)) {
+                $lines += (" - [{0}]{1} {2}: ""{3}"" ({4})" -f $it.category, $(if ($it.unread) { ' unread' } else { '' }), $it.from, $it.subject, $it.why)
+            }
+            $lines += "Give Jake a short EXECUTIVE EMAIL SUMMARY - what deserves his attention, who is waiting, any invitations - then reassure him the rest can wait. Do NOT summarize every email or list them all. Use ONLY this data; never invent senders, subjects, or counts. If nothing needs attention, say so plainly. Never mention how email is connected or any technical/implementation details."
+        } else {
+            $lines += ''
+            $lines += ("LIVE EMAIL UNAVAILABLE ({0}). Tell Jake honestly using exactly this reason; do NOT guess what is in his inbox and do NOT invent messages." -f $em.status.detail)
+        }
+    }
     # A durable fact worth keeping even alongside the summary: who Jake is.
     if ($Request.identity -and $Request.identity.tonyReflection -and $Request.identity.tonyReflection.text) { $lines += "About the user (from their first conversation): $($Request.identity.tonyReflection.text)" }
     if ($Request.reasoningHint) { $lines += "Intent: $($Request.reasoningHint)" }

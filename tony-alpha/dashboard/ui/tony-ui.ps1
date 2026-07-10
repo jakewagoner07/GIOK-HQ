@@ -865,6 +865,15 @@ function New-ExecutiveBriefingCard {
         if ($m.schedule.guidance) { $sp.Children.Add((New-Text -Text $m.schedule.guidance -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null }
     }
 
+    # today's email - the Executive Email Summary (only when a live email signal
+    # was provided). What deserves attention; the rest can wait. Never a list.
+    if ($m.PSObject.Properties.Name -contains 'emailSummary' -and $m.emailSummary) {
+        $es = $m.emailSummary
+        $sp.Children.Add((New-BriefingLabel -Text "TODAY'S EMAIL")) | Out-Null
+        $sp.Children.Add((New-Text -Text $es.summaryText -Size 13.5 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+        if ($es.guidance) { $sp.Children.Add((New-Text -Text $es.guidance -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null }
+    }
+
     # today's top three, each with its WHY
     if (@($m.priorities).Count -gt 0) {
         $sp.Children.Add((New-BriefingLabel -Text 'TODAY''S TOP THREE')) | Out-Null
@@ -934,7 +943,13 @@ function New-HomeView {
     if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
         try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $script:TonyNow } } catch { $briefCal = $null }
     }
-    $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName -Calendar $briefCal } else { $null }
+    # Likewise the briefing may request an email signal - but ONLY when Gmail is
+    # already connected (no fetch, no network when disconnected).
+    $briefEmail = $null
+    if ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
+        try { if ((Get-GmailStatus).state -eq 'connected') { $briefEmail = Get-Email -When 'today' -Now $script:TonyNow } } catch { $briefEmail = $null }
+    }
+    $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName -Calendar $briefCal -Email $briefEmail } else { $null }
     if ($briefing) { $stack.Children.Add((New-ExecutiveBriefingCard -Model $briefing)) | Out-Null }
     else { $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null }
 
@@ -1229,6 +1244,54 @@ function New-CalendarProviderCard {
     return $card
 }
 
+# Gmail (read-only) Settings card. Reuses the shared connection-state colors
+# and labels (Get-CalStateColors / Get-CalStateLabel) - state strings are
+# provider-neutral - with its own status display targets.
+function Set-GmailStatusDisplay {
+    param($Status)
+    if (-not $script:GmailPill) { return }
+    $cols = Get-CalStateColors $Status.state
+    $script:GmailPill.Background = New-Brush $cols[0]
+    $script:GmailPillText.Text = (Get-CalStateLabel $Status.state); $script:GmailPillText.Foreground = New-Brush $cols[1]
+    if ($script:GmailDetail) { $script:GmailDetail.Text = $Status.detail }
+    if ($script:GmailAccount) { $script:GmailAccount.Text = ('Account: {0}' -f $(if ($Status.account) { $Status.account } else { 'not connected' })) }
+    if ($script:GmailRefresh) { $script:GmailRefresh.Text = ('Last successful refresh: {0}' -f $(if ($Status.lastRefresh) { $Status.lastRefresh } else { 'never' })) }
+    if ($script:GmailError) { $script:GmailError.Text = ('Last error: {0}' -f $(if ($Status.lastError) { $Status.lastError } else { 'none' })) }
+}
+
+function New-GmailProviderCard {
+    $body = New-Object Windows.Controls.StackPanel
+    $body.Children.Add((New-KeyValueRow -Key 'Provider' -Value 'Gmail (read-only)')) | Out-Null
+
+    if (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { $st = Get-GmailStatus } else { $st = [pscustomobject]@{ state = 'not-configured'; detail = 'Gmail provider not loaded.'; account = $null; lastRefresh = $null; lastError = $null } }
+
+    $body.Children.Add((New-Text -Text 'STATUS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
+    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 9; $pill.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $pill.HorizontalAlignment = 'Left'
+    $pillText = New-Text -Text (Get-CalStateLabel $st.state) -Size 12.5 -Weight 'Bold' -Color '#03543F'
+    $pill.Child = $pillText; $script:GmailPill = $pill; $script:GmailPillText = $pillText
+    $body.Children.Add($pill) | Out-Null
+
+    $detail = New-Text -Text $st.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)); $script:GmailDetail = $detail; $body.Children.Add($detail) | Out-Null
+    $acct = New-Text -Text 'Account: not connected' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)); $script:GmailAccount = $acct; $body.Children.Add($acct) | Out-Null
+    $body.Children.Add((New-Text -Text 'Access: read-only (Tony reads to summarize what needs you - never sends, replies, or deletes)' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
+    $refresh = New-Text -Text 'Last successful refresh: never' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:GmailRefresh = $refresh; $body.Children.Add($refresh) | Out-Null
+    $err = New-Text -Text 'Last error: none' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:GmailError = $err; $body.Children.Add($err) | Out-Null
+
+    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    $btns.Children.Add((New-MiniButton -Text 'Connect Gmail' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-Gmail -ErrorAction SilentlyContinue) { Connect-Gmail | Out-Null; Set-GmailStatusDisplay (Get-GmailStatus -Live) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Test Connection' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { Set-GmailStatusDisplay (Get-GmailStatus -Live) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Disconnect' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) if (Get-Command Disconnect-Gmail -ErrorAction SilentlyContinue) { Disconnect-Gmail | Out-Null; Set-GmailStatusDisplay (Get-GmailStatus) } })) | Out-Null
+    $body.Children.Add($btns) | Out-Null
+
+    $note = New-Text -Text 'Setup: reuse your Google Cloud project, enable the Gmail API, and put a Desktop-app client id/secret in providers\gmail.config.json (you can optionally list important contacts / client domains there for smarter triage). Sign-in happens in your browser; Tony never sees your password and requests only read-only access.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
+    $body.Children.Add($note) | Out-Null
+
+    Set-GmailStatusDisplay $st
+    $card = New-Card -Title 'Gmail' -Body $body
+    $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    return $card
+}
+
 function New-SettingsView {
     $t = $script:Theme
     $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -1266,6 +1329,9 @@ function New-SettingsView {
 
     # Google Calendar (read-only) - Connect / Test / Disconnect
     $outer.Children.Add((New-CalendarProviderCard)) | Out-Null
+
+    # Gmail (read-only) - Connect / Test / Disconnect
+    $outer.Children.Add((New-GmailProviderCard)) | Out-Null
 
     $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $outer
     return $scroll

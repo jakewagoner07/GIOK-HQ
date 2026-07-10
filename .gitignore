@@ -30,3 +30,11 @@ tony-alpha/dashboard/providers/calendar.config.json
 !**/calendar.config.example.json
 tony-alpha/calendar.tokens.json
 **/calendar.tokens.json
+
+# Gmail OAuth client config + tokens — PRIVATE, local only, never committed.
+# Same rule as Calendar: only the safe example is tracked; tokens never on GitHub.
+tony-alpha/dashboard/providers/gmail.config.json
+**/gmail.config.json
+!**/gmail.config.example.json
+tony-alpha/gmail.tokens.json
+**/gmail.tokens.json

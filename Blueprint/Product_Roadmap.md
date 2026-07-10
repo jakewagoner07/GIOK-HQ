@@ -40,8 +40,12 @@ Tony understands the real world through read-only providers, all on one reusable
 - ✅ Google Calendar provider (read-only) — OAuth+PKCE, contract, Settings (D14)
 - ✅ Calendar Intelligence — first/last/total, free blocks, meeting-heavy days (D15)
 - ✅ Calendar-aware Executive Briefing (on demand, connected-only) (D15)
-- 🔄 **Google Calendar go-live** — needs Jake's OAuth setup + live edge-case validation
-- ⬜ Gmail provider (read-only)
+- ✅ **Google Calendar go-live** — live-connected + validated against Jake's real account (D15)
+- ✅ Shared Google OAuth module + provider-neutral Email Intelligence (D16)
+- ✅ Gmail provider (read-only) — Executive Email Summary, generic `email` signal (D16)
+- ✅ Email-aware Executive Briefing (on demand, connected-only) (D16)
+- 🔄 **Gmail go-live** — needs Jake's Gmail-API enable + Connect + live triage validation
+- ⬜ Outlook / Microsoft 365 / Yahoo mail — plug into the same `email` architecture
 - ⬜ Maps provider (travel time; pairs with Calendar)
 - ⬜ News / Stocks providers (read-only signals)
 
@@ -78,18 +82,19 @@ GIOK becomes the operating layer across devices and the agency.
 
 ## Next five recommended sprints
 
-0. **Calendar go-live (Jake, manual).** Complete the Google OAuth setup so D15's Calendar
-   Intelligence runs on real data; validate recurring/all-day/DST/multi-calendar and refresh live.
-   *Not a code sprint — a prerequisite Jake performs (steps in `Google_Calendar_Provider.md`).*
+0. **Gmail go-live (Jake, manual).** Enable the Gmail API on the existing Google Cloud project, add a
+   Desktop-app client to `gmail.config.json`, then Settings -> Gmail -> Connect. Validate the
+   Executive Email Summary on real mail (needs-reply / carrier / invitations / low-priority).
+   *Not a code sprint — a prerequisite Jake performs (steps in `Gmail_Provider.md`).*
 
-1. **D16 — Gmail Read-Only Provider.**
-   Same OAuth/registry/Settings pattern; Tony summarizes what needs attention.
-   *Why next:* highest-value second Google signal; reuses D14 wholesale; proves the pattern
-   generalizes (validating a permanent architecture decision).
+1. **Migrate Calendar onto the shared OAuth module (small, low-risk).**
+   Point `google-calendar-provider.ps1` at `core/google-oauth.ps1` so Google auth lives in exactly
+   one place. *Why now:* finishes the D16 SSOT move; deferred during D16 to protect the freshly
+   validated live Calendar connection.
 
 2. **D17 — Executive Automation Foundation (local scheduler).**
-   Pre-compose the morning briefing so it's ready the instant GIOK opens; the seam already exists in
-   the briefing/context engines.
+   Pre-compose the morning briefing (now Calendar- AND Gmail-aware) so it's ready the instant GIOK
+   opens; the seam already exists in the briefing/context engines.
    *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it needs the
    connected signals from D15/D16 to be worth pre-computing.
 
@@ -100,8 +105,8 @@ GIOK becomes the operating layer across devices and the agency.
    context — compounding value for every later sprint.
 
 4. **D19 — Meeting Prep + Focus-Block Protection.**
-   Using Calendar (+ Gmail once present), Tony drafts a short prep for the next meeting and proposes
-   protecting the clearest free block.
+   Using Calendar + Gmail, Tony drafts a short prep for the next meeting and proposes protecting the
+   clearest free block.
    *Why next:* the first genuinely "chief-of-staff" proactive help, and a natural on-ramp to
    consent-gated write actions later.
 
@@ -116,8 +121,10 @@ per-user personalization.
 
 ## Dependencies
 
-- **D15** depends on Jake's Google Cloud OAuth setup (manual) from D14.
-- **D16 (Gmail)** reuses the D14 OAuth + live-provider pattern; no Brain changes.
+- **D15** depended on Jake's Google Cloud OAuth setup (manual) from D14 — done; Calendar is live.
+- **D16 (Gmail)** reused the OAuth + live-provider pattern on a shared `core/google-oauth.ps1` +
+  provider-neutral `core/email-intelligence.ps1`; no Brain changes. Registered as the generic `email`
+  signal so **Outlook / Microsoft 365 / Yahoo** later implement only a backend + normalizer.
 - **D17 (automation)** depends on durable live connections (D15/D16) and a desktop scheduler (Windows
   Task Scheduler or a lightweight loop) — a real desktop constraint to design for.
 - **D18 (projects)** unblocks the Executive Context `project` field and better priority reasons; no

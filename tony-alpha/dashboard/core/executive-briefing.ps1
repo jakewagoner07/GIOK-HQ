@@ -152,6 +152,30 @@ function Get-BriefingSchedule {
     }
 }
 
+# Today's Email - the Executive Email Summary folded into the briefing.
+# Composed from the Email Provider's summary (Email Intelligence). Returns
+# $null unless a live, ok email signal was provided (never fetched here).
+# Calm and specific: what deserves attention, and permission to let the
+# rest wait - never a list of every email.
+function Get-BriefingInbox {
+    param($Email)
+    if (-not $Email -or -not $Email.ok -or -not $Email.summary) { return $null }
+    $s = $Email.summary
+    $guidance = if ($s.needsAttention -eq 0) { 'Your inbox is calm - nothing needs you right now.' }
+    elseif ($s.needsAttention -eq 1) { 'Clear the one that needs you, then let the rest wait.' }
+    else { ('Clear the {0} that need you, then let the rest wait.' -f $s.needsAttention) }
+    return [pscustomobject]@{
+        line           = $s.line
+        sentences      = @($s.sentences)
+        summaryText    = $s.summaryText
+        needsAttention = $s.needsAttention
+        waitingForReply = $s.waitingForReply
+        invitations    = $s.invitations
+        attentionItems = @($s.attentionItems)
+        guidance       = $guidance
+    }
+}
+
 # one) and composes the letter model. Data only - no UI, no writes.
 function Get-TonyExecutiveBriefing {
     param(
@@ -159,11 +183,14 @@ function Get-TonyExecutiveBriefing {
         [datetime]$Now = (Get-Date),
         [string]$Name = 'Jake',
         $ExecutiveContext = $null,
-        $Calendar = $null   # optional live calendar signal (passed in when connected); never fetched here
+        $Calendar = $null,  # optional live calendar signal (passed in when connected); never fetched here
+        $Email = $null      # optional live email signal (passed in when connected); never fetched here
     )
     $exec = $ExecutiveContext
     if (-not $exec -and (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue)) {
-        $ls = if ($Calendar) { @{ calendar = $Calendar } } else { @{} }
+        $ls = @{}
+        if ($Calendar) { $ls['calendar'] = $Calendar }
+        if ($Email) { $ls['email'] = $Email }
         $exec = Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion 'Prepare my executive briefing for today.' -Now $Now -LiveSignals $ls
     }
     if (-not $exec) { return $null }
@@ -187,6 +214,7 @@ function Get-TonyExecutiveBriefing {
         greeting      = (Get-BriefingGreeting -PartOfDay $partOfDay -Name $first)
         summary       = (Get-BriefingSummary -Exec $exec)
         schedule      = (Get-BriefingSchedule -Calendar $Calendar)
+        emailSummary  = (Get-BriefingInbox -Email $Email)
         priorities    = (Get-BriefingPriorities -Exec $exec)
         observation   = $observation
         focus         = (Get-BriefingFocus -Exec $exec)
