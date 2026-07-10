@@ -65,6 +65,16 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Capture](Capture.md) | How Capture is built, version by version (companion to 05) |
 | — | [Tony Memory](Tony_Memory.md) | How Tony's structured memory evolves through V3 |
 
+## Project handoff (living documents)
+
+Start here to pick up GIOK development in a fresh chat:
+
+| Document | What it carries |
+|----------|-----------------|
+| [CTO Handoff](CTO_Handoff.md) | Read first — intent, rules, permanent decisions, exact stopping point, next-chat instructions |
+| [Project Status](GIOK_Project_Status.md) | Current version/branch/PR, architecture, D1–D14, providers, private files, known issues, testing |
+| [Product Roadmap](Product_Roadmap.md) | Phases 1–4, completed/in-progress, next five sprints, deferred ideas, dependencies |
+
 ## The story behind it
 
 The [Founder Changelog](Founder-Changelog/00_INDEX.md) is the journal of *why* GIOK is being
