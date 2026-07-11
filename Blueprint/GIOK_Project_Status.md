@@ -3,8 +3,22 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **RC2 — Executive Intelligence Integration** (integrates D18, D19, D20, Randy, and
-Executive Management into one release candidate).
+Last updated: **Daily Driver — Life Operating System** (on `feature/life-operating-system`, branched
+from `main` @ `bda857c`; RC2 already merged to `main`).
+
+> **Life OS milestone status:** the eight life/business workspaces (Goals, Non-Negotiables, Family,
+> Health, Financial, Agency, Learning, Home Projects) are now fully usable — Jake enters and manages his
+> own data, and Tony consumes it through the one Executive Context. **New owners/stores:** the enriched
+> single goal store (`identity/goals.json`, owned by `identity.ps1`) and one new `core/life-os.ps1`
+> owning `life_os.json` (gitignored — sensitive Family/Health/Financial data, never committed) for the
+> seven non-goal domains. Every domain folds READ-ONLY into `Get-TonyExecutiveContext` (fills the
+> reserved `project` slot); the Priority Engine sees active goals; the Briefing gets a calm
+> life-awareness line; the provider gets a LIFE CONTEXT block so Tony references Jake's own goals /
+> non-negotiables / family / agency. Single Source of Truth preserved (no duplicate goal/task/project/
+> memory/priority store); Memory Manager still the only memory writer; Decision Framework still final;
+> no automatic actions. Verified: full CRUD + restart persistence + validation + no-dup-storage; all
+> workspaces render; Executive-Management (36) and CRM/Randy (59) harnesses still pass. Local-only,
+> not pushed.
 
 > **RC2 status (Executive Intelligence Integration):** the five approved pending branches are
 > integrated into one release candidate on `release/rc2-executive-intelligence` (branched from
@@ -177,6 +191,7 @@ Projects, Learning.
 | `tony-alpha/gmail.tokens.json` | Gmail **per-account** access/refresh tokens (accounts[]) |
 | `tony-alpha/conversation.json` | Talk-with-Tony history |
 | `tony-alpha/tony_memory.json` | Approved permanent memories |
+| `tony-alpha/life_os.json` | Life OS domains (non-negotiables, family, health, financial, agency, learning, projects) — private personal data |
 | `**/memory-export-*.json` | User memory exports |
 | `**/weather.config.json` | Optional per-user location override |
 | `tony-alpha/logs/`, `**/tony-diagnostics.log` | Local diagnostics (never contain tokens/keys) |

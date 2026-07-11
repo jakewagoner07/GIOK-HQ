@@ -98,7 +98,14 @@ function Convert-Capture {
             }
             $cap.notes = ("Converted to Action Item on {0}." -f (Get-Date).ToString('yyyy-MM-dd'))
         }
-        'goal'     { $cap.notes = ("Marked for Goals (destination store is a future placeholder) on {0}." -f (Get-Date).ToString('yyyy-MM-dd')) }
+        'goal'     {
+            # real (Life OS): create a goal in the ONE goal store from the capture text
+            if (Get-Command Add-Goal -ErrorAction SilentlyContinue) {
+                [void](Add-Goal -Title $cap.text)
+                $cap.notes = ("Converted to a Goal on {0}." -f (Get-Date).ToString('yyyy-MM-dd'))
+            }
+            else { $cap.notes = ("Marked for Goals on {0}." -f (Get-Date).ToString('yyyy-MM-dd')) }
+        }
         'reminder' { $cap.notes = ("Marked for Reminders (destination store is a future placeholder) on {0}." -f (Get-Date).ToString('yyyy-MM-dd')) }
     }
     $cap.convertedTo = $To

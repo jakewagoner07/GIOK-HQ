@@ -111,6 +111,16 @@ These are settled and should not be re-litigated without a blueprint change:
    **deterministic trust scoring with NO invented history**, **conflicts surfaced and arbitrated**, and
    **no new storage / no actions**. Its return is a **superset** of the D20 merged report, so all
    consumers work unchanged.
+12. **The life/business domains have one owner and one home each (Daily Driver, `Life_Operating_System.md`).**
+   Goals are ONE enriched store (`identity/goals.json`, owned by `identity.ps1`; legacy records
+   back-filled on read) — a "family/health/learning goal" is a goal with a `domain` tag, never a second
+   goal store. The seven non-goal domains (non-negotiables, family, health, financial, agency, learning,
+   projects) are owned by ONE module (`core/life-os.ps1`) in ONE gitignored file (`life_os.json` —
+   sensitive personal data). Home Projects fill the reserved Executive Context `project` slot. Every
+   domain folds **read-only by reference** into `Get-TonyExecutiveContext` (no second copy); the
+   workspaces are the only writers; UI holds no business logic; Tony reads domains only through the
+   context; Memory Manager stays the only memory writer; Decision Framework stays final; no automatic
+   actions. Adding a domain is configuration (register its fields), not new storage.
 
 ## Security / privacy rules
 
