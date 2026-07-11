@@ -41,7 +41,7 @@ function Get-CRMConfig {
     $p = Get-CRMConfigPath
     $token = $null; $locations = @(); $configured = $false
     $apiBase = 'https://services.leadconnectorhq.com'; $version = '2021-07-28'
-    $agingLeadHours = 48; $stalledDays = 14
+    $agingLeadHours = 48; $stalledDays = 14; $recentLeadDays = 30
     $uwKeywords = @('underwriting', 'uw', 'in review')
     $apptCalendarIds = @(); $apptUserIds = @()
     if (Test-Path $p) {
@@ -55,6 +55,7 @@ function Get-CRMConfig {
             }
             if ($c.PSObject.Properties.Name -contains 'agingLeadHours' -and $c.agingLeadHours) { $agingLeadHours = [int]$c.agingLeadHours }
             if ($c.PSObject.Properties.Name -contains 'stalledOpportunityDays' -and $c.stalledOpportunityDays) { $stalledDays = [int]$c.stalledOpportunityDays }
+            if ($c.PSObject.Properties.Name -contains 'recentLeadDays' -and $c.recentLeadDays) { $recentLeadDays = [int]$c.recentLeadDays }
             if ($c.PSObject.Properties.Name -contains 'underwritingStageKeywords' -and $c.underwritingStageKeywords) { $uwKeywords = @($c.underwritingStageKeywords | ForEach-Object { ([string]$_).ToLower() }) }
             if ($c.PSObject.Properties.Name -contains 'appointmentCalendarIds' -and $c.appointmentCalendarIds) { $apptCalendarIds = @($c.appointmentCalendarIds | ForEach-Object { [string]$_ }) }
             if ($c.PSObject.Properties.Name -contains 'appointmentUserIds' -and $c.appointmentUserIds) { $apptUserIds = @($c.appointmentUserIds | ForEach-Object { [string]$_ }) }
@@ -71,6 +72,7 @@ function Get-CRMConfig {
         locations              = @($locations)
         agingLeadHours         = $agingLeadHours
         stalledOpportunityDays = $stalledDays
+        recentLeadDays         = $recentLeadDays
         underwritingStageKeywords = @($uwKeywords)
         appointmentCalendarIds = @($apptCalendarIds)
         appointmentUserIds     = @($apptUserIds)
@@ -292,12 +294,12 @@ function Get-GHLLocationData {
         return [pscustomobject]@{
             ok = $true; id = $locId; label = $label; state = 'connected'; detail = ('Live (read-only) from {0}.' -f $label)
             pipelines = @($pl.pipelines); opportunities = @($op.opportunities); followUps = @($op.followUps); contacts = @($co.contacts)
-            appointments = $ap; capped = [bool]($op.capped -or $co.capped)
+            appointments = $ap; oppCapped = [bool]$op.capped; contactCapped = [bool]$co.capped
         }
     } catch {
         $cls = Get-GHLErrorState -Err $_
         Write-CRMDiag -Level 'error' -Message ('CRM location error ({0}) for one location.' -f $cls.state)
-        return [pscustomobject]@{ ok = $false; id = $locId; label = $label; state = $cls.state; detail = $cls.detail; pipelines = @(); opportunities = @(); followUps = @(); contacts = @(); appointments = [pscustomobject]@{ available = $false; reason = $cls.detail; items = @() }; capped = $false }
+        return [pscustomobject]@{ ok = $false; id = $locId; label = $label; state = $cls.state; detail = $cls.detail; pipelines = @(); opportunities = @(); followUps = @(); contacts = @(); appointments = [pscustomobject]@{ available = $false; reason = $cls.detail; items = @() }; oppCapped = $false; contactCapped = $false }
     }
 }
 
@@ -325,7 +327,7 @@ function Get-CRM {
     if (-not $cfg.configured) { return (& $fail 'not-configured' 'The CRM is not connected yet. Add a Private Integration token and location to crm.config.json.') }
 
     $allOpps = @(); $allContacts = @(); $allFollowUps = @(); $allPipelines = @(); $allAppts = @()
-    $locInfos = @(); $anyOk = $false; $anyCapped = $false; $apptAvailable = $false; $apptReason = 'No calendarId/userId configured.'
+    $locInfos = @(); $anyOk = $false; $oppCapped = $false; $contactCapped = $false; $apptAvailable = $false; $apptReason = 'No calendarId/userId configured.'
     $firstBadState = $null; $firstBadDetail = $null
     foreach ($loc in $cfg.locations) {
         $d = Get-GHLLocationData -Cfg $cfg -Location $loc -Now $Now
@@ -334,7 +336,7 @@ function Get-CRM {
             $anyOk = $true
             $allOpps += @($d.opportunities); $allContacts += @($d.contacts); $allFollowUps += @($d.followUps); $allPipelines += @($d.pipelines)
             if ($d.appointments.available) { $apptAvailable = $true; $allAppts += @($d.appointments.items) } else { $apptReason = $d.appointments.reason }
-            $anyCapped = $anyCapped -or $d.capped
+            $oppCapped = $oppCapped -or $d.oppCapped; $contactCapped = $contactCapped -or $d.contactCapped
         } elseif (-not $firstBadState) { $firstBadState = $d.state; $firstBadDetail = $d.detail }
     }
     if (-not $anyOk) { return (& $fail $firstBadState $firstBadDetail) }
@@ -350,8 +352,8 @@ function Get-CRM {
         provider = 'crm'; backend = 'gohighlevel'; ok = $true; errorState = $null
         status = [pscustomobject]@{ state = 'connected'; detail = ('Live (read-only) from GoHighLevel across {0} location(s).' -f @($locInfos | Where-Object { $_.state -eq 'connected' }).Count); lastRefresh = $nowStr; lastError = $(if ($firstBadDetail) { $firstBadDetail } else { $null }) }
         timestamp = $nowStr; locations = @($locInfos); locationCount = @($locInfos).Count
-        contacts = [pscustomobject]@{ available = $true; items = @($allContacts); total = @($allContacts).Count; capped = $anyCapped }
-        opportunities = [pscustomobject]@{ available = $true; items = @($allOpps); total = @($allOpps).Count; capped = $anyCapped }
+        contacts = [pscustomobject]@{ available = $true; items = @($allContacts); total = @($allContacts).Count; capped = $contactCapped }
+        opportunities = [pscustomobject]@{ available = $true; items = @($allOpps); total = @($allOpps).Count; capped = $oppCapped }
         pipelines = [pscustomobject]@{ available = $true; items = @($allPipelines) }
         followUps = [pscustomobject]@{ available = $true; items = @($allFollowUps); source = 'opportunity-linked-tasks' }
         appointments = [pscustomobject]@{ available = $apptAvailable; reason = $(if ($apptAvailable) { '' } else { $apptReason }); items = @($allAppts) }

@@ -191,6 +191,23 @@ one to read events); Ava's Google Calendar already covers the primary schedule.
 needs no extra calls and builds no task mirror. A full cross-book task sweep is intentionally not done
 (rate-limit friendliness + no mirror); this is the honest, current scope.
 
+**Lead signals come from Opportunities, never raw contacts (corrected during live validation).** A
+"lead" in CRM terms is an **opportunity in a pipeline** — not a row in the address book. Aging leads,
+stalled deals, underwriting, and revenue-at-risk are all derived from **opportunities** (which carry
+pipeline stage + activity timestamps). Raw contacts are treated only as a **book-size count**, never as
+"leads needing follow-up" — otherwise every contact in an automated drip sequence or long-dead lead
+would be flagged as urgent (false alarm). *Aging lead* = an **open opportunity created within
+`recentLeadDays`** that has gone cold (48h–`stalledOpportunityDays`); *stalled* = an open opportunity
+with no activity for `stalledOpportunityDays`+.
+
+**When the pipeline is empty, Randy says so — she never manufactures an all-clear or a false alarm.**
+If GoHighLevel returns zero opportunity records, Randy reports *"No open opportunities in the pipeline
+right now (N contacts in the book); pipeline position, stalled deals, and renewals cannot be
+assessed,"* at **informational** assessment and **0.5 confidence** — honest limited visibility.
+*(Observed live on Jake's account: 9 pipelines / 126 stages but 0 opportunity records — his leads are
+tracked as contacts, not opportunity objects. Contact counts are capped/sampled at the most recent 500
+and reported as "N+".)*
+
 ## Related
 - [Randy_CRM_Manager.md](Randy_CRM_Manager.md) — the specialist who reads this seam (constitutional).
 - [Workforce.md](Workforce.md) — the org chart and bylaws.

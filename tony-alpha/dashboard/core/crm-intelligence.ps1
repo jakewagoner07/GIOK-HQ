@@ -39,30 +39,45 @@ function Format-CrmAge {
 function Get-CRMSummary {
     param($Crm, [datetime]$Now = (Get-Date), $Config = $null)
 
-    $agingHours  = 48; $stalledDays = 14
+    $agingHours  = 48; $stalledDays = 14; $recentLeadDays = 30
     if ($Config) {
         if ($Config.PSObject.Properties.Name -contains 'agingLeadHours' -and $Config.agingLeadHours) { $agingHours = [int]$Config.agingLeadHours }
         if ($Config.PSObject.Properties.Name -contains 'stalledOpportunityDays' -and $Config.stalledOpportunityDays) { $stalledDays = [int]$Config.stalledOpportunityDays }
+        if ($Config.PSObject.Properties.Name -contains 'recentLeadDays' -and $Config.recentLeadDays) { $recentLeadDays = [int]$Config.recentLeadDays }
     }
 
     $contacts = @(); $opps = @(); $followUps = @()
+    $contactsCapped = $false
     if ($Crm) {
-        if ($Crm.contacts -and $Crm.contacts.available) { $contacts = @($Crm.contacts.items) }
+        if ($Crm.contacts -and $Crm.contacts.available) { $contacts = @($Crm.contacts.items); $contactsCapped = [bool]$Crm.contacts.capped }
         if ($Crm.opportunities -and $Crm.opportunities.available) { $opps = @($Crm.opportunities.items) }
         if ($Crm.followUps -and $Crm.followUps.available) { $followUps = @($Crm.followUps.items) }
     }
 
-    # --- aging leads: contacts with no update within the aging window -----
-    # last-updated is an honest PROXY for last-contact (the CRM may not expose
-    # a true last-contacted field); phrased as "no activity in" accordingly.
+    # --- aging leads: NEW opportunities going cold -----------------------
+    # A "lead" in CRM terms is an OPPORTUNITY in a pipeline - NOT a raw contact.
+    # Raw contacts are the whole address book (clients, dead leads, people in
+    # automated drip sequences) and must NOT be treated as leads-needing-follow-
+    # up; doing so floods Jake with false urgency. So aging leads are derived
+    # from OPPORTUNITIES: an OPEN opp created recently (within the recent-lead
+    # window) that has had no activity within the aging window but is not yet
+    # "stalled" - a fresh lead going cold. If no opportunities exist, there are
+    # no aging leads to report (and Randy says pipeline visibility is limited).
     $agingLeads = @()
-    foreach ($c in $contacts) {
-        $h = Get-CrmAgeHours -When $c.lastUpdatedAt -Now $Now
-        if ($null -ne $h -and $h -ge $agingHours) {
-            $agingLeads += [pscustomobject]@{ id = $c.id; name = $c.name; ageHours = $h; ageDays = [int][math]::Floor($h / 24); sourceId = $c.sourceId; sourceAccount = $c.sourceAccount }
+    foreach ($o in $opps) {
+        if (([string]$o.status) -and ([string]$o.status).ToLower() -ne 'open') { continue }
+        $h = Get-CrmAgeHours -When $o.lastActivityAt -Now $Now
+        $createdDays = Get-CrmAgeDays -When $o.createdAt -Now $Now
+        if ($null -ne $h -and $h -ge $agingHours -and $h -lt ($stalledDays * 24) -and $null -ne $createdDays -and $createdDays -le $recentLeadDays) {
+            $nm = if ($o.contactName) { $o.contactName } else { $o.title }
+            $agingLeads += [pscustomobject]@{ id = $o.id; name = $nm; title = $o.title; ageHours = $h; ageDays = [int][math]::Floor($h / 24); createdDays = $createdDays; stageName = $o.stageName; value = [double]$o.value; sourceId = $o.sourceId; sourceAccount = $o.sourceAccount }
         }
     }
     $agingLeads = @($agingLeads | Sort-Object -Property ageHours -Descending)
+
+    # contacts are the address book - a COUNT, never "leads to work"
+    $recentContacts = 0
+    foreach ($c in $contacts) { $cd = Get-CrmAgeDays -When $c.createdAt -Now $Now; if ($null -ne $cd -and $cd -le $recentLeadDays) { $recentContacts++ } }
 
     # --- stalled opportunities: open, no activity within the stalled window
     $stalled = @()
@@ -97,8 +112,15 @@ function Get-CRMSummary {
     $openValue = 0.0; foreach ($o in $openOpps) { $openValue += [double]$o.value }
     $revenueAtRisk = 0.0; foreach ($o in $stalled) { $revenueAtRisk += [double]$o.value }
 
+    # is pipeline data even present? (opportunities available but none exist)
+    $oppsAvailable = [bool]($Crm -and $Crm.opportunities -and $Crm.opportunities.available)
+    $pipelineEmpty = [bool]($oppsAvailable -and @($opps).Count -eq 0)
+
     $businessHealth = [pscustomobject]@{
         contactCount         = @($contacts).Count
+        contactsCapped       = $contactsCapped
+        recentContacts       = $recentContacts
+        recentLeadWindowDays = $recentLeadDays
         openOpportunities    = @($openOpps).Count
         openValue            = [math]::Round($openValue, 2)
         agingLeadCount       = @($agingLeads).Count
@@ -106,6 +128,7 @@ function Get-CRMSummary {
         overdueFollowUpCount = @($overdue).Count
         inUnderwritingCount  = @($inUnderwriting).Count
         revenueAtRisk        = [math]::Round($revenueAtRisk, 2)
+        pipelineEmpty        = $pipelineEmpty
     }
 
     # --- attention items: the few things that deserve Jake, ranked --------
@@ -122,17 +145,24 @@ function Get-CRMSummary {
         $attention += [pscustomobject]@{ kind = 'stalled-opportunity'; title = $o.title; detail = ('no activity in {0} ({1})' -f (Format-CrmAge -Days $o.ageDays -Hours ($o.ageDays * 24)), $o.stageName); source = 'crm'; sourceId = $o.sourceId; rank = 3 }
     }
     foreach ($l in @($agingLeads | Select-Object -First 3)) {
-        $attention += [pscustomobject]@{ kind = 'aging-lead'; title = $l.name; detail = ('no activity in {0}' -f (Format-CrmAge -Days $l.ageDays -Hours $l.ageHours)); source = 'crm'; sourceId = $l.sourceId; rank = 4 }
+        $attention += [pscustomobject]@{ kind = 'aging-lead'; title = $l.name; detail = ('new lead, no follow-up in {0}' -f (Format-CrmAge -Days $l.ageDays -Hours $l.ageHours)); source = 'crm'; sourceId = $l.sourceId; rank = 4 }
     }
     $attention = @($attention | Sort-Object -Property rank | Select-Object -First 6)
 
     # --- headline: only non-zero clauses; calm when the book is current ---
     $clauses = @()
-    if ($agingLeads.Count -gt 0)    { $clauses += ('{0} lead{1} with no activity in {2}h' -f $agingLeads.Count, $(if ($agingLeads.Count -eq 1) { '' } else { 's' }), $agingHours) }
+    if ($agingLeads.Count -gt 0)    { $clauses += ('{0} new lead{1} with no follow-up in {2}h' -f $agingLeads.Count, $(if ($agingLeads.Count -eq 1) { '' } else { 's' }), $agingHours) }
     if ($inUnderwriting.Count -gt 0){ $clauses += ('{0} opportunit{1} in underwriting' -f $inUnderwriting.Count, $(if ($inUnderwriting.Count -eq 1) { 'y' } else { 'ies' })) }
     if ($stalled.Count -gt 0)       { $clauses += ('{0} opportunit{1} stalled' -f $stalled.Count, $(if ($stalled.Count -eq 1) { 'y' } else { 'ies' })) }
     if ($overdue.Count -gt 0)       { $clauses += ('{0} follow-up{1} overdue' -f $overdue.Count, $(if ($overdue.Count -eq 1) { '' } else { 's' })) }
-    $headline = if ($clauses.Count -eq 0) { 'The book of business looks current - nothing overdue or stalled.' } else { (($clauses -join '; ') + '.') }
+    $contactStr = if ($contactsCapped) { ('{0}+' -f @($contacts).Count) } else { ('{0}' -f @($contacts).Count) }
+    # A note when the pipeline is empty: be honest that lead signals can't be
+    # assessed, rather than implying an all-clear that was never checked.
+    $note = $null
+    if ($pipelineEmpty) { $note = ('GoHighLevel returns no open opportunity records, so pipeline position, stalled deals, and renewals cannot be assessed. Your book holds {0} contact(s).' -f $contactStr) }
+    $headline = if ($clauses.Count -gt 0) { (($clauses -join '; ') + '.') }
+    elseif ($pipelineEmpty) { ('No open opportunities are in the pipeline right now ({0} contact(s) in the book).' -f $contactStr) }
+    else { 'The book of business looks current - no new leads going cold, nothing overdue or stalled.' }
 
     # --- what the CRM honestly did NOT expose (for transparency) ----------
     $unavailable = @()
@@ -145,6 +175,7 @@ function Get-CRMSummary {
 
     return [pscustomobject]@{
         headline       = $headline
+        note           = $note
         agingLeads     = @($agingLeads)
         stalled        = @($stalled)
         overdue        = @($overdue)
@@ -153,6 +184,7 @@ function Get-CRMSummary {
         attentionItems = @($attention)
         unavailable    = @($unavailable)
         hasAttention   = [bool](@($attention).Count -gt 0)
+        pipelineEmpty  = $pipelineEmpty
         thresholds     = [pscustomobject]@{ agingLeadHours = $agingHours; stalledOpportunityDays = $stalledDays }
     }
 }

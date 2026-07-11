@@ -215,6 +215,12 @@ Projects, Learning.
 - **Some Home data is clearly-labeled sample** (Agency Overview, Appointments, Agent Health cards;
   Life/Business scores) — flagged "SAMPLE," awaiting real integrations.
 - **`Founder/Tony_Feedback.md`** is an untracked local note (intentionally left alone).
+- **CRM (GoHighLevel) is live-connected read-only and validated** (token works; 9 pipelines / 126
+  stages / 500+ contacts read). **Finding:** the account currently has **0 opportunity records**, so
+  Randy honestly reports limited pipeline visibility (no aging/stalled/renewal signal) rather than
+  inventing one from raw contacts. To unlock Randy's pipeline value, leads need to be tracked as GHL
+  **Opportunities** (or a future enhancement could map contact tags/stages to the normalized model).
+  Contact reads are capped at the most recent 500 (reported as "N+").
 - **Bitdefender may repeatedly lock or quarantine `tony-alpha/dashboard/core/document-intelligence.ps1`,**
   interfering with git operations (checkout/pull can leave the file un-removable or the tree
   partially updated). Workaround: add an explicit **file-level Bitdefender exception** for that file

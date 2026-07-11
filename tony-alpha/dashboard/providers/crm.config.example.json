@@ -14,8 +14,9 @@
     { "id": "YOUR_LOCATION_ID", "label": "GIOK Agency" }
   ],
 
-  "_tuning_comment": "OPTIONAL tuning for Randy's honesty thresholds. agingLeadHours: a contact with no update in this many hours is surfaced as an aging lead (last-updated is an honest PROXY for last-contact; GoHighLevel does not expose a true last-contacted field). stalledOpportunityDays: an open opportunity with no activity in this many days is 'stalled'. underwritingStageKeywords: pipeline STAGE names (case-insensitive substring) that mean 'in underwriting' - this is derived from your real pipeline stage identity, never fabricated.",
+  "_tuning_comment": "OPTIONAL tuning for Randy's honesty thresholds. agingLeadHours: a NEW lead with no update in this many hours is surfaced as going cold (last-updated is an honest PROXY for last-contact; GoHighLevel does not expose a true last-contacted field). recentLeadDays: only contacts CREATED within this many days count as 'new leads' - this keeps the whole historical book (old clients/dead contacts) OUT of the aging signal, so Randy surfaces fresh leads going cold, not noise. stalledOpportunityDays: an open opportunity with no activity in this many days is 'stalled'. underwritingStageKeywords: pipeline STAGE names (case-insensitive substring) that mean 'in underwriting' - derived from your real pipeline stage identity, never fabricated.",
   "agingLeadHours": 48,
+  "recentLeadDays": 30,
   "stalledOpportunityDays": 14,
   "underwritingStageKeywords": ["underwriting", "uw", "in review"],
 

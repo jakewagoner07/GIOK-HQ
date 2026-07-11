@@ -188,6 +188,7 @@ if (Get-Command Register-Specialist -ErrorAction SilentlyContinue) {
                 if (-not $sum) { return (New-SpecialistReport -Specialist 'Randy' -Purpose 'Reviews the book of business.' -Input 'the CRM' -Output 'The CRM connected but returned nothing to review.' -Confidence 0.4 -Status 'no-data' -Scope 'crm') }
                 $bh = $sum.businessHealth
                 $out = [string]$sum.headline
+                if ($sum.note) { $out = ('{0} {1}' -f $out, $sum.note) }
                 $ev = @($sum.attentionItems | Select-Object -First 5 | ForEach-Object { [pscustomobject]@{ source = 'crm'; sourceId = [string]$_.sourceId; detail = ('{0}: {1}' -f $_.title, $_.detail) } })
                 $acts = @()
                 foreach ($a in @($sum.attentionItems | Select-Object -First 3)) {
@@ -196,10 +197,14 @@ if (Get-Command Register-Specialist -ErrorAction SilentlyContinue) {
                     elseif ($a.kind -eq 'stalled-opportunity') { $acts += ('Revive the stalled opportunity: {0}' -f $a.title) }
                     elseif ($a.kind -eq 'aging-lead') { $acts += ('Reach out to the aging lead: {0}' -f $a.title) }
                 }
-                $conf = if ($crm.opportunities.capped -or $crm.contacts.capped) { 0.7 } else { 0.8 }
+                # Confidence: high with real pipeline data; LOW when the pipeline is
+                # empty (Randy has little to assess and says so); mid when sampled.
+                $conf = if ($sum.pipelineEmpty) { 0.5 } elseif ($crm.opportunities.capped -or $crm.contacts.capped) { 0.7 } else { 0.8 }
+                $assessment = if ($sum.hasAttention) { 'needs-attention' } elseif ($sum.pipelineEmpty) { 'informational' } else { 'clear' }
+                $contactStr = if ($bh.contactsCapped) { ('{0}+ contact(s), recent sample' -f $bh.contactCount) } else { ('{0} contact(s)' -f $bh.contactCount) }
                 New-SpecialistReport -Specialist 'Randy' -Purpose 'Reviews the book of business - leads, pipeline, follow-ups, and what needs attention.' `
-                    -Input ('CRM across {0} location(s): {1} open opp(s), {2} contact(s)' -f $crm.locationCount, $bh.openOpportunities, $bh.contactCount) -Output $out `
-                    -Confidence $conf -Evidence $ev -Status 'ok' -RecommendedActions $acts -Assessment $(if ($sum.hasAttention) { 'needs-attention' } else { 'clear' }) -Scope 'crm'
+                    -Input ('CRM across {0} location(s): {1} open opp(s), {2}' -f $crm.locationCount, $bh.openOpportunities, $contactStr) -Output $out `
+                    -Confidence $conf -Evidence $ev -Status 'ok' -RecommendedActions $acts -Assessment $assessment -Scope 'crm'
             }
         })
 }
