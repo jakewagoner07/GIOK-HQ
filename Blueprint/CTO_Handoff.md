@@ -80,7 +80,12 @@ These are settled and should not be re-litigated without a blueprint change:
    duplicate logic, no new storage, no independent agent memory), and return standard reports. They
    never act, never reach Jake directly, and cannot bypass Tony — only Tony's merged synthesis is
    presented, with transparency (specialists used, evidence, reasoning) and the Decision Framework as
-   final authority. Future specialists plug in with no redesign.
+   final authority. Future specialists plug in with no redesign. The **org chart and bylaws are
+   constitutional** — see `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason + future
+   hires), which also settles two permanent rules: the **Executive Awareness Principle** ("Tony never
+   silently ignores meaningful information; he reduces complexity without reducing awareness") and the
+   **Rule of Progressive Delegation** ("Tony delegates to the fewest specialists necessary to
+   confidently answer the question").
 
 ## Security / privacy rules
 

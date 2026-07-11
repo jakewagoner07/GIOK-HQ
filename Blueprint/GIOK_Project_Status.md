@@ -15,7 +15,9 @@ deferral note (D18 and D19 remain on their own branches, unmerged).
 >
 > **D20 status:** D20 – Workforce Engine is feature complete on `feature/workforce-engine` (branched
 > from `main`, independent of D18/D19). The Priority and Timeline analysts activate automatically once
-> those engines merge. No release blockers currently identified.
+> those engines merge. The permanent org chart and bylaws are formalized in the constitutional
+> `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason + future hires; Executive Awareness
+> Principle; Rule of Progressive Delegation). No release blockers currently identified.
 
 ---
 

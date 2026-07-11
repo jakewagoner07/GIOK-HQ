@@ -28,7 +28,9 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - 🔄 Executive Priority Engine (D18) — on branch, merge deferred for founder validation
 - 🔄 Executive Timeline (D19) — on branch, unmerged
 - ✅ Workforce Engine — Tony delegates to specialist analysts and merges into one recommendation;
-  the only executive decision maker; framework for all future specialists (D20)
+  the only executive decision maker; framework for all future specialists (D20). Org chart + bylaws
+  formalized in the constitutional `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason +
+  named future hires; Executive Awareness Principle; Rule of Progressive Delegation).
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

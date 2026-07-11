@@ -61,6 +61,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Google Calendar Provider](Google_Calendar_Provider.md) | Read-only Google Calendar via OAuth — Tony understands your schedule; the pattern for Gmail |
 | — | [Gmail Provider](Gmail_Provider.md) | Read-only Gmail — Executive Email Summary; shared OAuth + provider-neutral email intelligence (Outlook/M365/Yahoo plug in) |
 | — | [Multi-Account Google](Multi_Account_Google.md) | One Calendar + one Gmail provider reading MANY Google accounts (business + personal); per-account tokens, merged at the intelligence layer |
+| — | [The GIOK Workforce](Workforce.md) | **Constitutional** — the permanent org chart and bylaws of Tony's team (Tony, Sam, Ava, Emma, Riley, Mason + future hires); the Executive Awareness Principle and Rule of Progressive Delegation |
 | — | [Workforce Engine](Workforce_Engine.md) | Tony's management layer — delegate to specialist analysts, merge reports, present one recommendation; Tony stays the only decision maker |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
