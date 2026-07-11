@@ -5,6 +5,10 @@ architecture, priorities, or history. Update this at the end of each sprint.*
 
 Last updated: end of **Sprint D17** (Multi-Account Google Integration), after RC1 + the alpha merge to `main`.
 
+> **D18 status:** D18 – Executive Priority Engine is feature complete and pushed to
+> `feature/executive-priority-engine`. Merge is intentionally deferred pending 3–5 days of founder
+> validation during normal daily use. No release blockers currently identified.
+
 ---
 
 ## Snapshot
