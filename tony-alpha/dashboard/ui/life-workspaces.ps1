@@ -339,6 +339,108 @@ $script:LifeSpecs = @{
 }
 function Get-LifeSpecKeys { return @($script:LifeSpecs.Keys) }
 
+# =====================================================================
+# EXECUTIVE INBOX (Epic 5) - GIOK's approval center. Lists pending proposals
+# the Workforce discovered; Jake approves / edits-then-approves / rejects.
+# Pure presentation: reads Get-InboxItems, writes only via Approve/Reject/
+# Update-InboxItem (which route to the owning modules). Tony never auto-approves.
+# =====================================================================
+$script:InboxEditId = $null
+$script:InboxMsg = $null
+
+function New-InboxConfidenceChip {
+    param([double]$Conf)
+    $c = if ($Conf -ge 0.75) { @('#DEF7EC', '#03543F') } elseif ($Conf -ge 0.5) { @('#FDF6B2', '#8E4B10') } else { @('#E5E7EB', '#4B5563') }
+    return (New-Chip -Text (("{0:0}% sure" -f ($Conf * 100))) -Bg $c[0] -Fg $c[1])
+}
+
+function New-ExecutiveInboxView {
+    $outer = New-Object Windows.Controls.DockPanel
+    $head = New-LifeHeader -Title 'Executive Inbox' -Source 'executive_inbox.json' -Intro 'What the Workforce discovered that could become part of your system - waiting for your decision. Nothing is ever added automatically: approve, edit then approve, or reject. Tony presents; you decide.'
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
+    $body = New-Object Windows.Controls.StackPanel; $body.Margin = New-Object Windows.Thickness (4, 0, 12, 8)
+
+    if ($script:InboxMsg) {
+        $banner = New-Object Windows.Controls.Border; $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8; $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
+        $banner.Child = (New-Text -Text $script:InboxMsg -Size 12.5 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)
+        $body.Children.Add($banner) | Out-Null
+    }
+
+    $pending = @(Get-InboxItems -Status 'pending')
+    $body.Children.Add((New-Text -Text (("{0} proposal(s) waiting for your approval" -f $pending.Count)) -Size 12.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (4, 0, 0, 8)))) | Out-Null
+
+    if ($pending.Count -eq 0) {
+        $body.Children.Add((New-Text -Text 'Nothing waiting for your approval. When the Workforce discovers something worth adding to your system, it will appear here for your decision - never added on its own.' -Size 13 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (6, 6, 0, 0)))) | Out-Null
+    }
+    else { foreach ($it in $pending) { $body.Children.Add((New-InboxCard -Item $it)) | Out-Null } }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $body
+    $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
+function New-InboxCard {
+    param($Item)
+    if ($script:InboxEditId -eq $Item.id) { return (New-InboxEditor -Item $Item) }
+    $body = New-Object Windows.Controls.StackPanel
+    $chips = New-Object Windows.Controls.StackPanel; $chips.Orientation = 'Horizontal'; $chips.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
+    $chips.Children.Add((New-Chip -Text ('by ' + $Item.discoveredBy) -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+    $chips.Children.Add((New-Chip -Text $Item.type -Bg '#E5E7EB' -Fg '#374151')) | Out-Null
+    $chips.Children.Add((New-InboxConfidenceChip -Conf $Item.confidence)) | Out-Null
+    $body.Children.Add($chips) | Out-Null
+    if ($Item.description) { $body.Children.Add((New-Text -Text $Item.description -Size 12.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null }
+    if ($Item.proposedDestination) { $body.Children.Add((New-Text -Text ('Proposed destination: ' + $Item.proposedDestination) -Size 12 -Weight 'SemiBold' -Color $script:Col.Accent -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null }
+    foreach ($ev in @($Item.evidence | Select-Object -First 3)) {
+        $det = if ($ev.detail) { [string]$ev.detail } elseif ($ev.source) { [string]$ev.source } else { '' }
+        if ($det) { $body.Children.Add((New-Text -Text ('- ' + $det) -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 2)))) | Out-Null }
+    }
+
+    $iid = $Item.id; $ititle = $Item.title
+    $actions = New-Object Windows.Controls.StackPanel; $actions.Orientation = 'Horizontal'; $actions.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
+    $actions.Children.Add((New-MiniButton -Text 'Approve' -Bg '#DEF7EC' -Fg '#03543F' -OnClick {
+                param($s, $e); $r = Approve-InboxItem -Id $iid
+                $script:InboxMsg = if ($r.ok) { ("Approved: '{0}' -> {1}{2}." -f $ititle, $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve '{0}': {1}" -f $ititle, $r.message) }
+                Show-LifeView { New-ExecutiveInboxView }
+            }.GetNewClosure())) | Out-Null
+    $actions.Children.Add((New-MiniButton -Text 'Edit then Approve' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); $script:InboxEditId = $iid; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
+    $actions.Children.Add((New-MiniButton -Text 'Reject' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick {
+                param($s, $e); [void](Reject-InboxItem -Id $iid); $script:InboxMsg = ("Rejected and removed: '{0}'." -f $ititle); Show-LifeView { New-ExecutiveInboxView }
+            }.GetNewClosure())) | Out-Null
+    $body.Children.Add($actions) | Out-Null
+    return (New-Card -Title $Item.title -Body $body)
+}
+
+function New-InboxEditor {
+    param($Item)
+    $body = New-Object Windows.Controls.StackPanel
+    $typeBox = New-LifeCombo -Options (Get-InboxTypes) -Selected $Item.type -Width 220
+    $titleBox = New-LifeInput -Text $Item.title
+    $descBox = New-LifeInput -Text $Item.description -MinLines 2
+    $destBox = New-LifeInput -Text $Item.proposedDestination
+    $body.Children.Add((New-LifeFieldLabel 'Type')) | Out-Null; $body.Children.Add($typeBox) | Out-Null
+    $body.Children.Add((New-LifeFieldLabel 'Title *')) | Out-Null; $body.Children.Add($titleBox) | Out-Null
+    $body.Children.Add((New-LifeFieldLabel 'Description')) | Out-Null; $body.Children.Add($descBox) | Out-Null
+    $body.Children.Add((New-LifeFieldLabel 'Proposed destination')) | Out-Null; $body.Children.Add($destBox) | Out-Null
+    $err = New-Text -Text '' -Size 12 -Color '#9B1C1C' -Wrap $true; $body.Children.Add($err) | Out-Null
+    $iid = $Item.id
+    $save = {
+        if ([string]::IsNullOrWhiteSpace($titleBox.Text)) { $err.Text = 'A proposal needs a title.'; return $false }
+        [void](Update-InboxItem -Id $iid -Fields @{ type = [string]$typeBox.SelectedItem; title = ([string]$titleBox.Text).Trim(); description = ([string]$descBox.Text).Trim(); proposedDestination = ([string]$destBox.Text).Trim() })
+        return $true
+    }.GetNewClosure()
+    $row = New-Object Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'; $row.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
+    $row.Children.Add((New-MiniButton -Text 'Save & Approve' -Bg '#DEF7EC' -Fg '#03543F' -OnClick {
+                param($s, $e); if (-not (& $save)) { return }
+                $r = Approve-InboxItem -Id $iid; $script:InboxEditId = $null
+                $script:InboxMsg = if ($r.ok) { ("Approved: -> {0}{1}." -f $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve: {0}" -f $r.message) }
+                Show-LifeView { New-ExecutiveInboxView }
+            }.GetNewClosure())) | Out-Null
+    $row.Children.Add((New-MiniButton -Text 'Save (keep pending)' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); if (& $save) { $script:InboxEditId = $null; Show-LifeView { New-ExecutiveInboxView } } }.GetNewClosure())) | Out-Null
+    $row.Children.Add((New-MiniButton -Text 'Cancel' -Bg '#E5E7EB' -Fg '#374151' -OnClick { param($s, $e); $script:InboxEditId = $null; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
+    $body.Children.Add($row) | Out-Null
+    return (New-Card -Title ('Editing proposal: ' + $Item.title) -Body $body)
+}
+
 # ---- Goals workspace -------------------------------------------------
 # The ONE goal store (identity/goals.json), full CRUD. Domain-tagged goals
 # feed the Executive Context and the Priority Engine unchanged.

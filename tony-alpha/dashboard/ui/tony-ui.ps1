@@ -2647,6 +2647,7 @@ function Set-ActiveView {
         'Tony Memory'    { New-TonyMemoryView }
         'Identity'       { New-IdentityView }
         'Goals'          { New-GoalsView }
+        'Executive Inbox'{ New-ExecutiveInboxView }
         'First Conversation' { New-FirstConversationView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-LifeDomainView -Key 'Non-Negotiables' }
@@ -2736,6 +2737,7 @@ function New-TonyShell {
         [pscustomobject]@{ cp = @(0x1F680); label = 'Mission Control'; key = 'Mission Control'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4EC); label = 'Executive Inbox'; key = 'Executive Inbox'; dim = $false }
         [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family'; dim = $false }
         [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $false }

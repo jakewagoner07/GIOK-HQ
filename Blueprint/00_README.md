@@ -69,6 +69,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Randy — CRM Manager](Randy_CRM_Manager.md) | **Constitutional** — hires Randy, the CRM Manager; her charter and why she is built around CRM as a discipline (not GoHighLevel) so future CRMs need no redesign |
 | — | [CRM Provider](CRM_Provider.md) | Read-only GoHighLevel backend + normalizer behind the generic `crm` signal Randy consumes; the normalized CRM model; preserves all five invariants |
 | — | [Life Operating System](Life_Operating_System.md) | **Daily Driver** — the eight life/business workspaces (Goals, Non-Negotiables, Family, Health, Financial, Agency, Learning, Home Projects) made fully usable; the data-ownership map (one type → one owner → one home); folded into the one Executive Context |
+| — | [Executive Inbox](Executive_Inbox.md) | **Epic 5** — GIOK's approval center: the Workforce proposes, Jake approves/edits/rejects; a pending-only queue that routes approvals to the owning modules (no second copies); Tony never auto-approves |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
