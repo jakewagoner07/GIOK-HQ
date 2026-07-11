@@ -306,9 +306,18 @@ function Invoke-TonyBrain {
     # them into ONE recommendation. Specialists never bypass Tony - only this
     # merged synthesis reaches the provider. Guarded so ordinary questions are
     # untouched; Tony remains the single executive decision maker.
+    # Tony MANAGES the Workforce (Epic 4): the Executive Manager decides who
+    # works, who verifies, who is skipped, and when the evidence is enough -
+    # then merges into one recommendation (Decision Framework keeps final
+    # authority inside the merge). Falls back to the raw D20 delegation if the
+    # manager module is not in the build. The returned object is a superset of
+    # the merged report, so the provider consumes it unchanged.
     $workforce = $null
-    if ((Get-Command Test-WorkforceRelevant -ErrorAction SilentlyContinue) -and (Get-Command Invoke-Workforce -ErrorAction SilentlyContinue) -and (Test-WorkforceRelevant $UserInput)) {
-        try { $workforce = Invoke-Workforce -Task $UserInput -Context $exec -Now $Now } catch { $workforce = $null }
+    if ((Get-Command Test-WorkforceRelevant -ErrorAction SilentlyContinue) -and (Test-WorkforceRelevant $UserInput)) {
+        try {
+            if (Get-Command Invoke-ExecutiveManager -ErrorAction SilentlyContinue) { $workforce = Invoke-ExecutiveManager -Task $UserInput -Context $exec -Now $Now }
+            elseif (Get-Command Invoke-Workforce -ErrorAction SilentlyContinue) { $workforce = Invoke-Workforce -Task $UserInput -Context $exec -Now $Now }
+        } catch { $workforce = $null }
     }
 
     # reuse the referenced base context for the reasoning engine (no re-assembly)
