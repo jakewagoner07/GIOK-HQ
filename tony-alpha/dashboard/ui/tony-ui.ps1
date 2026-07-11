@@ -2653,8 +2653,8 @@ function Set-ActiveView {
         'Family'         { New-LifeDomainView -Key 'Family' }
         'Health'         { New-LifeDomainView -Key 'Health' }
         'Financial'      { New-LifeDomainView -Key 'Financial' }
-        'Home Projects'  { New-WorkspacePlaceholder -Title 'Home Projects' -Belongs $script:WorkspaceBelongs['Home Projects'] }
-        'Learning'       { New-WorkspacePlaceholder -Title 'Learning' -Belongs $script:WorkspaceBelongs['Learning'] }
+        'Home Projects'  { New-LifeDomainView -Key 'Home Projects' }
+        'Learning'       { New-LifeDomainView -Key 'Learning' }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
@@ -2741,8 +2741,8 @@ function New-TonyShell {
         [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency'; dim = $false }
-        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home Projects'; key = 'Home Projects'; dim = $true }
-        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home Projects'; key = 'Home Projects'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning'; dim = $false }
     )
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
     $dividerAdded = $false

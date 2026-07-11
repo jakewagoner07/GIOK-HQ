@@ -309,6 +309,33 @@ $script:LifeSpecs = @{
         cardFields = @(@{ key = 'detail'; label = 'Detail' }, @{ key = 'metric'; label = 'Metric' })
         emptyText  = 'Nothing here yet. Add a production target, a strategic priority, or the next step.'
     }
+    'Learning' = @{
+        domain = 'learning'; title = 'Learning'; source = 'life_os.json'; addVerb = 'Add'; addTitle = 'Add a learning item'
+        intro  = 'What you are studying - the resource, how far you have gotten, and the next step. Learning goals live in Goals; the resources you work through live here.'
+        goalDomain = 'learning'; titleKey = 'title'
+        addFields = @(
+            @{ key = 'title'; label = 'What are you learning? *'; type = 'text'; required = $true },
+            @{ key = 'resource'; label = 'Resource (book, course, mentor, ...)'; type = 'text' },
+            @{ key = 'progress'; label = 'Progress % (0-100)'; type = 'number' },
+            @{ key = 'nextStep'; label = 'Next step'; type = 'text' }
+        )
+        cardFields = @(@{ key = 'resource'; label = 'Resource' }, @{ key = 'nextStep'; label = 'Next' })
+        emptyText  = 'Nothing here yet. Add a book, a course, or a skill you are building.'
+    }
+    'Home Projects' = @{
+        domain = 'projects'; title = 'Home Projects'; source = 'life_os.json'; addVerb = 'Add'; addTitle = 'Add a home project'
+        intro  = 'Projects around the home and life - the desired outcome, where it stands, the next action, and a target date. These feed Tony''s Executive Context as your active project.'
+        goalDomain = $null; titleKey = 'title'
+        addFields = @(
+            @{ key = 'title'; label = 'Project *'; type = 'text'; required = $true },
+            @{ key = 'outcome'; label = 'Desired outcome'; type = 'multiline' },
+            @{ key = 'status'; label = 'Status'; type = 'combo'; options = @('active', 'paused', 'done') },
+            @{ key = 'nextAction'; label = 'Next action'; type = 'text' },
+            @{ key = 'targetDate'; label = 'Target date (YYYY-MM-DD, optional)'; type = 'date' }
+        )
+        cardFields = @(@{ key = 'outcome'; label = 'Outcome' }, @{ key = 'status'; label = 'Status' }, @{ key = 'nextAction'; label = 'Next' }, @{ key = 'targetDate'; label = 'Target' })
+        emptyText  = 'Nothing here yet. Add a project - Tony will keep its next action in view.'
+    }
 }
 function Get-LifeSpecKeys { return @($script:LifeSpecs.Keys) }
 
