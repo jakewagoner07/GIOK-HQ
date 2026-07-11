@@ -31,6 +31,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\morning-brief.ps1')
 . (Join-Path $PSScriptRoot 'core\morning-experience.ps1')
 . (Join-Path $PSScriptRoot 'core\identity.ps1')
+. (Join-Path $PSScriptRoot 'core\life-os.ps1')
 . (Join-Path $PSScriptRoot 'core\end-of-day-audit.ps1')
 . (Join-Path $PSScriptRoot 'core\first-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
@@ -59,6 +60,7 @@ try {
 . (Join-Path $PSScriptRoot 'providers\gohighlevel-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
+. (Join-Path $PSScriptRoot 'ui\life-workspaces.ps1')
 
 $theme = Get-Theme
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }

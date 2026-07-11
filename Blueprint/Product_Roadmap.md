@@ -40,8 +40,14 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   merged into one release candidate; Emma and Riley activate on the merged engines; Randy uses the
   generic `crm` signal; all read-only, Decision Framework still final.
 
-**Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
-field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
+- ✅ **Daily Driver — Life Operating System** — the eight life/business workspaces (Goals,
+  Non-Negotiables, Family, Health, Financial, Agency, Learning, Home Projects) are fully usable: Jake
+  manages his own data; Tony consumes it through the one Executive Context. One goal store (enriched),
+  one `life_os.json` (gitignored), the reserved `project` slot filled. See
+  `Blueprint/Life_Operating_System.md`.
+
+**Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
+`project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
 
 ---
 

@@ -14,6 +14,11 @@ tony-alpha/conversation.json
 # their memories; they stay local, never on GitHub.
 tony-alpha/tony_memory.json
 **/tony_memory.json
+
+# Life OS store - PRIVATE personal data (family, health, financial, ...).
+# Local only, never committed. The app creates it on first use.
+tony-alpha/life_os.json
+**/life_os.json
 **/memory-export-*.json
 
 # Local diagnostics logs — runtime only, never committed.

@@ -182,9 +182,20 @@ function Get-ClaudeUserContent {
             $acctTxt = if ($c.accountCount -gt 1) { ('across {0} Google accounts (primary {1})' -f $c.accountCount, $c.account) } else { [string]$c.account }
             $lines += ("LIVE CALENDAR ({0}, fetched {1}, timezone {2}): {3} event(s) today, {4} tomorrow." -f $acctTxt, $c.timestamp, $c.timezone, $c.todayCount, $c.tomorrowCount)
             if ($c.nextEvent) { $lines += ("Next: ""{0}"" {1}-{2}{3}." -f $c.nextEvent.title, $c.nextEvent.start.ToString('ddd h:mm tt'), $c.nextEvent.end.ToString('h:mm tt'), $(if ($c.nextEvent.location) { ' at ' + $c.nextEvent.location } else { '' })) }
-            foreach ($ev in @($c.events | Select-Object -First 12)) {
+            # Show today's + tomorrow's events IN FULL (the actionable horizon), then a
+            # few upcoming - NEVER a flat first-N that can silently drop a later event or a
+            # secondary-account event (the old "-First 12" over an 8-day window hid events
+            # past the 12 earliest, which structurally favored dense mornings over
+            # interspersed personal/secondary-account events). Multi-account: tag each event
+            # with its source account so Tony can attribute it to the right calendar.
+            $refDate = try { [datetime]::Parse($c.timestamp).Date } catch { (Get-Date).Date }
+            $near = @($c.events | Where-Object { $_.start.Date -le $refDate.AddDays(1) })
+            $later = @($c.events | Where-Object { $_.start.Date -gt $refDate.AddDays(1) } | Select-Object -First 8)
+            $multiAcct = ([int]$c.accountCount -gt 1)
+            foreach ($ev in @(@($near) + @($later) | Select-Object -First 60)) {
                 $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd') + ', all day' } else { $ev.start.ToString('ddd h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
-                $lines += (" - {0}: {1}{2}{3}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }))
+                $acctTag = if ($multiAcct -and @($ev.sourceAccounts).Count -gt 0) { ' [' + ((@($ev.sourceAccounts)) -join ', ') + ']' } else { '' }
+                $lines += (" - {0}: {1}{2}{3}{4}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }), $acctTag)
             }
             if (@($c.freeWindows).Count -gt 0) { $lines += ('Free windows: ' + ((@($c.freeWindows) | ForEach-Object { $_.start.ToString('ddd h:mm tt') + '-' + $_.end.ToString('h:mm tt') + ' (' + $_.minutes + 'm)' }) -join '; ')) }
             if (@($c.conflicts).Count -gt 0) { $lines += ('Scheduling conflicts: ' + ((@($c.conflicts) | ForEach-Object { $_.a + ' overlaps ' + $_.b }) -join '; ')) }
@@ -211,6 +222,23 @@ function Get-ClaudeUserContent {
         } else {
             $lines += ''
             $lines += ("LIVE EMAIL UNAVAILABLE ({0}). Tell Jake honestly using exactly this reason; do NOT guess what is in his inbox and do NOT invent messages." -f $em.status.detail)
+        }
+    }
+    # LIFE CONTEXT: Jake's own domains (Goals, Non-Negotiables, Family, Health,
+    # Financial, Agency, Learning, Home Projects). Read-only - use ONLY these
+    # facts, never invent a goal, commitment, number, or date. Weave in what is
+    # relevant to the question; do not dump the whole list. Family before Financial.
+    $life = if ($Request.context -and ($Request.context.PSObject.Properties.Name -contains 'life')) { $Request.context.life } else { $null }
+    if ($life) {
+        $ll = @()
+        $nn = @($life.nonNegotiables); if ($nn.Count -gt 0) { $ll += ('Non-negotiables Jake protects: ' + ((@($nn | Select-Object -First 5) | ForEach-Object { $_.title + $(if ($_.cadence) { ' (' + $_.cadence + ')' } else { '' }) }) -join '; ') + '.') }
+        $ft = @($life.familyToday); if ($ft.Count -gt 0) { $ll += ('FAMILY COMMITMENT TODAY: ' + ((@($ft) | ForEach-Object { $_.title }) -join '; ') + ' - protect it.') }
+        $ag = @($life.agency); if ($ag.Count -gt 0) { $ll += ('Agency priorities: ' + ((@($ag | Select-Object -First 3) | ForEach-Object { $_.title + $(if ($_.metric) { ' (' + $_.metric + ')' } else { '' }) }) -join '; ') + '.') }
+        $pr = @($life.projects); if ($pr.Count -gt 0) { $ll += ('Active home projects: ' + ((@($pr | Select-Object -First 3) | ForEach-Object { $_.title + $(if ($_.nextAction) { ' - next: ' + $_.nextAction } else { '' }) }) -join '; ') + '.') }
+        if ($ll.Count -gt 0) {
+            $lines += ''
+            $lines += 'LIFE CONTEXT (Jake''s own data; use only what is relevant, never invent):'
+            $lines += $ll
         }
     }
     # WORKFORCE: Tony delegated to specialist analysts and merged their reports.

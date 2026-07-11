@@ -2639,21 +2639,22 @@ function Set-ActiveView {
         'Weekly Review'{ New-MarkdownView   -Title 'Weekly Review' -Text (Get-DocText 'weekly_status.md') }
         'Roadmap'      { New-MarkdownView   -Title 'Roadmap'       -Text (Get-DocText 'ROADMAP.md') }
         'Settings'     { New-SettingsView }
-        'Agency'         { New-AgencyView }
+        'Agency'         { New-LifeDomainView -Key 'Agency' }
         'Appointments'   { New-AppointmentsView }
         'Recommendations'{ New-RecommendationsView }
         'Mission Control'{ New-MissionControlView }
         'Capture'        { New-CaptureView }
         'Tony Memory'    { New-TonyMemoryView }
         'Identity'       { New-IdentityView }
+        'Goals'          { New-GoalsView }
         'First Conversation' { New-FirstConversationView }
         'End of Day Audit' { New-AuditView }
-        'Non-Negotiables'{ New-WorkspacePlaceholder -Title 'Non-Negotiables' -Belongs $script:WorkspaceBelongs['Non-Negotiables'] }
-        'Family'         { New-WorkspacePlaceholder -Title 'Family' -Belongs $script:WorkspaceBelongs['Family'] }
-        'Health'         { New-WorkspacePlaceholder -Title 'Health' -Belongs $script:WorkspaceBelongs['Health'] }
-        'Financial'      { New-WorkspacePlaceholder -Title 'Financial' -Belongs $script:WorkspaceBelongs['Financial'] }
-        'Home Projects'  { New-WorkspacePlaceholder -Title 'Home Projects' -Belongs $script:WorkspaceBelongs['Home Projects'] }
-        'Learning'       { New-WorkspacePlaceholder -Title 'Learning' -Belongs $script:WorkspaceBelongs['Learning'] }
+        'Non-Negotiables'{ New-LifeDomainView -Key 'Non-Negotiables' }
+        'Family'         { New-LifeDomainView -Key 'Family' }
+        'Health'         { New-LifeDomainView -Key 'Health' }
+        'Financial'      { New-LifeDomainView -Key 'Financial' }
+        'Home Projects'  { New-LifeDomainView -Key 'Home Projects' }
+        'Learning'       { New-LifeDomainView -Key 'Learning' }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
     $script:TonyBody.Child = $body
@@ -2731,16 +2732,17 @@ function New-TonyShell {
         [pscustomobject]@{ cp = @(0x1F4E5); label = 'Capture'; key = 'Capture'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4CB); label = 'Action Items'; key = 'Action Items'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F9ED); label = 'Identity'; key = 'Identity'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F3AF); label = 'Goals'; key = 'Goals'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F680); label = 'Mission Control'; key = 'Mission Control'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory'; dim = $false }
-        [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables'; dim = $true }
-        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family'; dim = $true }
-        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $true }
-        [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial'; dim = $true }
-        [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency'; dim = $true }
-        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home Projects'; key = 'Home Projects'; dim = $true }
-        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning'; dim = $true }
+        [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family'; dim = $false }
+        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home Projects'; key = 'Home Projects'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F4DA); label = 'Learning'; key = 'Learning'; dim = $false }
     )
     $nav = New-Object Windows.Controls.StackPanel; $nav.VerticalAlignment = 'Top'
     $dividerAdded = $false
