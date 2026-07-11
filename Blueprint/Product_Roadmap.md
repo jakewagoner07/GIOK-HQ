@@ -27,6 +27,8 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
 - ✅ Executive Priority Engine — Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss
   awareness; Decision Framework as final authority; folded into the briefing (D18)
+- ✅ Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing
+  timestamps only; no new storage; folded into the briefing (D19)
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

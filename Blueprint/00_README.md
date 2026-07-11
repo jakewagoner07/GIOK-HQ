@@ -62,6 +62,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Google Calendar Provider](Google_Calendar_Provider.md) | Read-only Google Calendar via OAuth — Tony understands your schedule; the pattern for Gmail |
 | — | [Gmail Provider](Gmail_Provider.md) | Read-only Gmail — Executive Email Summary; shared OAuth + provider-neutral email intelligence (Outlook/M365/Yahoo plug in) |
 | — | [Multi-Account Google](Multi_Account_Google.md) | One Calendar + one Gmail provider reading MANY Google accounts (business + personal); per-account tokens, merged at the intelligence layer |
+| — | [Executive Timeline](Executive_Timeline.md) | Tony understands time — what's new/aging/overdue/ignored/expiring, derived only from existing timestamps; no new storage |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |

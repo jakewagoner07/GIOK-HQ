@@ -3,11 +3,15 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D18** (Executive Priority Engine), after D17 (Multi-Account Google).
+Last updated: **RC2 — Executive Intelligence Integration** (integrates D18, D19, D20, Randy, and
+Executive Management into one release candidate).
 
 > **D18 status:** D18 – Executive Priority Engine is feature complete and pushed to
 > `feature/executive-priority-engine`. Merge is intentionally deferred pending 3–5 days of founder
 > validation during normal daily use. No release blockers currently identified.
+>
+> **D19 status:** D19 – Executive Timeline is feature complete on `feature/executive-timeline`
+> (branched from `main`, independent of the deferred D18). No release blockers currently identified.
 
 ---
 
@@ -94,7 +98,8 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D16 | Gmail Provider — read-only Executive Email Summary on shared OAuth + provider-neutral email intelligence | `8dc0dcc` (+`9cbe816`) |
 | RC1 | Alpha Cleanup & Release Review (retired dead `tony-memory.ps1`; fixed `Get-ConversationPath` collision) — merged to `main` | `0530933` (merge `74c0a63`) |
 | D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | `593df92` (merge `b1f011d`) |
-| D18 | Executive Priority Engine — ranks every real item into Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss; folded into the Executive Briefing | (this checkpoint) |
+| D18 | Executive Priority Engine — ranks every real item into Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss; folded into the Executive Briefing | `6dddef5` (RC2) |
+| D19 | Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing timestamps; folded into the briefing | `50fb539` (RC2) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
 
@@ -215,7 +220,8 @@ Projects, Learning.
 
 ## Next recommended sprint
 
-**D19 — Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
-multi-account and priority-ranked) so it is ready the instant GIOK opens — the first Phase-3 "ahead
-of you" capability. The Executive Priority Engine (D18) gives the scheduler a ranked plan worth
-pre-computing. See `Product_Roadmap.md` for the full ordering.
+**Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
+multi-account, priority-ranked, and time-aware) so it is ready the instant GIOK opens — the first
+Phase-3 "ahead of you" capability. It has rich signals worth pre-computing: the D18 Executive Priority
+Engine and the D19 Executive Timeline (both integrated in RC2). See `Product_Roadmap.md` for the full
+ordering.

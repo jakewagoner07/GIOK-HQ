@@ -925,6 +925,14 @@ function New-ExecutiveBriefingCard {
         if ($o.why) { $sp.Children.Add((New-Text -Text $o.why -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null }
     }
 
+    # over time - the Executive Timeline (D19): a few calm notes about what is
+    # new / aging / overdue / waiting / expiring. Only shown when there's
+    # something worth noticing (no noise).
+    if (($m.PSObject.Properties.Name -contains 'timeline') -and $m.timeline -and @($m.timeline.notes).Count -gt 0) {
+        $sp.Children.Add((New-BriefingLabel -Text 'OVER TIME')) | Out-Null
+        foreach ($note in @($m.timeline.notes)) { $sp.Children.Add((New-Text -Text ('-  ' + $note) -Size 12.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null }
+    }
+
     # today's focus
     $sp.Children.Add((New-BriefingLabel -Text "TODAY'S FOCUS")) | Out-Null
     $sp.Children.Add((New-Text -Text $m.focus -Size 15 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)) | Out-Null

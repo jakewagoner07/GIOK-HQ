@@ -314,6 +314,52 @@ function Get-Email {
     }
 }
 
+# Aging unread mail (read-only) for the Executive Timeline: unread inbox
+# messages received BEFORE today, within the last $Days. Returns a count plus
+# a few normalized examples (with age in days and a carrier flag). Derived
+# entirely from existing Gmail timestamps - no storage, promotions excluded.
+function Get-EmailWaiting {
+    param([datetime]$Now = (Get-Date), [int]$Days = 6, [int]$MinAgeDays = 2, [int]$MaxExamples = 10)
+    $cfg = Get-GmailConfig
+    if (-not $cfg.configured) { return [pscustomobject]@{ count = 0; items = @() } }
+    $ids = @(Get-GoogleAccountIds -Path $cfg.tokenPath)
+    if ($ids.Count -eq 0) { return [pscustomobject]@{ count = 0; items = @() } }
+    # Genuine "waiting on you": PRIMARY-category unread mail from real people
+    # (not no-reply/notifications), aged MinAgeDays..Days - recent enough to act
+    # on, not the whole ancient backlog. Derived from Gmail timestamps only.
+    $q = ("is:unread in:inbox category:primary older_than:{0}d newer_than:{1}d -from:noreply -from:no-reply -from:notifications -from:mailer-daemon" -f $MinAgeDays, $Days)
+    $hints = if ($cfg.carrierHints) { $cfg.carrierHints } else { $script:EmailCarrierHints }
+    $seen = @{}; $items = @(); $count = 0
+    foreach ($id in $ids) {
+        $at = Get-GoogleAccountAccessToken -Config (Get-GmailOAuthConfig) -Id $id
+        if (-not $at.ok) { continue }
+        try {
+            $pageToken = $null; $pages = 0; $mids = @()
+            do {
+                $query = @{ q = $q; maxResults = '100' }; if ($pageToken) { $query['pageToken'] = $pageToken }
+                $list = Invoke-GoogleApi -Token $at.token -BaseUrl $cfg.apiBase -Path '/users/me/messages' -Query $query
+                foreach ($mi in @($list.messages)) { $mids += [string]$mi.id }
+                $pageToken = $list.nextPageToken; $pages++
+            } while ($pageToken -and $pages -lt 3)
+            $count += @($mids).Count
+            $fetched = 0
+            foreach ($mid in $mids) {
+                if ($fetched -ge $MaxExamples) { break }
+                $raw = Invoke-GoogleApi -Token $at.token -BaseUrl $cfg.apiBase -Path ("/users/me/messages/{0}" -f $mid) -Query @{ format = 'metadata' }
+                $n = Convert-GmailMessage -Raw $raw -Account $id -Aliases @($cfg.myAddresses) -SourceAccount $id
+                $fetched++
+                if ($n.promo -or $n.bulk) { continue }   # aging noise isn't "waiting on you"
+                $key = if ($n.messageId) { $n.messageId } else { $n.id }
+                if ($seen.ContainsKey($key)) { continue }
+                $seen[$key] = $true
+                $carrier = Test-EmailCarrier -Subject $n.subject -Snippet $n.snippet -From $n.from -Hints $hints -CarrierDomains @($cfg.carrierDomains)
+                $items += [pscustomobject]@{ from = $n.from; fromName = $n.fromName; subject = $n.subject; date = $n.date; ageDays = [int][math]::Floor(($Now - $n.date).TotalDays); account = $id; messageId = $key; carrier = [bool]$carrier }
+            }
+        } catch { }
+    }
+    return [pscustomobject]@{ count = $count; items = @($items | Sort-Object ageDays -Descending) }
+}
+
 # Status for Settings. Without -Live: config/connection state (per account),
 # no network. With -Live: a real read to confirm access across all accounts.
 function Get-GmailStatus {
