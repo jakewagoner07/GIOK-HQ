@@ -32,6 +32,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\morning-experience.ps1')
 . (Join-Path $PSScriptRoot 'core\identity.ps1')
 . (Join-Path $PSScriptRoot 'core\life-os.ps1')
+. (Join-Path $PSScriptRoot 'core\executive-inbox.ps1')
 . (Join-Path $PSScriptRoot 'core\end-of-day-audit.ps1')
 . (Join-Path $PSScriptRoot 'core\first-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')

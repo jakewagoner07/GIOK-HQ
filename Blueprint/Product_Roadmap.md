@@ -45,6 +45,9 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   manages his own data; Tony consumes it through the one Executive Context. One goal store (enriched),
   one `life_os.json` (gitignored), the reserved `project` slot filled. See
   `Blueprint/Life_Operating_System.md`.
+- ✅ **Executive Inbox (Epic 5)** — GIOK's approval center: the Workforce proposes additions, Jake
+  approves/edits/rejects, and approvals route to the owning modules (no second copies). Tony never
+  auto-approves. Pending-only `executive_inbox.json` (gitignored). See `Blueprint/Executive_Inbox.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

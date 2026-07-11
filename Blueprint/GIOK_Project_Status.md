@@ -3,8 +3,18 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Daily Driver — Life Operating System** (on `feature/life-operating-system`, branched
-from `main` @ `bda857c`; RC2 already merged to `main`).
+Last updated: **Epic 5 — Executive Inbox** (on `feature/executive-inbox`, branched from `main` @
+`95c2a21`; RC2 and the Life Operating System already merged to `main`).
+
+> **Epic 5 status (Executive Inbox):** GIOK's **approval center** is built — a pending-only queue
+> (`core/executive-inbox.ps1` → gitignored `executive_inbox.json`) where any Workforce member proposes
+> additions and **Jake approves / edits-then-approves / rejects**; Tony presents and **never
+> auto-approves**. On approve, the **owning module writes the real record** (`Add-Goal` /
+> `Add-LifeItem` / `Add-ActionItem` / `Approve-Memory`) and the proposal leaves the inbox — **no second
+> copy**; read-only providers (calendar/CRM) become honest follow-up Action Items, never a fabricated
+> write. New Executive Inbox workspace + nav. Verified: propose/approve-routes-to-owner/reject/
+> edit-then-approve across every type, no duplicate storage, all workspaces render, secret scan clean.
+> Local-only, not pushed. No release blockers currently identified.
 
 > **Life OS milestone status:** the eight life/business workspaces (Goals, Non-Negotiables, Family,
 > Health, Financial, Agency, Learning, Home Projects) are now fully usable — Jake enters and manages his
@@ -192,6 +202,7 @@ Projects, Learning.
 | `tony-alpha/conversation.json` | Talk-with-Tony history |
 | `tony-alpha/tony_memory.json` | Approved permanent memories |
 | `tony-alpha/life_os.json` | Life OS domains (non-negotiables, family, health, financial, agency, learning, projects) — private personal data |
+| `tony-alpha/executive_inbox.json` | Executive Inbox pending proposals — private (can carry sensitive details) |
 | `**/memory-export-*.json` | User memory exports |
 | `**/weather.config.json` | Optional per-user location override |
 | `tony-alpha/logs/`, `**/tony-diagnostics.log` | Local diagnostics (never contain tokens/keys) |

@@ -121,6 +121,16 @@ These are settled and should not be re-litigated without a blueprint change:
    workspaces are the only writers; UI holds no business logic; Tony reads domains only through the
    context; Memory Manager stays the only memory writer; Decision Framework stays final; no automatic
    actions. Adding a domain is configuration (register its fields), not new storage.
+13. **The Executive Inbox is GIOK's single approval gate (Epic 5, `Executive_Inbox.md`).** Anything the
+   Workforce discovers that should enter Jake's system becomes a **proposal** in
+   `core/executive-inbox.ps1` (a **pending-only** queue in the gitignored `executive_inbox.json`) —
+   **never added automatically.** Any member (or Tony) may propose via `Add-InboxProposal` (proposing is
+   not acting); **Tony presents and never auto-approves.** On **approve**, the **owning module** writes
+   the real record (`Add-Goal` / `Add-LifeItem` / `Add-ActionItem` / `Approve-Memory`) and the proposal
+   **leaves the inbox — no second copy**; on **reject** it is removed. The inbox never writes domain data
+   itself, so Single Source of Truth holds and **Memory Manager remains the only memory writer**
+   (a `memory` proposal routes through `Approve-Memory`). **Read-only providers are never written** —
+   `calendar`/`crm` approvals become honest follow-up Action Items, never a fabricated event or record.
 
 ## Security / privacy rules
 

@@ -19,6 +19,11 @@ tony-alpha/tony_memory.json
 # Local only, never committed. The app creates it on first use.
 tony-alpha/life_os.json
 **/life_os.json
+
+# Executive Inbox - PRIVATE pending proposals (can carry sensitive family/
+# health/financial details). Local only, never committed.
+tony-alpha/executive_inbox.json
+**/executive_inbox.json
 **/memory-export-*.json
 
 # Local diagnostics logs — runtime only, never committed.
