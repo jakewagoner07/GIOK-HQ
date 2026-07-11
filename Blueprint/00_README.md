@@ -56,6 +56,7 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Tony Observation Engine](Tony_Observation_Engine.md) | Tony notices patterns — observations, not reminders; celebrate, guide, never criticize |
 | — | [Executive Context Engine](Executive_Context_Engine.md) | Tony's single, live situational awareness — assembled before every response, never stored |
 | — | [Executive Briefing](Executive_Briefing.md) | The morning letter from Tony — Home's centerpiece; calm, personal, never a dashboard |
+| — | [Executive Priority Engine](Executive_Priority_Engine.md) | Ranks every real item into Act Now / Do Today / Keep Visible / Low-Value Noise — nothing legitimate is ever forgotten |
 | — | [Tony Memory, With Permission](Tony_Memory_With_Permission.md) | Tony never remembers without asking — the permission model, Memory Review, and user control |
 | — | [Weather Provider](Weather_Provider.md) | Tony's first live provider — the permanent architecture every future live service follows |
 | — | [Google Calendar Provider](Google_Calendar_Provider.md) | Read-only Google Calendar via OAuth — Tony understands your schedule; the pattern for Gmail |

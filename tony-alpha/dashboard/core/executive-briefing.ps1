@@ -176,6 +176,55 @@ function Get-BriefingInbox {
     }
 }
 
+# Today's Priorities - the Executive Priority Engine folded into the letter as
+# "Act first / Also today / Still visible" (D18). Ranks the real items from
+# every source, guarantees nothing legitimate is lost, and stays calm.
+# Returns $null when the engine or context is unavailable.
+function Get-BriefingPriorityPlan {
+    param($Context, [datetime]$Now = (Get-Date))
+    if (-not $Context -or -not (Get-Command Get-ExecutivePriorities -ErrorAction SilentlyContinue)) { return $null }
+    $p = Get-ExecutivePriorities -Context $Context -Now $Now
+
+    $actFirst = @(); $rank = 1
+    foreach ($i in @($p.actNow)) { $actFirst += [pscustomobject]@{ rank = $rank; title = $i.title; why = $i.why }; $rank++ }
+
+    $alsoAll = @($p.doToday)
+    $alsoToday = @($alsoAll | Select-Object -First 5 | ForEach-Object { [pscustomobject]@{ title = $_.title; why = $_.why } })
+    $alsoOverflow = [math]::Max(0, $alsoAll.Count - 5)
+
+    # "Still visible" - one calm sentence that acknowledges every low-priority
+    # legitimate item so nothing is silently forgotten.
+    $kv = @($p.keepVisible)
+    $kvCount = $kv.Count + $alsoOverflow
+    $stillVisible = $null
+    if ($kvCount -gt 0) {
+        $reminders = @($kv | Where-Object { $_.kind -in @('memory', 'observation', 'goal') }).Count
+        $followups = $kvCount - $reminders
+        $parts = @()
+        if ($followups -gt 0) { $parts += ('{0} smaller follow-up{1}' -f $followups, $(if ($followups -eq 1) { '' } else { 's' })) }
+        if ($reminders -gt 0) { $parts += ('{0} non-urgent reminder{1}' -f $reminders, $(if ($reminders -eq 1) { '' } else { 's' })) }
+        $joined = if ($parts.Count -gt 0) { $parts -join ' and ' } else { ('{0} item{1}' -f $kvCount, $(if ($kvCount -eq 1) { '' } else { 's' })) }
+        $stillVisible = ('{0} {1} captured and won''t be forgotten.' -f $joined, $(if ($kvCount -eq 1) { 'is' } else { 'are' }))
+    }
+
+    $setAside = $null
+    if ($p.lowValueNoise.emailCount -gt 0) { $setAside = ('{0} promotional/newsletter email{1} set aside (still counted).' -f $p.lowValueNoise.emailCount, $(if ($p.lowValueNoise.emailCount -eq 1) { '' } else { 's' })) }
+
+    return [pscustomobject]@{
+        actFirst         = @($actFirst)
+        alsoToday        = @($alsoToday)
+        stillVisible     = $stillVisible
+        keepVisibleCount = $kvCount
+        setAside         = $setAside
+        reason           = $p.reason
+        guidanceNote     = $p.guidanceNote
+        packedDay        = $p.packedDay
+        empty            = ($actFirst.Count -eq 0 -and $alsoToday.Count -eq 0 -and $kvCount -eq 0)
+        counts           = $p.counts
+        noLoss           = $p.noLoss
+    }
+}
+
 # one) and composes the letter model. Data only - no UI, no writes.
 function Get-TonyExecutiveBriefing {
     param(
@@ -215,6 +264,7 @@ function Get-TonyExecutiveBriefing {
         summary       = (Get-BriefingSummary -Exec $exec)
         schedule      = (Get-BriefingSchedule -Calendar $Calendar)
         emailSummary  = (Get-BriefingInbox -Email $Email)
+        priorityPlan  = (Get-BriefingPriorityPlan -Context $exec -Now $Now)
         priorities    = (Get-BriefingPriorities -Exec $exec)
         observation   = $observation
         focus         = (Get-BriefingFocus -Exec $exec)
