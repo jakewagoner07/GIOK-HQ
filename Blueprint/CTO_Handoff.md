@@ -86,6 +86,17 @@ These are settled and should not be re-litigated without a blueprint change:
    silently ignores meaningful information; he reduces complexity without reducing awareness") and the
    **Rule of Progressive Delegation** ("Tony delegates to the fewest specialists necessary to
    confidently answer the question").
+10. **Tony MANAGES the Workforce, not just delegates (Epic 4, `executive-management.ps1`).** A pure
+   core module on top of D20 (it does not redesign the engine) promotes Tony from delegator to
+   Executive Manager: he decides who works, who begins first, who verifies, who is skipped, when the
+   evidence is enough, and when uncertainty needs another opinion — then merges into one recommendation
+   (Decision Framework still final authority). Permanent invariants: **progressive delegation** (fewest
+   specialists for narrow asks; breadth only for broad ones), **least necessary work** (unavailable
+   specialists are never woken; the single Executive Context is reused so no provider is re-called; no
+   specialist is analyzed twice per run), **deterministic trust scoring with NO invented history**
+   (historical reliability is an explicit availability baseline), **conflicts surfaced and arbitrated,
+   never hidden**, and **no new storage / no actions**. The returned object is a **superset** of the
+   D20 merged report, so all consumers work unchanged. See `Blueprint/Executive_Management.md`.
 
 ## Security / privacy rules
 

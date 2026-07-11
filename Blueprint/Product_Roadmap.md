@@ -31,6 +31,10 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   the only executive decision maker; framework for all future specialists (D20). Org chart + bylaws
   formalized in the constitutional `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason +
   named future hires; Executive Awareness Principle; Rule of Progressive Delegation).
+- ✅ Executive Management (Epic 4) — Tony is promoted from delegator to **Executive Manager**: decides
+  who works/verifies/is skipped and when the evidence is enough; progressive delegation, deterministic
+  trust scoring (no invented history), and conflict arbitration. Pure module `executive-management.ps1`
+  on top of D20 (no redesign); Decision Framework still final. See `Blueprint/Executive_Management.md`.
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

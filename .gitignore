@@ -38,3 +38,11 @@ tony-alpha/dashboard/providers/gmail.config.json
 !**/gmail.config.example.json
 tony-alpha/gmail.tokens.json
 **/gmail.tokens.json
+
+# CRM (GoHighLevel) - PRIVATE local token/config, never committed (safety rule
+# carried onto this branch; the CRM provider itself lives on Epic 3's branch).
+tony-alpha/dashboard/providers/crm.config.json
+**/crm.config.json
+!**/crm.config.example.json
+tony-alpha/crm.tokens.json
+**/crm.tokens.json

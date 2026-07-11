@@ -18,6 +18,18 @@ deferral note (D18 and D19 remain on their own branches, unmerged).
 > those engines merge. The permanent org chart and bylaws are formalized in the constitutional
 > `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason + future hires; Executive Awareness
 > Principle; Rule of Progressive Delegation). No release blockers currently identified.
+>
+> **Epic 4 status (Executive Management):** feature complete on `feature/executive-management`
+> (branched on top of the D20 Workforce foundation, so it inherits the engine + constitution; traces
+> back to synchronized `main`). A pure core module `core/executive-management.ps1` promotes Tony from
+> delegator to **Executive Manager**: progressive delegation (fewest specialists for narrow asks,
+> breadth for broad), deterministic trust scoring (**no invented history**), conflict arbitration, and
+> least-necessary-work (unavailable specialists never woken, one Executive Context reused, no
+> duplicate analysis). It builds ON TOP of D20 (no redesign), keeps the Decision Framework as final
+> authority, stores nothing, and takes no actions; its return is a superset of the D20 merged report so
+> `claude-provider` and the Brain consume it unchanged (the Brain now calls `Invoke-ExecutiveManager`
+> with a fallback to `Invoke-Workforce`). Verified with a 36-check mocked harness + clean full-app Home
+> render. No release blockers currently identified.
 
 ---
 

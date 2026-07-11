@@ -54,7 +54,10 @@ Every member of the Workforce, present and future, meets the same standards:
   say on every recommendation (Family before Financial included).
 - **Tony's five decisions.** For any request Tony decides: (1) whether to delegate at all, (2) which
   specialists receive it, (3) whether their confidence is sufficient, (4) whether another specialist
-  should verify, and (5) whether Jake should see the raw results.
+  should verify, and (5) whether Jake should see the raw results. *(Epic 4 implements these as the
+  **Executive Manager** — `core/executive-management.ps1`; Tony manages the Workforce intelligently
+  rather than simply calling it: progressive delegation, deterministic trust scoring, and conflict
+  arbitration. See [Executive_Management.md](Executive_Management.md).)*
 - **Conflicts are surfaced, never hidden.** When two specialists disagree on the same question, Tony
   flags the disagreement for Jake to decide.
 - **Hiring is additive.** A new specialist registers the standard interface and joins the roster with
