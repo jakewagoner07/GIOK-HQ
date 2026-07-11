@@ -25,6 +25,10 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ Memory With Permission — ask-first, Memory Review, user control (D12)
 - ✅ Document Intelligence foundation — read for meaning, approval-gated (D6)
 - ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
+- 🔄 Executive Priority Engine — Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss (D18,
+  feature-complete on its branch; merge deferred for founder validation)
+- ✅ Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing
+  timestamps only; no new storage; folded into the briefing (D19)
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

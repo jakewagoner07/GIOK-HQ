@@ -176,6 +176,23 @@ function Get-BriefingInbox {
     }
 }
 
+# Over time - the Executive Timeline folded into the letter as a few calm
+# notes about what is new / aging / overdue / waiting / expiring (D19). Reads
+# only existing timestamps (Action Items, Calendar RSVP, aging unread Gmail,
+# the last audit); fetches aging mail read-only only when Gmail is connected.
+# Returns $null when there's nothing worth noticing (no noise).
+function Get-BriefingTimeline {
+    param($Context, [datetime]$Now = (Get-Date))
+    if (-not $Context -or -not (Get-Command Get-ExecutiveTimeline -ErrorAction SilentlyContinue)) { return $null }
+    $waiting = $null
+    if ((Get-Command Get-EmailWaiting -ErrorAction SilentlyContinue) -and (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue)) {
+        try { if ((Get-GmailStatus).state -eq 'connected') { $waiting = Get-EmailWaiting -Now $Now } } catch { $waiting = $null }
+    }
+    $tl = Get-ExecutiveTimeline -Context $Context -Now $Now -WaitingEmails $waiting
+    if (-not $tl.hasAny) { return $null }
+    return [pscustomobject]@{ notes = @($tl.notes | ForEach-Object { $_.text }); counts = $tl.counts }
+}
+
 # one) and composes the letter model. Data only - no UI, no writes.
 function Get-TonyExecutiveBriefing {
     param(
@@ -216,6 +233,7 @@ function Get-TonyExecutiveBriefing {
         schedule      = (Get-BriefingSchedule -Calendar $Calendar)
         emailSummary  = (Get-BriefingInbox -Email $Email)
         priorities    = (Get-BriefingPriorities -Exec $exec)
+        timeline      = (Get-BriefingTimeline -Context $exec -Now $Now)
         observation   = $observation
         focus         = (Get-BriefingFocus -Exec $exec)
         encouragement = (Get-BriefingEncouragement -Now $Now)

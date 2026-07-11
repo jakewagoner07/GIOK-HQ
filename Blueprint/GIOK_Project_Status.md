@@ -3,11 +3,15 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D17** (Multi-Account Google Integration), after RC1 + the alpha merge to `main`.
+Last updated: end of **Sprint D19** (Executive Timeline), branched from `main` after D17 + the D18
+deferral note.
 
 > **D18 status:** D18 – Executive Priority Engine is feature complete and pushed to
 > `feature/executive-priority-engine`. Merge is intentionally deferred pending 3–5 days of founder
 > validation during normal daily use. No release blockers currently identified.
+>
+> **D19 status:** D19 – Executive Timeline is feature complete on `feature/executive-timeline`
+> (branched from `main`, independent of the deferred D18). No release blockers currently identified.
 
 ---
 
@@ -93,7 +97,9 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D15 | Calendar Intelligence (first/last/total, free blocks, meeting-heavy days) fed into the Executive Briefing | `7c73e10` (+`722dce4`) |
 | D16 | Gmail Provider — read-only Executive Email Summary on shared OAuth + provider-neutral email intelligence | `8dc0dcc` (+`9cbe816`) |
 | RC1 | Alpha Cleanup & Release Review (retired dead `tony-memory.ps1`; fixed `Get-ConversationPath` collision) — merged to `main` | `0530933` (merge `74c0a63`) |
-| D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | (this checkpoint) |
+| D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | `593df92` (merge `b1f011d`) |
+| D18 | Executive Priority Engine — Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss; folded into the briefing | `6dddef5` (on `feature/executive-priority-engine`; **merge deferred for founder validation**) |
+| D19 | Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing timestamps; folded into the briefing | (this checkpoint) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
 
@@ -210,7 +216,14 @@ Projects, Learning.
 
 ## Next recommended sprint
 
-**D18 — Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
-multi-account Calendar- and Gmail-aware) so it is ready the instant GIOK opens — the first Phase-3
-"ahead of you" capability. (The Calendar provider was migrated onto the shared `core/google-oauth.ps1`
-during D17, so that deferred item is done.) See `Product_Roadmap.md` for the full ordering.
+**Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
+multi-account, priority-ranked, and time-aware) so it is ready the instant GIOK opens — the first
+Phase-3 "ahead of you" capability. It has rich signals worth pre-computing: the D18 Executive Priority
+Engine (deferred, in validation) and the D19 Executive Timeline. See `Product_Roadmap.md` for the
+full ordering.
+
+**Testing note (Project Status):** Executive Timeline verified — new/aging/overdue buckets, waiting
+emails (small count vs calm backlog phrasing), invitation-expiry, stale-routine, empty→no-noise, and
+the honesty `unavailable` declarations (postpone-count / last-contact need data GIOK does not store);
+live Home render shows the "Over time" note; conversation, memory, Document Intelligence, Calendar,
+and Gmail all still pass.
