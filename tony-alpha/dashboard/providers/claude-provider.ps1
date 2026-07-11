@@ -213,6 +213,23 @@ function Get-ClaudeUserContent {
             $lines += ("LIVE EMAIL UNAVAILABLE ({0}). Tell Jake honestly using exactly this reason; do NOT guess what is in his inbox and do NOT invent messages." -f $em.status.detail)
         }
     }
+    # LIFE CONTEXT: Jake's own domains (Goals, Non-Negotiables, Family, Health,
+    # Financial, Agency, Learning, Home Projects). Read-only - use ONLY these
+    # facts, never invent a goal, commitment, number, or date. Weave in what is
+    # relevant to the question; do not dump the whole list. Family before Financial.
+    $life = if ($Request.context -and ($Request.context.PSObject.Properties.Name -contains 'life')) { $Request.context.life } else { $null }
+    if ($life) {
+        $ll = @()
+        $nn = @($life.nonNegotiables); if ($nn.Count -gt 0) { $ll += ('Non-negotiables Jake protects: ' + ((@($nn | Select-Object -First 5) | ForEach-Object { $_.title + $(if ($_.cadence) { ' (' + $_.cadence + ')' } else { '' }) }) -join '; ') + '.') }
+        $ft = @($life.familyToday); if ($ft.Count -gt 0) { $ll += ('FAMILY COMMITMENT TODAY: ' + ((@($ft) | ForEach-Object { $_.title }) -join '; ') + ' - protect it.') }
+        $ag = @($life.agency); if ($ag.Count -gt 0) { $ll += ('Agency priorities: ' + ((@($ag | Select-Object -First 3) | ForEach-Object { $_.title + $(if ($_.metric) { ' (' + $_.metric + ')' } else { '' }) }) -join '; ') + '.') }
+        $pr = @($life.projects); if ($pr.Count -gt 0) { $ll += ('Active home projects: ' + ((@($pr | Select-Object -First 3) | ForEach-Object { $_.title + $(if ($_.nextAction) { ' - next: ' + $_.nextAction } else { '' }) }) -join '; ') + '.') }
+        if ($ll.Count -gt 0) {
+            $lines += ''
+            $lines += 'LIFE CONTEXT (Jake''s own data; use only what is relevant, never invent):'
+            $lines += $ll
+        }
+    }
     # WORKFORCE: Tony delegated to specialist analysts and merged their reports.
     # Present ONE recommendation in Tony's voice, and be transparent about which
     # specialists were used, what evidence they reviewed, and why - never invent

@@ -359,6 +359,7 @@ function Invoke-TonyBrain {
         openTaskCount = @($openTasks).Count
         liveSignals = $liveSignals   # generic live-provider signals (weather, calendar, ...); explained naturally
         workforce = $workforce       # merged specialist report (present only for delegated questions)
+        life = if ($exec) { $exec.life } else { $null }   # Life OS domains (read-only) so Tony can reference goals/non-negotiables/family/agency
     }
 
     $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxForProvider -Identity $identity -Goals $goals -Mission $mission `

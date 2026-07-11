@@ -130,6 +130,24 @@ function Get-ExecutiveSummaryText {
 }
 
 # THE single source of Tony's situational awareness.
+# One calm life-awareness sentence for the executive summary - Family first, then
+# a non-negotiable worth protecting when the day is full. Returns '' when nothing
+# is genuinely worth surfacing (never noise). Full domain data reaches Tony via
+# the provider's LIFE CONTEXT block; this is only the one-line briefing nudge.
+function Get-LifeAwarenessLine {
+    param($Life, $ActiveGoals = @(), $OpenTasks = @(), $Calendar = $null)
+    if (-not $Life) { return '' }
+    $ft = @($Life.familyToday)
+    if ($ft.Count -gt 0) { return ("You have a family commitment today ({0}) - keep the day shaped around it." -f [string]$ft[0].title) }
+    $nn = @($Life.nonNegotiables)
+    if ($nn.Count -gt 0) {
+        $busy = $false
+        if ($Calendar -and $Calendar.ok -and $Calendar.insights -and $Calendar.insights.today) { $busy = [bool]$Calendar.insights.today.meetingHeavy }
+        if ($busy) { return ("Protect time for your non-negotiable: {0}." -f [string]$nn[0].title) }
+    }
+    return ''
+}
+
 function Get-TonyExecutiveContext {
     param(
         [string]$CurrentWorkspace = 'unknown',
@@ -161,8 +179,8 @@ function Get-TonyExecutiveContext {
     # -- identity slices (referenced) --
     $identity    = if ($base -and $base.identity) { $base.identity.overview } else { $null }
     $goalsData   = if ($base -and $base.identity) { $base.identity.goals } else { $null }
-    $goals       = if ($goalsData) { @($goalsData.goals) } else { @() }
-    $activeGoals = @($goals | Where-Object { $null -ne $_.progress -and [int]$_.progress -lt 100 })
+    $goals       = if (& $has 'Get-GoalsList') { @(Get-GoalsList) } elseif ($goalsData) { @($goalsData.goals) } else { @() }
+    $activeGoals = if (& $has 'Get-ActiveGoals') { @(Get-ActiveGoals) } else { @($goals | Where-Object { $null -ne $_.progress -and [int]$_.progress -lt 100 }) }
     $mission     = if ($base -and $base.identity -and $base.identity.mission) { $base.identity.mission.statement } else { '' }
     $values      = if ($base -and $base.identity -and $base.identity.values) { @($base.identity.values.values) } else { @() }
     $vision      = if ($base -and $base.identity) { $base.identity.vision } else { $null }
@@ -189,6 +207,22 @@ function Get-TonyExecutiveContext {
     # -- approved permanent memory (READ ONLY; the Memory Manager is the only writer) --
     $memory = if (& $has 'Get-Memories') { try { @(Get-Memories) } catch { @() } } else { @() }
 
+    # -- Life OS domains (READ ONLY by reference; the workspaces own the writes) --
+    # Folded into the ONE context so Tony, the Priority Engine, the Briefing, and
+    # the Workforce specialists all read the same source - never a second copy.
+    $todayStr = $Now.ToString('yyyy-MM-dd')
+    $lifeGet = { param($d) if (& $has 'Get-LifeItems') { try { @(Get-LifeItems -Domain $d -ActiveOnly) } catch { @() } } else { @() } }
+    $nonNegotiables = & $lifeGet 'nonNegotiables'
+    $family = & $lifeGet 'family'; $health = & $lifeGet 'health'; $financial = & $lifeGet 'financial'
+    $agency = & $lifeGet 'agency'; $learning = & $lifeGet 'learning'; $projects = & $lifeGet 'projects'
+    $familyToday = @($family | Where-Object { $_.date -eq $todayStr })
+    # fill the reserved `project` slot from the active home project (no new store)
+    if (-not $CurrentProject -and @($projects).Count -gt 0) { $CurrentProject = ('{0}{1}' -f $projects[0].title, $(if ($projects[0].nextAction) { ' - next: ' + $projects[0].nextAction } else { '' })) }
+    $life = [pscustomobject]@{
+        nonNegotiables = @($nonNegotiables); family = @($family); familyToday = @($familyToday)
+        health = @($health); financial = @($financial); agency = @($agency); learning = @($learning); projects = @($projects)
+    }
+
     # -- live-provider signals (passed in, never fetched here): weather, calendar, ... --
     $weather  = if ($LiveSignals -and $LiveSignals.ContainsKey('weather'))  { $LiveSignals['weather'] }  else { $null }
     $calendar = if ($LiveSignals -and $LiveSignals.ContainsKey('calendar')) { $LiveSignals['calendar'] } else { $null }
@@ -211,6 +245,9 @@ function Get-TonyExecutiveContext {
     $summary = Get-ExecutiveSummaryText -Time $time -Workspace $CurrentWorkspace -Project $CurrentProject `
         -Priorities $priorities -OpenCount $openCount -LatestAudit $latestAudit -AnnualTheme $annualTheme `
         -Assessment $assessment -Guidance $guidance -Memory $memory -Weather $weather -Calendar $calendar -Email $email
+    # one calm life-awareness sentence, only when something is genuinely relevant today
+    $lifeLine = Get-LifeAwarenessLine -Life $life -ActiveGoals $activeGoals -OpenTasks $openTasks -Calendar $calendar
+    if ($lifeLine) { $summary = ($summary.TrimEnd() + ' ' + $lifeLine) }
 
     return [pscustomobject]@{
         source             = 'executive-context'
@@ -227,6 +264,10 @@ function Get-TonyExecutiveContext {
         openCount          = $openCount
         goals              = $goals
         activeGoals        = $activeGoals
+        life               = $life           # Life OS domains (read-only reference; workspaces own writes)
+        nonNegotiables     = @($nonNegotiables)
+        familyToday        = @($familyToday)
+        projects           = @($projects)
         identity           = $identity
         mission            = $mission
         values             = $values
