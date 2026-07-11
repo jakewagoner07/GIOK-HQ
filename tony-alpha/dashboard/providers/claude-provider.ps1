@@ -182,9 +182,20 @@ function Get-ClaudeUserContent {
             $acctTxt = if ($c.accountCount -gt 1) { ('across {0} Google accounts (primary {1})' -f $c.accountCount, $c.account) } else { [string]$c.account }
             $lines += ("LIVE CALENDAR ({0}, fetched {1}, timezone {2}): {3} event(s) today, {4} tomorrow." -f $acctTxt, $c.timestamp, $c.timezone, $c.todayCount, $c.tomorrowCount)
             if ($c.nextEvent) { $lines += ("Next: ""{0}"" {1}-{2}{3}." -f $c.nextEvent.title, $c.nextEvent.start.ToString('ddd h:mm tt'), $c.nextEvent.end.ToString('h:mm tt'), $(if ($c.nextEvent.location) { ' at ' + $c.nextEvent.location } else { '' })) }
-            foreach ($ev in @($c.events | Select-Object -First 12)) {
+            # Show today's + tomorrow's events IN FULL (the actionable horizon), then a
+            # few upcoming - NEVER a flat first-N that can silently drop a later event or a
+            # secondary-account event (the old "-First 12" over an 8-day window hid events
+            # past the 12 earliest, which structurally favored dense mornings over
+            # interspersed personal/secondary-account events). Multi-account: tag each event
+            # with its source account so Tony can attribute it to the right calendar.
+            $refDate = try { [datetime]::Parse($c.timestamp).Date } catch { (Get-Date).Date }
+            $near = @($c.events | Where-Object { $_.start.Date -le $refDate.AddDays(1) })
+            $later = @($c.events | Where-Object { $_.start.Date -gt $refDate.AddDays(1) } | Select-Object -First 8)
+            $multiAcct = ([int]$c.accountCount -gt 1)
+            foreach ($ev in @(@($near) + @($later) | Select-Object -First 60)) {
                 $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd') + ', all day' } else { $ev.start.ToString('ddd h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
-                $lines += (" - {0}: {1}{2}{3}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }))
+                $acctTag = if ($multiAcct -and @($ev.sourceAccounts).Count -gt 0) { ' [' + ((@($ev.sourceAccounts)) -join ', ') + ']' } else { '' }
+                $lines += (" - {0}: {1}{2}{3}{4}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }), $acctTag)
             }
             if (@($c.freeWindows).Count -gt 0) { $lines += ('Free windows: ' + ((@($c.freeWindows) | ForEach-Object { $_.start.ToString('ddd h:mm tt') + '-' + $_.end.ToString('h:mm tt') + ' (' + $_.minutes + 'm)' }) -join '; ')) }
             if (@($c.conflicts).Count -gt 0) { $lines += ('Scheduling conflicts: ' + ((@($c.conflicts) | ForEach-Object { $_.a + ' overlaps ' + $_.b }) -join '; ')) }
