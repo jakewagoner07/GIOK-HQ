@@ -43,6 +43,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\live-providers.ps1')
 . (Join-Path $PSScriptRoot 'core\google-oauth.ps1')
 . (Join-Path $PSScriptRoot 'core\email-intelligence.ps1')
+. (Join-Path $PSScriptRoot 'core\crm-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-context.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-priority.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-timeline.ps1')
@@ -54,6 +55,7 @@ try {
 . (Join-Path $PSScriptRoot 'providers\weather-provider.ps1')
 . (Join-Path $PSScriptRoot 'providers\google-calendar-provider.ps1')
 . (Join-Path $PSScriptRoot 'providers\gmail-provider.ps1')
+. (Join-Path $PSScriptRoot 'providers\gohighlevel-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
 

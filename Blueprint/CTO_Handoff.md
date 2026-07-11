@@ -81,11 +81,26 @@ These are settled and should not be re-litigated without a blueprint change:
    never act, never reach Jake directly, and cannot bypass Tony — only Tony's merged synthesis is
    presented, with transparency (specialists used, evidence, reasoning) and the Decision Framework as
    final authority. Future specialists plug in with no redesign. The **org chart and bylaws are
-   constitutional** — see `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason + future
-   hires), which also settles two permanent rules: the **Executive Awareness Principle** ("Tony never
-   silently ignores meaningful information; he reduces complexity without reducing awareness") and the
-   **Rule of Progressive Delegation** ("Tony delegates to the fewest specialists necessary to
+   constitutional** — see `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason, **Randy** +
+   future hires), which also settles two permanent rules: the **Executive Awareness Principle** ("Tony
+   never silently ignores meaningful information; he reduces complexity without reducing awareness")
+   and the **Rule of Progressive Delegation** ("Tony delegates to the fewest specialists necessary to
    confidently answer the question").
+10. **Specialists are built around disciplines, not vendors (Epic 3, `Randy_CRM_Manager.md`).** Randy
+   the CRM Manager understands **CRM as a discipline** (leads, pipeline, renewals, underwriting,
+   requirements, policies, follow-ups) — **not GoHighLevel**. A CRM is a data source, not an identity;
+   a new CRM (HubSpot, Salesforce, Zoho, Pipedrive, custom) is a **provider backend + normalizer**,
+   never a redesign of the specialist. The CRM reads through the existing live-provider registry as the
+   `crm` signal into the one Executive Context (no CRM store, no mirror DB — Single Source of Truth),
+   and Randy consumes only the **normalized CRM model**. Provider architecture is in
+   `Blueprint/CRM_Provider.md`. **Built (Epic 3 Phase 3):** a read-only **GoHighLevel** backend
+   (`providers/gohighlevel-provider.ps1`) + provider-neutral `core/crm-intelligence.ps1` + Randy.
+   Permanent invariants for every CRM backend: **read-only by construction** (the HTTP helper issues
+   **only GET**; no create/update/delete, no messaging), **no CRM mirror** (fetch on demand, store
+   nothing), **honest availability** (unexposed data such as policies/renewals/requirements is reported
+   `unavailable`, never fabricated), and **auth via a HighLevel Private Integration Token** (static
+   bearer, gitignored, least-privilege `*.readonly` scopes; OAuth is the future multi-tenant alternative
+   behind the same contract). Writes remain a later consent-gated sprint.
 
 ## Security / privacy rules
 

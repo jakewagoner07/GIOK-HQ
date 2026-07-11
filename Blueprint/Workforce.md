@@ -93,10 +93,12 @@ every time.
 
 ## Current Workforce
 
-*(As implemented by D20. Emma and Riley are on staff; their tools — the Executive Priority Engine
-(D18) and the Executive Timeline (D19) — ship on their own branches and their analysts activate
-automatically once those engines are in the build. Until then they report honestly that the tool is
-not yet present — never a fabricated result.)*
+*(As implemented by D20, plus Randy — hired in Epic 3. Emma, Riley, and Randy are on staff. Emma's and
+Riley's tools — the Executive Priority Engine (D18) and the Executive Timeline (D19) — ship on their
+own branches and activate once those engines are in the build. Randy's first tool — a read-only
+**GoHighLevel** CRM backend (Epic 3 Phase 3) — is **built**; she activates once Jake connects a
+HighLevel token. Until a tool is present/connected, each analyst reports honestly that it is not yet
+available — never a fabricated result.)*
 
 ### Standard Report Format (all members)
 
@@ -241,6 +243,37 @@ Every specialist returns exactly this shape:
 - **Success Metrics:** The document's meaning and any actions are captured accurately.
 - **Standard Report Format:** as above; `scope = document`.
 
+### Randy — CRM Manager
+
+*(Hired in Epic 3. Full authoritative charter: [Randy_CRM_Manager.md](Randy_CRM_Manager.md) — the
+first member with a dedicated constitutional file, establishing the pattern for future named hires.)*
+
+- **Name:** Randy
+- **Title:** CRM Manager  *(engine role: CRM Analyst; tool: read-only GoHighLevel CRM provider —
+  **built**, Epic 3 Phase 3 ([CRM_Provider.md](CRM_Provider.md)); activates on connect)*
+- **Mission:** Keep Jake ahead of his book of business — follow-ups, renewals, underwriting,
+  requirements, and real revenue — without letting a client, lead, or requirement fall through.
+- **Responsibilities:** Lead and client management; pipeline awareness; renewals; underwriting;
+  outstanding requirements; CRM appointments (surfaced, never created); revenue opportunities;
+  policies; follow-up health; business health.
+- **Authority:** Recommend what in the book deserves Jake's attention. No authority to change the CRM
+  or contact anyone.
+- **Limitations:** Read-only; existing sources only; no storage; no direct contact with Jake. She
+  **understands CRM, not GoHighLevel** — vendor is a provider detail, never her identity. Fabricates
+  nothing; `unavailable` when no CRM is connected.
+- **Inputs:** The normalized `crm` signal from the Executive Context (or `Get-CRM` when connected) —
+  normalized nouns only, never a raw vendor payload.
+- **Outputs:** A book-of-business read — pipeline health, follow-ups due, renewals in the window,
+  outstanding requirements, stale opportunities, revenue at risk — plus the few items that need Jake.
+- **Evidence Sources:** The connected CRM (read-only) via its normalizer; each finding carries its
+  record id as `sourceId`.
+- **Confidence:** ~0.8 when a CRM is connected; **`unavailable`** (honestly) on a build without one.
+- **Escalation Rules:** No CRM / unavailable → says so; conflict with calendar/email → surface to Tony;
+  expiring renewal or blocking requirement → flag `needs-attention`.
+- **Success Metrics:** No lead lost; no renewal missed; requirements clear faster; follow-up health
+  visible; Jake sees the few relationships that need him.
+- **Standard Report Format:** as above; `scope = crm`.
+
 ---
 
 ## Future Hires (placeholders — same interface, no redesign)
@@ -249,8 +282,7 @@ Each future hire will register the standard interface, read its own (future) pro
 merge into Tony's one recommendation. None exists yet; they are named here so the org chart is
 stable.
 
-- **CRM Manager** — reads a CRM provider (e.g., GoHighLevel, read-only first); pipeline, follow-ups,
-  stale opportunities. `scope = crm`.
+- *(CRM Manager — **filled by Randy**, Epic 3; moved into the Current Workforce above. `scope = crm`.)*
 - **Finance Analyst** — reads a finance/accounting provider; cash flow, commissions, bills due.
   `scope = finance`.
 - **Research Analyst** — reads web/research sources; answers a question with cited findings.
