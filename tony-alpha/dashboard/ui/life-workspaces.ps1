@@ -67,6 +67,198 @@ function New-GoalStatusChip {
     return (New-Chip -Text $Status.ToUpper() -Bg $c[0] -Fg $c[1])
 }
 
+# =====================================================================
+# GENERIC LIFE-OS DOMAIN WORKSPACE (Non-Negotiables, Family, Health,
+# Financial, Agency, Learning, Home Projects). One spec-driven renderer so
+# every domain is consistent (Stage 7 polish is inherent). Reads via
+# Get-LifeItems; writes only via Add/Update/Set/Remove-LifeItem.
+# =====================================================================
+$script:LifeEditKey = $null       # "domain:id" currently in inline edit
+$script:LifeShowInactive = @{}    # per-view: show paused/archived
+
+# Build one input control for a field spec; returns the control.
+function New-LifeFieldControl {
+    param($Field, $Value = '')
+    switch ($Field.type) {
+        'combo'     { return (New-LifeCombo -Options $Field.options -Selected ([string]$Value) -Width 240) }
+        'multiline' { return (New-LifeInput -Text ([string]$Value) -MinLines 2) }
+        'number'    { return (New-LifeInput -Text ([string]$Value) -Width 120) }
+        default     { return (New-LifeInput -Text ([string]$Value)) }
+    }
+}
+function Get-LifeControlValue { param($Control) if ($Control -is [Windows.Controls.ComboBox]) { return [string]$Control.SelectedItem } return [string]$Control.Text }
+
+# Validate + collect a field set from a control map. Returns @{ ok; error; fields }.
+function Read-LifeFields {
+    param($Spec, $Controls)
+    $fields = @{}
+    foreach ($f in $Spec.addFields) {
+        $v = (Get-LifeControlValue $Controls[$f.key]).Trim()
+        if ($f.required -and [string]::IsNullOrWhiteSpace($v)) { return @{ ok = $false; error = ("{0} is required." -f ($f.label -replace ' \*$', '')); fields = $null } }
+        if ($f.type -eq 'date' -or $f.key -match 'Date$') { if ($v -and ($v -notmatch '^\d{4}-\d{2}-\d{2}$')) { return @{ ok = $false; error = ("{0} must look like 2026-12-31 (or blank)." -f ($f.label -replace ' \*$', '')); fields = $null } } }
+        $fields[$f.key] = $v
+    }
+    return @{ ok = $true; error = ''; fields = $fields }
+}
+
+# The generic domain view.
+function New-LifeDomainView {
+    param([Parameter(Mandatory)][string]$Key)
+    $spec = $script:LifeSpecs[$Key]
+    if (-not $spec) { return (New-Text -Text ("Unknown workspace: {0}" -f $Key)) }
+    $domain = $spec.domain
+
+    $outer = New-Object Windows.Controls.DockPanel
+    $head = New-LifeHeader -Title $spec.title -Source $spec.source -Intro $spec.intro
+    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
+    $body = New-Object Windows.Controls.StackPanel; $body.Margin = New-Object Windows.Thickness (4, 0, 12, 8)
+
+    # optional: this domain's goals (from the ONE goal store), read-only pointer
+    if ($spec.goalDomain) {
+        $dg = @(Get-GoalsList | Where-Object { $_.domain -eq $spec.goalDomain -and $_.status -in @('active', 'paused') })
+        $gBody = New-Object Windows.Controls.StackPanel
+        if ($dg.Count -eq 0) { $gBody.Children.Add((New-Text -Text ("No {0} goals yet. Add them in Goals (they live in the one goal store)." -f $spec.goalDomain) -Size 12.5 -Color $script:Col.Muted -Wrap $true)) | Out-Null }
+        else { foreach ($g in $dg) { $gBody.Children.Add((New-Text -Text ('- ' + $g.title + '  (' + $g.progress + '%)') -Size 12.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null } }
+        $gBody.Children.Add((New-MiniButton -Text 'Open Goals' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) Set-ActiveView 'Goals' })) | Out-Null
+        $body.Children.Add((New-Card -Title ($spec.goalDomain + ' goals') -Body $gBody)) | Out-Null
+    }
+
+    # --- add card ---
+    $addStack = New-Object Windows.Controls.StackPanel
+    $controls = @{}
+    foreach ($f in $spec.addFields) {
+        $addStack.Children.Add((New-LifeFieldLabel $f.label)) | Out-Null
+        $ctl = New-LifeFieldControl -Field $f
+        $controls[$f.key] = $ctl
+        $addStack.Children.Add($ctl) | Out-Null
+    }
+    $err = New-Text -Text '' -Size 12 -Color '#9B1C1C' -Wrap $true
+    $addStack.Children.Add($err) | Out-Null
+    $saveBtn = New-MiniButton -Text ('+ ' + $spec.addVerb) -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick {
+        param($s, $e)
+        $r = Read-LifeFields -Spec $spec -Controls $controls
+        if (-not $r.ok) { $err.Text = $r.error; return }
+        [void](Add-LifeItem -Domain $domain -Fields $r.fields)
+        Show-LifeView { New-LifeDomainView -Key $Key }
+    }.GetNewClosure()
+    $saveBtn.HorizontalAlignment = 'Left'; $saveBtn.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
+    $addStack.Children.Add($saveBtn) | Out-Null
+    $body.Children.Add((New-Card -Title $spec.addTitle -Body $addStack)) | Out-Null
+
+    # --- active/paused toggle ---
+    $all = @(Get-LifeItems -Domain $domain)
+    $activeItems = @($all | Where-Object { $_.active })
+    $pausedItems = @($all | Where-Object { -not $_.active })
+    $showInactive = [bool]$script:LifeShowInactive[$Key]
+    $toggle = New-Object Windows.Controls.StackPanel; $toggle.Orientation = 'Horizontal'; $toggle.Margin = New-Object Windows.Thickness (4, 4, 0, 6)
+    $tA = New-MiniButton -Text ("Active ({0})" -f $activeItems.Count) -Bg $(if (-not $showInactive) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if (-not $showInactive) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e) $script:LifeShowInactive[$Key] = $false; Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure()
+    $tA.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
+    $tP = New-MiniButton -Text ("Paused ({0})" -f $pausedItems.Count) -Bg $(if ($showInactive) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($showInactive) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e) $script:LifeShowInactive[$Key] = $true; Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure()
+    $toggle.Children.Add($tA) | Out-Null; $toggle.Children.Add($tP) | Out-Null
+    $body.Children.Add($toggle) | Out-Null
+
+    $shown = if ($showInactive) { $pausedItems } else { $activeItems }
+    if ($shown.Count -eq 0) {
+        $body.Children.Add((New-Text -Text $(if ($showInactive) { 'Nothing paused.' } else { $spec.emptyText }) -Size 13 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (6, 6, 0, 0)))) | Out-Null
+    }
+    else { foreach ($it in $shown) { $body.Children.Add((New-LifeItemCard -Key $Key -Item $it)) | Out-Null } }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $body
+    $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
+function New-LifeItemCard {
+    param([string]$Key, $Item)
+    $spec = $script:LifeSpecs[$Key]; $domain = $spec.domain
+    if ($script:LifeEditKey -eq ($domain + ':' + $Item.id)) { return (New-LifeItemEditor -Key $Key -Item $Item) }
+    $body = New-Object Windows.Controls.StackPanel
+
+    # optional 'kind' chip
+    if (($spec.addFields | Where-Object { $_.key -eq 'kind' }) -and $Item.kind) {
+        $chips = New-Object Windows.Controls.StackPanel; $chips.Orientation = 'Horizontal'; $chips.Margin = New-Object Windows.Thickness (0, 0, 0, 6)
+        $chips.Children.Add((New-Chip -Text $Item.kind -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk)) | Out-Null
+        $body.Children.Add($chips) | Out-Null
+    }
+    foreach ($cf in $spec.cardFields) {
+        $val = [string]$Item.($cf.key)
+        if ($cf.key -eq 'progress') { continue }
+        if (-not [string]::IsNullOrWhiteSpace($val)) {
+            $body.Children.Add((New-Text -Text ($cf.label + ': ' + $val) -Size 12.5 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null
+        }
+    }
+    # progress bar + steppers (learning)
+    if ($spec.addFields | Where-Object { $_.key -eq 'progress' }) {
+        $iid = $Item.id
+        $prow = New-Object Windows.Controls.DockPanel; $prow.Margin = New-Object Windows.Thickness (0, 4, 0, 6)
+        $pt = New-Text -Text ("Progress: {0}%" -f $Item.progress) -Size 12.5 -Weight 'SemiBold' -Color $script:Col.Ink
+        [Windows.Controls.DockPanel]::SetDock($pt, 'Left'); $prow.Children.Add($pt) | Out-Null
+        $st = New-Object Windows.Controls.StackPanel; $st.Orientation = 'Horizontal'; $st.HorizontalAlignment = 'Right'
+        $st.Children.Add((New-MiniButton -Text '-10%' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) [void](Update-LifeItem -Domain $domain -Id $iid -Fields @{ progress = ([int]$Item.progress - 10) }); Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null
+        $st.Children.Add((New-MiniButton -Text '+10%' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) [void](Update-LifeItem -Domain $domain -Id $iid -Fields @{ progress = ([int]$Item.progress + 10) }); Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null
+        $prow.Children.Add($st) | Out-Null; $body.Children.Add($prow) | Out-Null
+        $track = New-Object Windows.Controls.Border; $track.Height = 8; $track.CornerRadius = New-Object Windows.CornerRadius 4; $track.Background = New-Brush $script:Col.Line; $track.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+        $fill = New-Object Windows.Controls.Border; $fill.Height = 8; $fill.CornerRadius = New-Object Windows.CornerRadius 4; $fill.Background = New-Brush $script:Col.Accent; $fill.HorizontalAlignment = 'Left'; $fill.Width = [math]::Max(0, [math]::Min(100, [int]$Item.progress)) * 3.0
+        $track.Child = $fill; $body.Children.Add($track) | Out-Null
+    }
+
+    # actions
+    $iid = $Item.id
+    $actions = New-Object Windows.Controls.StackPanel; $actions.Orientation = 'Horizontal'
+    $actions.Children.Add((New-MiniButton -Text 'Edit' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) $script:LifeEditKey = ($domain + ':' + $iid); Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null
+    if ($Item.active) { $actions.Children.Add((New-MiniButton -Text 'Pause' -Bg '#FDF6B2' -Fg '#8E4B10' -OnClick { param($s, $e) [void](Set-LifeItemActive -Domain $domain -Id $iid -Active $false); Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null }
+    else { $actions.Children.Add((New-MiniButton -Text 'Resume' -Bg '#DEF7EC' -Fg '#03543F' -OnClick { param($s, $e) [void](Set-LifeItemActive -Domain $domain -Id $iid -Active $true); Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null }
+    $actions.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) [void](Remove-LifeItem -Domain $domain -Id $iid); Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null
+    $body.Children.Add($actions) | Out-Null
+
+    $titleText = [string]$Item.($spec.titleKey); if ([string]::IsNullOrWhiteSpace($titleText)) { $titleText = '(untitled)' }
+    return (New-Card -Title $titleText -Body $body)
+}
+
+function New-LifeItemEditor {
+    param([string]$Key, $Item)
+    $spec = $script:LifeSpecs[$Key]; $domain = $spec.domain
+    $body = New-Object Windows.Controls.StackPanel
+    $controls = @{}
+    foreach ($f in $spec.addFields) {
+        $body.Children.Add((New-LifeFieldLabel $f.label)) | Out-Null
+        $ctl = New-LifeFieldControl -Field $f -Value ([string]$Item.($f.key))
+        $controls[$f.key] = $ctl
+        $body.Children.Add($ctl) | Out-Null
+    }
+    $err = New-Text -Text '' -Size 12 -Color '#9B1C1C' -Wrap $true; $body.Children.Add($err) | Out-Null
+    $iid = $Item.id
+    $row = New-Object Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'; $row.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
+    $row.Children.Add((New-MiniButton -Text 'Save' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick {
+                param($s, $e)
+                $r = Read-LifeFields -Spec $spec -Controls $controls
+                if (-not $r.ok) { $err.Text = $r.error; return }
+                [void](Update-LifeItem -Domain $domain -Id $iid -Fields $r.fields)
+                $script:LifeEditKey = $null; Show-LifeView { New-LifeDomainView -Key $Key }
+            }.GetNewClosure())) | Out-Null
+    $row.Children.Add((New-MiniButton -Text 'Cancel' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) $script:LifeEditKey = $null; Show-LifeView { New-LifeDomainView -Key $Key } }.GetNewClosure())) | Out-Null
+    $body.Children.Add($row) | Out-Null
+    return (New-Card -Title ('Editing: ' + [string]$Item.($spec.titleKey)) -Body $body)
+}
+
+# ---- domain spec registry (Stages 2-5 add entries here) --------------
+$script:LifeSpecs = @{
+    'Non-Negotiables' = @{
+        domain = 'nonNegotiables'; title = 'Non-Negotiables'; source = 'life_os.json'; addVerb = 'Add commitment'; addTitle = 'Add a non-negotiable'
+        intro  = 'Your bright lines - the commitments you protect no matter what (gym, family dinner, weekly planning). Tony watches the day and warns you when the schedule threatens one.'
+        goalDomain = $null; titleKey = 'title'
+        addFields = @(
+            @{ key = 'title'; label = 'Commitment *'; type = 'text'; required = $true },
+            @{ key = 'cadence'; label = 'Cadence (daily, Mon/Wed/Fri, weekly, ...)'; type = 'text' },
+            @{ key = 'purpose'; label = 'Why it protects you'; type = 'text' },
+            @{ key = 'protection'; label = 'Protection rule (what to guard - e.g. no meetings after 6pm)'; type = 'multiline' }
+        )
+        cardFields = @(@{ key = 'cadence'; label = 'Cadence' }, @{ key = 'purpose'; label = 'Purpose' }, @{ key = 'protection'; label = 'Protect' })
+        emptyText  = 'No non-negotiables yet. Add your first bright line above - Tony will help you protect it.'
+    }
+}
+function Get-LifeSpecKeys { return @($script:LifeSpecs.Keys) }
+
 # ---- Goals workspace -------------------------------------------------
 # The ONE goal store (identity/goals.json), full CRUD. Domain-tagged goals
 # feed the Executive Context and the Priority Engine unchanged.
