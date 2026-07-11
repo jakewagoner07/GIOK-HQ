@@ -3,7 +3,7 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D17** (Multi-Account Google Integration), after RC1 + the alpha merge to `main`.
+Last updated: end of **Sprint D18** (Executive Priority Engine), after D17 (Multi-Account Google).
 
 > **D18 status:** D18 – Executive Priority Engine is feature complete and pushed to
 > `feature/executive-priority-engine`. Merge is intentionally deferred pending 3–5 days of founder
@@ -17,10 +17,10 @@ Last updated: end of **Sprint D17** (Multi-Account Google Integration), after RC
 |---|---|
 | **Product** | GIOK — a desktop life/business operating system for Jake Wagoner (GIOK Agency, Ogden, UT), with **Tony**, an AI Chief of Staff, living inside it. |
 | **Current version** | **0.8 Alpha** (`tony-alpha/dashboard/theme/theme.json`) |
-| **Current branch** | `feature/multi-google-accounts` (branched from `main` @ `cc17879`) |
-| **Current PR** | Alpha **PR #1 merged to `main`** (`74c0a63`). D17 will open a new PR when pushed. |
-| **Latest commit** | `main` @ `cc17879` (pushed); **D17 multi-account committed on the feature branch, unpushed** (this checkpoint) |
-| **Remote sync** | Alpha is live on `main`; **D17 local-only until Jake approves a push** |
+| **Current branch** | `feature/executive-priority-engine` (branched from `main` @ `b1f011d`) |
+| **Current PR** | Alpha PR #1 and D17 PR #2 both **merged to `main`** (`main` @ `b1f011d`). D18 opens a new PR when pushed. |
+| **Latest commit** | `main` @ `b1f011d` (pushed); **D18 Executive Priority Engine committed on the feature branch, unpushed** (this checkpoint) |
+| **Remote sync** | D17 merged to `main`; **D18 local-only until Jake approves a push** |
 | **Platform** | Windows PowerShell 5.1 (STA) + .NET WPF. No Node/Python. Entry point: `tony-alpha/dashboard/dashboard.ps1`. |
 
 ---
@@ -93,7 +93,8 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D15 | Calendar Intelligence (first/last/total, free blocks, meeting-heavy days) fed into the Executive Briefing | `7c73e10` (+`722dce4`) |
 | D16 | Gmail Provider — read-only Executive Email Summary on shared OAuth + provider-neutral email intelligence | `8dc0dcc` (+`9cbe816`) |
 | RC1 | Alpha Cleanup & Release Review (retired dead `tony-memory.ps1`; fixed `Get-ConversationPath` collision) — merged to `main` | `0530933` (merge `74c0a63`) |
-| D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | (this checkpoint) |
+| D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | `593df92` (merge `b1f011d`) |
+| D18 | Executive Priority Engine — ranks every real item into Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss; folded into the Executive Briefing | (this checkpoint) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
 
@@ -207,10 +208,14 @@ Projects, Learning.
   store, full response pipeline, native UTF-8, memory permission flow, observation/decision/context.
 - **Read-only re-audited (D17):** only `calendar.readonly` + `gmail.readonly` scopes; every POST hits
   OAuth token/revoke only; data reads are GET — no write scope or write call anywhere.
+- **Executive Priority Engine (D18):** ranked Act Now / Do Today / Keep Visible / Low-Value Noise
+  verified across empty/busy days, family-vs-business, urgent-email-vs-time-block, cross-source
+  dedupe, many-small-items, promotions, and a disconnected provider — fixtures + a live Home render
+  ("Act first / Also today / Still visible"). No-loss invariant holds.
 
 ## Next recommended sprint
 
-**D18 — Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
-multi-account Calendar- and Gmail-aware) so it is ready the instant GIOK opens — the first Phase-3
-"ahead of you" capability. (The Calendar provider was migrated onto the shared `core/google-oauth.ps1`
-during D17, so that deferred item is done.) See `Product_Roadmap.md` for the full ordering.
+**D19 — Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
+multi-account and priority-ranked) so it is ready the instant GIOK opens — the first Phase-3 "ahead
+of you" capability. The Executive Priority Engine (D18) gives the scheduler a ranked plan worth
+pre-computing. See `Product_Roadmap.md` for the full ordering.

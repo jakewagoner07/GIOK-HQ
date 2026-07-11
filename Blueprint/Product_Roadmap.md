@@ -25,6 +25,8 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ Memory With Permission — ask-first, Memory Review, user control (D12)
 - ✅ Document Intelligence foundation — read for meaning, approval-gated (D6)
 - ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
+- ✅ Executive Priority Engine — Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss
+  awareness; Decision Framework as final authority; folded into the briefing (D18)
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
@@ -85,19 +87,19 @@ GIOK becomes the operating layer across devices and the agency.
 
 ## Next recommended sprints
 
-1. **D18 — Executive Automation Foundation (local scheduler).**
-   Pre-compose the morning briefing (now MULTI-ACCOUNT Calendar- AND Gmail-aware) so it's ready the
-   instant GIOK opens; the seam already exists in the briefing/context engines.
-   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it now has
-   rich multi-account signals worth pre-computing.
+1. **D19 — Executive Automation Foundation (local scheduler).**
+   Pre-compose the morning briefing (now MULTI-ACCOUNT and PRIORITY-RANKED) so it's ready the instant
+   GIOK opens; the seam already exists in the briefing/context/priority engines.
+   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and the D18
+   Executive Priority Engine gives it a ranked plan worth pre-computing.
 
-2. **D19 — Projects Model.**
+2. **D20 — Projects Model.**
    A real projects store so the Executive Context `project` field is live, Action Items can link to a
    project/goal, and priority "why" gets specific.
    *Why next:* removes standing technical debt and sharpens judgment across Home, briefing, and
    context — compounding value for every later sprint.
 
-3. **D20 — Meeting Prep + Focus-Block Protection.**
+3. **D21 — Meeting Prep + Focus-Block Protection.**
    Using Calendar + Gmail (now across all accounts), Tony drafts a short prep for the next meeting and
    proposes protecting the clearest free block.
    *Why next:* the first genuinely "chief-of-staff" proactive help, and a natural on-ramp to

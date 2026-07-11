@@ -874,8 +874,35 @@ function New-ExecutiveBriefingCard {
         if ($es.guidance) { $sp.Children.Add((New-Text -Text $es.guidance -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null }
     }
 
-    # today's top three, each with its WHY
-    if (@($m.priorities).Count -gt 0) {
+    # Today's priorities - the Executive Priority Engine (D18): Act first /
+    # Also today / Still visible. Nothing legitimate is lost. Falls back to the
+    # original Top Three when the plan isn't available.
+    $plan = if ($m.PSObject.Properties.Name -contains 'priorityPlan') { $m.priorityPlan } else { $null }
+    if ($plan -and -not $plan.empty) {
+        if (@($plan.actFirst).Count -gt 0) {
+            $sp.Children.Add((New-BriefingLabel -Text 'ACT FIRST')) | Out-Null
+            foreach ($p in $plan.actFirst) {
+                $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 11)
+                $badge = New-NumBadge -N $p.rank; [Windows.Controls.DockPanel]::SetDock($badge, 'Left'); $row.Children.Add($badge) | Out-Null
+                $col = New-Object Windows.Controls.StackPanel
+                $col.Children.Add((New-Text -Text $p.title -Size 14 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+                $col.Children.Add((New-Text -Text $p.why -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 1, 0, 0)))) | Out-Null
+                $row.Children.Add($col) | Out-Null; $sp.Children.Add($row) | Out-Null
+            }
+            if ($plan.reason) { $sp.Children.Add((New-Text -Text $plan.reason -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 1, 0, 2)))) | Out-Null }
+        }
+        if (@($plan.alsoToday).Count -gt 0) {
+            $sp.Children.Add((New-BriefingLabel -Text 'ALSO TODAY')) | Out-Null
+            foreach ($p in $plan.alsoToday) { $sp.Children.Add((New-Text -Text ('-  ' + $p.title) -Size 13 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null }
+        }
+        if ($plan.stillVisible) {
+            $sp.Children.Add((New-BriefingLabel -Text 'STILL VISIBLE')) | Out-Null
+            $sp.Children.Add((New-Text -Text $plan.stillVisible -Size 12.5 -Color $script:Col.Muted -Wrap $true)) | Out-Null
+        }
+        if ($plan.guidanceNote) { $sp.Children.Add((New-Text -Text $plan.guidanceNote -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null }
+        if ($plan.setAside) { $sp.Children.Add((New-Text -Text $plan.setAside -Size 10.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null }
+    }
+    elseif (@($m.priorities).Count -gt 0) {
         $sp.Children.Add((New-BriefingLabel -Text 'TODAY''S TOP THREE')) | Out-Null
         foreach ($p in $m.priorities) {
             $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 11)

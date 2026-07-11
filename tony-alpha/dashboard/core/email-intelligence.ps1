@@ -249,6 +249,7 @@ function Get-ExecutiveEmailSummary {
                 category = $_.category
                 why      = $_.why
                 unread   = [bool]$_.msg.unread
+                messageId = $(if (($_.msg.PSObject.Properties.Name -contains 'messageId') -and $_.msg.messageId) { [string]$_.msg.messageId } else { [string]$_.msg.id })
                 accounts = @($(if (($_.msg.PSObject.Properties.Name -contains 'sourceAccounts') -and $_.msg.sourceAccounts) { $_.msg.sourceAccounts } else { @() }))
             }
         })
