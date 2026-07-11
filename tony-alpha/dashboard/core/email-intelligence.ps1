@@ -165,6 +165,27 @@ function Get-ExecutiveEmailSummary {
         $Context = @{}
     )
     $msgs = @($Messages)
+
+    # MERGE POINT (multi-account, D17): the same email can arrive in more than
+    # one connected account. Dedupe by RFC822 Message-ID (fallback to the
+    # per-mailbox id), keeping one copy and remembering every account it landed
+    # in. This is the provider-neutral place where account data is merged.
+    $seen = @{}; $deduped = @()
+    foreach ($m in $msgs) {
+        $mid = if (($m.PSObject.Properties.Name -contains 'messageId') -and $m.messageId) { [string]$m.messageId } else { '' }
+        $key = if ($mid) { 'mid:' + $mid.ToLower() } else { 'id:' + [string]$m.id }
+        $sa = if (($m.PSObject.Properties.Name -contains 'sourceAccount') -and $m.sourceAccount) { [string]$m.sourceAccount } else { '' }
+        if ($seen.ContainsKey($key)) {
+            $existing = $seen[$key]
+            if ($sa -and ($existing.sourceAccounts -notcontains $sa)) { $existing.sourceAccounts = @($existing.sourceAccounts + $sa) }
+            continue
+        }
+        $m | Add-Member -NotePropertyName sourceAccounts -NotePropertyValue @($(if ($sa) { $sa } else { $null }) | Where-Object { $_ }) -Force
+        $seen[$key] = $m
+        $deduped += $m
+    }
+    $msgs = @($deduped)
+
     $classified = @()
     foreach ($m in $msgs) {
         $c = Get-EmailClassification -Msg $m -Context $Context
@@ -200,7 +221,7 @@ function Get-ExecutiveEmailSummary {
         $s += ('{0} {1} your attention.' -f (Get-EmailCountWord -N $needsAttention -Capital), $verb)
     }
     if ($waitingForReply -gt 0) {
-        $who = if ($waitingForReply -eq 1) { 'One person is' } else { ('{0} people are' -f (Get-EmailCountWord -N $waitingForReply -Capital:$false)) }
+        $who = if ($waitingForReply -eq 1) { 'One person is' } else { ('{0} people are' -f (Get-EmailCountWord -N $waitingForReply -Capital)) }
         $s += ('{0} waiting for a response.' -f $who)
     }
     if ($invites.Count -gt 0) {
@@ -228,6 +249,7 @@ function Get-ExecutiveEmailSummary {
                 category = $_.category
                 why      = $_.why
                 unread   = [bool]$_.msg.unread
+                accounts = @($(if (($_.msg.PSObject.Properties.Name -contains 'sourceAccounts') -and $_.msg.sourceAccounts) { $_.msg.sourceAccounts } else { @() }))
             }
         })
 

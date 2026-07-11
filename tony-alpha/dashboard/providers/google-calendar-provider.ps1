@@ -1,25 +1,25 @@
 # =====================================================================
-# google-calendar-provider.ps1  —  Read-ONLY Google Calendar (live provider)
+# google-calendar-provider.ps1  —  Read-ONLY Google Calendar (MULTI-ACCOUNT)
 # ---------------------------------------------------------------------
 # Tony owns the conversation; Google Calendar owns the calendar data; this
-# provider is an implementation detail. Jake asks Tony about his day - he
-# never operates the Google Calendar API.
+# provider is an implementation detail. ONE Calendar provider serves ALL
+# connected Google accounts (D17): it reads each account's calendars
+# read-only, tags every event with its source account, MERGES + DEDUPES
+# across accounts (by iCalUID), and computes one set of Calendar Insights.
+# Never a provider per account.
 #
-# READ ONLY. This provider retrieves and explains calendar information. It
-# NEVER creates, edits, moves, accepts, declines, or deletes events. The
-# only scope requested is calendar.readonly. Write access is out of scope
-# and would require separate, explicit approval.
+# READ ONLY. It NEVER creates, edits, moves, accepts, declines, or deletes
+# events. The only scope requested is calendar.readonly.
 #
-# Auth: Google OAuth 2.0 for an INSTALLED DESKTOP APP - Authorization Code
-# flow with PKCE, a loopback redirect, offline access (refresh token). The
-# system browser handles sign-in and consent; Tony never sees the Google
-# password. No service accounts for a personal calendar.
+# Auth: the SHARED account-aware Google OAuth module (core/google-oauth.ps1)
+# - installed-desktop-app flow (PKCE + loopback + offline refresh), with
+# each account's tokens stored separately (keyed by email) in the gitignored
+# calendar.tokens.json. One expired account never breaks the others.
 #
 # Private local files (gitignored, never printed/committed/logged):
 #   calendar.config.json  - OAuth client id/secret for the desktop app
-#   calendar.tokens.json  - access/refresh tokens
-# It implements the reusable live-provider contract (relevant/query/status)
-# from core/live-providers.ps1, so Tony Brain consumes it generically.
+#   calendar.tokens.json  - per-account access/refresh tokens
+# Registers as the generic 'calendar' live signal.
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -40,157 +40,61 @@ function Get-GCalConfig {
         } catch { }
     }
     return [pscustomobject]@{
-        clientId     = $clientId
-        clientSecret = $clientSecret
-        configured   = -not [string]::IsNullOrWhiteSpace($clientId)
-        source       = $source
-        scope        = 'https://www.googleapis.com/auth/calendar.readonly'
-        authEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth'
-        tokenEndpoint = 'https://oauth2.googleapis.com/token'
+        clientId       = $clientId
+        clientSecret   = $clientSecret
+        configured     = -not [string]::IsNullOrWhiteSpace($clientId)
+        source         = $source
+        scope          = 'https://www.googleapis.com/auth/calendar.readonly'
+        authEndpoint   = 'https://accounts.google.com/o/oauth2/v2/auth'
+        tokenEndpoint  = 'https://oauth2.googleapis.com/token'
         revokeEndpoint = 'https://oauth2.googleapis.com/revoke'
-        apiBase      = 'https://www.googleapis.com/calendar/v3'
-        readOnly     = $true
+        apiBase        = 'https://www.googleapis.com/calendar/v3'
+        tokenPath      = (Get-GCalTokenPath)
+        appName        = 'Google Calendar'
+        diagSource     = 'calendar'
+        readOnly       = $true
     }
 }
 
-# ---- token store (local, gitignored) -------------------------------
-function Get-GCalTokens {
-    $p = Get-GCalTokenPath
-    if (Test-Path $p) { try { return (Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { } }
-    return $null
-}
-function Save-GCalTokens {
-    param([Parameter(Mandatory)] $Tokens)
-    ($Tokens | ConvertTo-Json -Depth 6) | Set-Content -Path (Get-GCalTokenPath) -Encoding UTF8
-}
-function Clear-GCalTokens { $p = Get-GCalTokenPath; if (Test-Path $p) { Remove-Item $p -Force } }
-
-# ---- PKCE ----------------------------------------------------------
-function ConvertTo-Base64Url {
-    param([byte[]]$Bytes)
-    return ([System.Convert]::ToBase64String($Bytes)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-}
-function New-GCalPkce {
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $vb = New-Object byte[] 48; $rng.GetBytes($vb)
-    $verifier = ConvertTo-Base64Url -Bytes $vb
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $challenge = ConvertTo-Base64Url -Bytes ($sha.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($verifier)))
-    return [pscustomobject]@{ verifier = $verifier; challenge = $challenge }
+# The subset passed to the shared OAuth module.
+function Get-GCalOAuthConfig {
+    $c = Get-GCalConfig
+    return [pscustomobject]@{
+        clientId = $c.clientId; clientSecret = $c.clientSecret; scope = $c.scope
+        authEndpoint = $c.authEndpoint; tokenEndpoint = $c.tokenEndpoint; revokeEndpoint = $c.revokeEndpoint
+        apiBase = $c.apiBase; tokenPath = $c.tokenPath; appName = $c.appName; diagSource = $c.diagSource
+    }
 }
 
-# ---- diagnostics that NEVER contain tokens or codes ----------------
 function Write-GCalDiag { param([string]$Level = 'info', [string]$Message = '') if (Get-Command Write-TonyDiag -ErrorAction SilentlyContinue) { Write-TonyDiag -Level $Level -Source 'calendar' -Message $Message } }
 
-# ---- OAuth: connect (interactive, system browser + loopback) -------
-# Opens the system browser for Google sign-in + consent, captures the code
-# on a loopback socket, and exchanges it for tokens. Requires a configured
-# desktop-app client id/secret in calendar.config.json.
-function Connect-GoogleCalendar {
-    $cfg = Get-GCalConfig
-    if (-not $cfg.configured) { return [pscustomobject]@{ ok = $false; state = 'not-configured'; detail = 'No OAuth client configured. Add calendar.config.json (client id/secret for a Desktop app).' } }
-
-    # loopback listener on a free port
-    $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, 0)
-    $listener.Start()
-    $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
-    $redirect = "http://127.0.0.1:$port/"
-
-    $pkce = New-GCalPkce
-    $stateTok = ConvertTo-Base64Url -Bytes ([guid]::NewGuid().ToByteArray())
-    $authUrl = ('{0}?client_id={1}&redirect_uri={2}&response_type=code&scope={3}&access_type=offline&prompt=consent&code_challenge={4}&code_challenge_method=S256&state={5}' -f `
-            $cfg.authEndpoint, [uri]::EscapeDataString($cfg.clientId), [uri]::EscapeDataString($redirect), [uri]::EscapeDataString($cfg.scope), $pkce.challenge, $stateTok)
-
-    Write-GCalDiag -Message ("OAuth begin: opening browser, awaiting loopback on port {0}." -f $port)
-    Start-Process $authUrl | Out-Null
-
-    # accept ONE redirect, parse the code, respond, close
-    $code = $null; $returnedState = $null
-    try {
-        $client = $listener.AcceptTcpClient()   # blocks until the browser redirects
-        $stream = $client.GetStream()
-        $reader = New-Object System.IO.StreamReader($stream)
-        $requestLine = $reader.ReadLine()   # e.g. GET /?code=...&state=... HTTP/1.1
-        if ($requestLine -match 'GET\s+/\?([^ ]+)\s+HTTP') {
-            $qs = $Matches[1]
-            foreach ($pair in ($qs -split '&')) {
-                $kv = $pair -split '=', 2
-                if ($kv[0] -eq 'code') { $code = [uri]::UnescapeDataString($kv[1]) }
-                if ($kv[0] -eq 'state') { $returnedState = [uri]::UnescapeDataString($kv[1]) }
-            }
-        }
-        $html = "<html><body style='font-family:Segoe UI;background:#0f1830;color:#e8eefc;padding:40px'><h2>GIOK - Google Calendar connected.</h2><p>You can close this window and return to Tony.</p></body></html>"
-        $resp = "HTTP/1.1 200 OK`r`nContent-Type: text/html`r`nContent-Length: $($html.Length)`r`nConnection: close`r`n`r`n$html"
-        $wb = [System.Text.Encoding]::UTF8.GetBytes($resp); $stream.Write($wb, 0, $wb.Length); $stream.Flush()
-        $client.Close()
-    } finally { $listener.Stop() }
-
-    if ($returnedState -ne $stateTok) { Write-GCalDiag -Level 'error' -Message 'OAuth state mismatch.'; return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'Authorization state did not match; sign-in was not completed.' } }
-    if (-not $code) { Write-GCalDiag -Level 'error' -Message 'OAuth returned no code.'; return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'No authorization code was returned; consent was not completed.' } }
-
-    # exchange the code for tokens (PKCE + desktop client secret)
-    $body = @{ code = $code; client_id = $cfg.clientId; client_secret = $cfg.clientSecret; redirect_uri = $redirect; grant_type = 'authorization_code'; code_verifier = $pkce.verifier }
-    try {
-        $tok = Invoke-RestMethod -Method Post -Uri $cfg.tokenEndpoint -Body $body -ContentType 'application/x-www-form-urlencoded'
-    } catch {
-        Write-GCalDiag -Level 'error' -Message 'Token exchange failed.'
-        return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'Google would not exchange the authorization for tokens.' }
-    }
-    $store = [pscustomobject]@{
-        access_token  = $tok.access_token
-        refresh_token = $tok.refresh_token
-        token_type    = $tok.token_type
-        scope         = $tok.scope
-        expires_at    = (Get-Date).AddSeconds([int]$tok.expires_in - 60).ToString('o')
-        obtained      = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    }
-    Save-GCalTokens -Tokens $store
-    Write-GCalDiag -Message 'OAuth complete: tokens stored (read-only scope).'
-    return [pscustomobject]@{ ok = $true; state = 'connected'; detail = 'Google Calendar connected (read-only).' }
-}
-
-# Return a valid access token, refreshing with the refresh token if expired.
-function Get-GCalAccessToken {
-    $cfg = Get-GCalConfig
-    $t = Get-GCalTokens
-    if (-not $t -or -not $t.access_token) { return [pscustomobject]@{ ok = $false; state = 'not-connected'; detail = 'Google Calendar is not connected yet.' } }
-    $expired = $true
-    try { $expired = ([datetime]::Parse($t.expires_at) -le (Get-Date)) } catch { }
-    if (-not $expired) { return [pscustomobject]@{ ok = $true; token = $t.access_token; state = 'connected' } }
-    if (-not $t.refresh_token) { return [pscustomobject]@{ ok = $false; state = 'needs-attention'; detail = 'Your Google authorization expired and needs to be renewed.' } }
-    $body = @{ client_id = $cfg.clientId; client_secret = $cfg.clientSecret; refresh_token = $t.refresh_token; grant_type = 'refresh_token' }
-    try {
-        $r = Invoke-RestMethod -Method Post -Uri $cfg.tokenEndpoint -Body $body -ContentType 'application/x-www-form-urlencoded'
-        $t.access_token = $r.access_token
-        $t.expires_at = (Get-Date).AddSeconds([int]$r.expires_in - 60).ToString('o')
-        if ($r.refresh_token) { $t.refresh_token = $r.refresh_token }
-        Save-GCalTokens -Tokens $t
-        Write-GCalDiag -Message 'Access token refreshed.'
-        return [pscustomobject]@{ ok = $true; token = $t.access_token; state = 'connected' }
-    } catch {
-        Write-GCalDiag -Level 'error' -Message 'Token refresh failed.'
-        return [pscustomobject]@{ ok = $false; state = 'needs-attention'; detail = 'Your Google authorization expired and needs to be renewed.' }
-    }
-}
-
-function Disconnect-GoogleCalendar {
-    $cfg = Get-GCalConfig
-    $t = Get-GCalTokens
-    if ($t -and $t.refresh_token) { try { Invoke-RestMethod -Method Post -Uri $cfg.revokeEndpoint -Body @{ token = $t.refresh_token } -ContentType 'application/x-www-form-urlencoded' | Out-Null } catch { } }
-    Clear-GCalTokens
-    Write-GCalDiag -Message 'Disconnected: local authorization removed.'
-    return [pscustomobject]@{ ok = $true; state = 'not-connected'; detail = 'Google Calendar disconnected; local authorization removed.' }
-}
-
-# ---- read-only API calls -------------------------------------------
+# read-only GET against the Calendar API (delegates to the shared decoder).
 function Invoke-GCalApi {
     param([string]$Token, [string]$Path, [hashtable]$Query = @{})
-    $cfg = Get-GCalConfig
-    $qs = (@($Query.GetEnumerator() | ForEach-Object { "$($_.Key)=$([uri]::EscapeDataString([string]$_.Value))" }) -join '&')
-    $url = "$($cfg.apiBase)$Path" + $(if ($qs) { "?$qs" } else { '' })
-    $resp = Invoke-WebRequest -Uri $url -Headers @{ Authorization = "Bearer $Token" } -UseBasicParsing -TimeoutSec 20
-    return (([System.Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray())) | ConvertFrom-Json)
+    return (Invoke-GoogleApi -Token $Token -BaseUrl (Get-GCalConfig).apiBase -Path $Path -Query $Query)
 }
+
+# Resolve an account's identity (primary calendar email) from a token.
+function Resolve-GCalIdentity {
+    param([Parameter(Mandatory)][string]$Token)
+    $calList = Invoke-GCalApi -Token $Token -Path '/users/me/calendarList'
+    $primary = @($calList.items | Where-Object { $_.primary }) | Select-Object -First 1
+    if ($primary) { return [string]$primary.id }
+    return $null
+}
+
+# ---- connect / disconnect (per account) ----------------------------
+function Connect-GoogleCalendar {
+    if (-not (Get-Command Connect-GoogleAccount -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'OAuth module not loaded.' } }
+    $cfg = Get-GCalConfig
+    if (-not $cfg.configured) { return [pscustomobject]@{ ok = $false; state = 'not-configured'; detail = 'No OAuth client configured. Add calendar.config.json (client id/secret for a Desktop app).' } }
+    return (Connect-GoogleAccount -Config (Get-GCalOAuthConfig) -ResolveIdentity { param($tok) Resolve-GCalIdentity -Token $tok })
+}
+function Disconnect-GoogleCalendar {
+    param([Parameter(Mandatory)][string]$Account)
+    return (Disconnect-GoogleAccount -Config (Get-GCalOAuthConfig) -Id $Account)
+}
+function Get-GCalAccountIds { return @(Get-GoogleAccountIds -Path (Get-GCalTokenPath)) }
 
 function Get-GCalEventState {
     param([datetime]$Start, [datetime]$End, [datetime]$Now)
@@ -200,8 +104,10 @@ function Get-GCalEventState {
 }
 
 # Convert a raw Google event into the provider's structured event. Read only.
+# Carries sourceAccount and iCalUID (used to dedupe the same event across
+# accounts / calendars).
 function Convert-GCalEvent {
-    param($Raw, [string]$CalendarId, [datetime]$Now)
+    param($Raw, [string]$CalendarId, [datetime]$Now, [string]$SourceAccount = '')
     if ($Raw.status -eq 'cancelled') { return $null }   # skip cancelled events
     $allDay = [bool]($Raw.start.date -and -not $Raw.start.dateTime)
     if ($allDay) {
@@ -216,7 +122,9 @@ function Convert-GCalEvent {
     $descr = [string]$Raw.description; if ($descr.Length -gt 160) { $descr = $descr.Substring(0, 160) + '...' }
     return [pscustomobject]@{
         id                 = $Raw.id
+        iCalUID            = [string]$Raw.iCalUID
         calendarId         = $CalendarId
+        sourceAccount      = $SourceAccount
         title              = $(if ($Raw.summary) { [string]$Raw.summary } else { '(no title)' })
         start              = $start
         end                = $end
@@ -270,9 +178,8 @@ function Get-GCalConflicts {
     return @($conflicts)
 }
 
-# Calendar Intelligence: the day at a glance, computed from events. Pure,
-# deterministic, testable. First/last meeting, totals, free focus blocks,
-# and which days in the window are meeting-heavy. All-day events are not
+# Calendar Intelligence: the day at a glance, computed from the MERGED events
+# across all accounts. Pure, deterministic, testable. All-day events are not
 # counted as "meetings" (they don't consume focus time).
 function Get-CalendarInsights {
     param($Events, [datetime]$Now = (Get-Date), [int]$HeavyThreshold = 4)
@@ -300,79 +207,126 @@ function Get-CalendarInsights {
     }
 }
 
-# ---- THE contract: structured calendar info (or an honest failure) --
-function Get-Calendar {
-    param([string]$When = 'today', [datetime]$Now = (Get-Date))
+# Fetch the ~8-day window for ONE account (read-only), across its selected
+# calendars. One unreadable calendar is skipped; one unreadable account is
+# captured without breaking the others.
+function Get-GCalAccountData {
+    param([Parameter(Mandatory)][string]$Id, [datetime]$Now = (Get-Date))
     $cfg = Get-GCalConfig
-    $nowStr = $Now.ToString('yyyy-MM-dd HH:mm:ss')
-    $fail = {
-        param($state, $detail)
-        [pscustomobject]@{ provider = 'calendar'; ok = $false; errorState = $state; status = [pscustomobject]@{ state = $state; detail = $detail; lastRefresh = $null; lastError = $detail }; timestamp = $nowStr; account = $null; timezone = $null; calendars = @(); events = @(); nextEvent = $null; todayCount = 0; tomorrowCount = 0; freeWindows = @(); conflicts = @(); insights = $null }
-    }
-    if (-not $cfg.configured) { return (& $fail 'not-configured' 'Google Calendar is not connected yet.') }
-    $at = Get-GCalAccessToken
-    if (-not $at.ok) { return (& $fail $at.state $at.detail) }
-
+    $at = Get-GoogleAccountAccessToken -Config (Get-GCalOAuthConfig) -Id $Id
+    if (-not $at.ok) { return [pscustomobject]@{ ok = $false; id = $Id; email = $Id; state = $at.state; detail = $at.detail; events = @(); calendars = @(); timezone = $null } }
     try {
         $calList = Invoke-GCalApi -Token $at.token -Path '/users/me/calendarList'
         $cals = @($calList.items | Where-Object { $_.selected -ne $false })
         $primary = @($calList.items | Where-Object { $_.primary }) | Select-Object -First 1
-        $account = if ($primary) { [string]$primary.id } else { $null }
+        $email = if ($primary) { [string]$primary.id } else { $Id }
+        if (($Id -eq 'default' -or $Id -like 'account-*') -and $primary) { Rename-GoogleAccountRecord -Path $cfg.tokenPath -OldId $Id -NewId $email }
         $tz = if ($primary -and $primary.timeZone) { [string]$primary.timeZone } else { [System.TimeZoneInfo]::Local.Id }
 
         $timeMin = $Now.Date.ToString('o')
         $timeMax = $Now.Date.AddDays(8).ToString('o')
         $events = @()
         foreach ($cal in $cals) {
-            $ev = Invoke-GCalApi -Token $at.token -Path ("/calendars/{0}/events" -f [uri]::EscapeDataString($cal.id)) -Query @{ timeMin = $timeMin; timeMax = $timeMax; singleEvents = 'true'; orderBy = 'startTime'; maxResults = '100' }
-            foreach ($raw in @($ev.items)) { $c = Convert-GCalEvent -Raw $raw -CalendarId $cal.id -Now $Now; if ($c) { $events += $c } }
+            try {
+                $ev = Invoke-GCalApi -Token $at.token -Path ("/calendars/{0}/events" -f [uri]::EscapeDataString($cal.id)) -Query @{ timeMin = $timeMin; timeMax = $timeMax; singleEvents = 'true'; orderBy = 'startTime'; maxResults = '100' }
+                foreach ($raw in @($ev.items)) { $c = Convert-GCalEvent -Raw $raw -CalendarId $cal.id -Now $Now -SourceAccount $email; if ($c) { $events += $c } }
+            } catch { }   # a single unreadable calendar (holiday/subscribed) never fails the account
         }
-        # dedupe (same event id can appear across calendars / invitations)
-        $events = @($events | Group-Object id | ForEach-Object { $_.Group | Select-Object -First 1 } | Sort-Object start)
-
-        $today = @($events | Where-Object { $_.start.Date -eq $Now.Date })
-        $tomorrow = @($events | Where-Object { $_.start.Date -eq $Now.Date.AddDays(1) })
-        $next = @($events | Where-Object { $_.start -gt $Now -and -not $_.allDay } | Sort-Object start | Select-Object -First 1)
-        $freeToday = Get-GCalFreeWindows -Date $Now -Events $today
-        $freeTomorrow = Get-GCalFreeWindows -Date $Now.AddDays(1) -Events $tomorrow
-        $insights = Get-CalendarInsights -Events $events -Now $Now
-
-        return [pscustomobject]@{
-            provider    = 'calendar'; ok = $true; errorState = $null
-            status      = [pscustomobject]@{ state = 'connected'; detail = ('Live from Google Calendar ({0}).' -f $account); lastRefresh = $nowStr; lastError = $null }
-            timestamp   = $nowStr; account = $account; timezone = $tz
-            calendars   = @($cals | ForEach-Object { [pscustomobject]@{ id = $_.id; summary = [string]$_.summary; primary = [bool]$_.primary } })
-            events      = @($events); nextEvent = @($next)[0]
-            todayCount  = $today.Count; tomorrowCount = $tomorrow.Count
-            freeWindows = @(@($freeToday) + @($freeTomorrow))
-            conflicts   = @(Get-GCalConflicts -Events $events)
-            insights    = $insights
-        }
+        $calSummaries = @($cals | ForEach-Object { [pscustomobject]@{ id = $_.id; summary = [string]$_.summary; primary = [bool]$_.primary; account = $email } })
+        return [pscustomobject]@{ ok = $true; id = $email; email = $email; state = 'connected'; detail = ('Live from Google Calendar ({0}).' -f $email); events = @($events); calendars = $calSummaries; timezone = $tz }
     } catch {
         $msg = $_.Exception.Message; $state = 'error'
         if ($_.Exception.Response -and ($_.Exception.Response.PSObject.Properties.Name -contains 'StatusCode')) {
             $sc = [int]$_.Exception.Response.StatusCode
-            if ($sc -eq 401) { $state = 'needs-attention'; $msg = 'Your Google authorization expired and needs to be renewed.' }
+            if ($sc -eq 401) { $state = 'needs-attention'; $msg = 'Authorization expired; reconnect this account.' }
             elseif ($sc -eq 403) { $state = 'denied'; $msg = 'I can reach Google Calendar, but the request was denied.' }
-        } elseif ($_.Exception -is [System.Net.WebException]) { $state = 'network-error'; $msg = 'I could not retrieve the calendar because the network is unavailable.' }
-        Write-GCalDiag -Level 'error' -Message ("Calendar fetch {0}." -f $state)
-        return (& $fail $state $msg)
+        } elseif ($_.Exception -is [System.Net.WebException]) { $state = 'network-error'; $msg = 'The network is unavailable.' }
+        Write-GCalDiag -Level 'error' -Message ("Calendar fetch {0} for one account." -f $state)
+        return [pscustomobject]@{ ok = $false; id = $Id; email = $Id; state = $state; detail = $msg; events = @(); calendars = @(); timezone = $null }
     }
 }
 
-# Status for Settings. Without -Live: config/connection state, no network.
-# With -Live: a real read to confirm access, with last refresh.
+# ---- THE contract: merged calendar across ALL accounts -------------
+function Get-Calendar {
+    param([string]$When = 'today', [datetime]$Now = (Get-Date))
+    $cfg = Get-GCalConfig
+    $nowStr = $Now.ToString('yyyy-MM-dd HH:mm:ss')
+    $fail = {
+        param($state, $detail)
+        [pscustomobject]@{ provider = 'calendar'; ok = $false; errorState = $state; status = [pscustomobject]@{ state = $state; detail = $detail; lastRefresh = $null; lastError = $detail }; timestamp = $nowStr; account = $null; accounts = @(); accountCount = 0; timezone = $null; calendars = @(); events = @(); nextEvent = $null; todayCount = 0; tomorrowCount = 0; freeWindows = @(); conflicts = @(); insights = $null }
+    }
+    if (-not $cfg.configured) { return (& $fail 'not-configured' 'Google Calendar is not connected yet.') }
+    $ids = @(Get-GoogleAccountIds -Path $cfg.tokenPath)
+    if ($ids.Count -eq 0) { return (& $fail 'not-connected' 'Google Calendar is not connected yet.') }
+
+    $allEvents = @(); $allCals = @(); $accountsInfo = @(); $anyOk = $false; $tz = $null; $firstBadState = $null; $firstBadDetail = $null
+    foreach ($id in $ids) {
+        $d = Get-GCalAccountData -Id $id -Now $Now
+        $accountsInfo += [pscustomobject]@{ email = $d.email; state = $d.state; detail = $d.detail; count = @($d.events).Count }
+        if ($d.ok) { $anyOk = $true; $allEvents += @($d.events); $allCals += @($d.calendars); if (-not $tz) { $tz = $d.timezone } }
+        elseif (-not $firstBadState) { $firstBadState = $d.state; $firstBadDetail = $d.detail }
+    }
+    if (-not $anyOk) { return (& $fail $firstBadState $firstBadDetail) }
+
+    # MERGE across accounts: dedupe the same event (same iCalUID) seen on more
+    # than one account/calendar, keeping one copy and remembering every account
+    # it appears in. This is where account data is merged before intelligence.
+    $seen = @{}; $events = @()
+    foreach ($e in @($allEvents | Sort-Object start)) {
+        $key = if ($e.iCalUID) { 'uid:' + $e.iCalUID } else { 'id:' + [string]$e.id }
+        $sa = [string]$e.sourceAccount
+        if ($seen.ContainsKey($key)) {
+            $ex = $seen[$key]
+            if ($sa -and ($ex.sourceAccounts -notcontains $sa)) { $ex.sourceAccounts = @($ex.sourceAccounts + $sa) }
+            continue
+        }
+        $e | Add-Member -NotePropertyName sourceAccounts -NotePropertyValue @($(if ($sa) { $sa } else { $null }) | Where-Object { $_ }) -Force
+        $seen[$key] = $e; $events += $e
+    }
+    $events = @($events | Sort-Object start)
+
+    $today = @($events | Where-Object { $_.start.Date -eq $Now.Date })
+    $tomorrow = @($events | Where-Object { $_.start.Date -eq $Now.Date.AddDays(1) })
+    $next = @($events | Where-Object { $_.start -gt $Now -and -not $_.allDay } | Sort-Object start | Select-Object -First 1)
+    $freeToday = Get-GCalFreeWindows -Date $Now -Events $today
+    $freeTomorrow = Get-GCalFreeWindows -Date $Now.AddDays(1) -Events $tomorrow
+    $insights = Get-CalendarInsights -Events $events -Now $Now
+
+    $connected = @($accountsInfo | Where-Object { $_.state -eq 'connected' })
+    $primary = if ($connected.Count -gt 0) { $connected[0].email } else { $null }
+    $degraded = @($accountsInfo | Where-Object { $_.state -ne 'connected' })
+    $detail = if ($degraded.Count -eq 0) { ('Live from Google Calendar ({0} account(s)).' -f $connected.Count) }
+    else { ('Live from Google Calendar ({0} of {1} account(s); {2} need attention).' -f $connected.Count, $accountsInfo.Count, $degraded.Count) }
+
+    return [pscustomobject]@{
+        provider     = 'calendar'; ok = $true; errorState = $null
+        status       = [pscustomobject]@{ state = 'connected'; detail = $detail; lastRefresh = $nowStr; lastError = $(if ($degraded.Count) { $degraded[0].detail } else { $null }) }
+        timestamp    = $nowStr; account = $primary; accounts = @($accountsInfo); accountCount = @($accountsInfo).Count; timezone = $tz
+        calendars    = @($allCals)
+        events       = @($events); nextEvent = @($next)[0]
+        todayCount   = $today.Count; tomorrowCount = $tomorrow.Count
+        freeWindows  = @(@($freeToday) + @($freeTomorrow))
+        conflicts    = @(Get-GCalConflicts -Events $events)
+        insights     = $insights
+    }
+}
+
+# Status for Settings. Without -Live: config/connection state (per account),
+# no network. With -Live: a real read to confirm access across all accounts.
 function Get-GCalStatus {
     param([switch]$Live)
     $cfg = Get-GCalConfig
-    $t = Get-GCalTokens
-    $account = if ($t -and $t.account) { $t.account } else { $null }
-    if (-not $cfg.configured) { return [pscustomobject]@{ name = 'Google Calendar'; state = 'not-configured'; detail = 'No OAuth client configured. Add a Desktop-app client id/secret to calendar.config.json, then Connect.'; account = $null; readOnly = $true; lastRefresh = $null; lastError = $null } }
-    if (-not $t) { return [pscustomobject]@{ name = 'Google Calendar'; state = 'not-connected'; detail = 'Configured but not connected. Click Connect Google Calendar.'; account = $null; readOnly = $true; lastRefresh = $null; lastError = $null } }
-    if (-not $Live) { return [pscustomobject]@{ name = 'Google Calendar'; state = 'connected'; detail = 'Connected (read-only). Run Test Connection to confirm live access.'; account = $account; readOnly = $true; lastRefresh = $null; lastError = $null } }
+    if (-not $cfg.configured) { return [pscustomobject]@{ name = 'Google Calendar'; state = 'not-configured'; detail = 'No OAuth client configured. Add a Desktop-app client id/secret to calendar.config.json, then Connect.'; account = $null; accounts = @(); readOnly = $true; lastRefresh = $null; lastError = $null } }
+    $ids = @(Get-GoogleAccountIds -Path $cfg.tokenPath)
+    if ($ids.Count -eq 0) { return [pscustomobject]@{ name = 'Google Calendar'; state = 'not-connected'; detail = 'Configured but not connected. Click Connect Google Calendar.'; account = $null; accounts = @(); readOnly = $true; lastRefresh = $null; lastError = $null } }
+    if (-not $Live) {
+        $accts = @($ids | ForEach-Object { [pscustomobject]@{ email = $_; state = 'connected'; detail = 'Connected (read-only).' } })
+        return [pscustomobject]@{ name = 'Google Calendar'; state = 'connected'; detail = ('{0} account(s) connected (read-only). Run Test Connection to confirm live access.' -f $ids.Count); account = $ids[0]; accounts = $accts; readOnly = $true; lastRefresh = $null; lastError = $null }
+    }
     $c = Get-Calendar -When 'today'
+    $accts = @($c.accounts | ForEach-Object { [pscustomobject]@{ email = $_.email; state = $_.state; detail = $_.detail } })
     $state = if ($c.ok) { 'connected' } else { $c.status.state }
-    return [pscustomobject]@{ name = 'Google Calendar'; state = $state; detail = $c.status.detail; account = $c.account; readOnly = $true; lastRefresh = $c.status.lastRefresh; lastError = $c.status.lastError }
+    return [pscustomobject]@{ name = 'Google Calendar'; state = $state; detail = $c.status.detail; account = $c.account; accounts = $accts; readOnly = $true; lastRefresh = $c.status.lastRefresh; lastError = $c.status.lastError }
 }
 
 # Is a question about the calendar/schedule? Tony Brain uses this to route.
@@ -386,7 +340,7 @@ function Test-CalendarRelevant {
 if (Get-Command Register-LiveProvider -ErrorAction SilentlyContinue) {
     Register-LiveProvider -Provider ([pscustomobject]@{
             name        = 'calendar'
-            description = 'Read-only Google Calendar via OAuth 2.0 (installed desktop app, PKCE). Explained by Tony.'
+            description = 'Read-only Google Calendar across one or more Google accounts (OAuth 2.0 desktop, PKCE). Merged and explained by Tony.'
             relevant    = { param($text) Test-CalendarRelevant $text }
             query       = { param($opts) $when = if ($opts -and $opts.When) { $opts.When } else { 'today' }; Get-Calendar -When $when }
             status      = { param($live) Get-GCalStatus -Live:([bool]$live) }

@@ -7,11 +7,21 @@
 # token), and minimum read-only scopes. The system browser handles
 # sign-in and consent; Tony never sees the Google password.
 #
+# MULTI-ACCOUNT (D17): one token file per service holds ALL connected
+# accounts for that service, keyed by account email. There is still ONE
+# Calendar provider and ONE Gmail provider - never a provider per account.
+# Each account's tokens are stored separately inside the (gitignored) file:
+#   { meta:{version}, accounts:[ { id:<email>, access_token, refresh_token,
+#     token_type, scope, expires_at, obtained } ] }
+#
+# MIGRATION: an older single-account FLAT file ({access_token,...}) is read
+# as one account with id 'default'; the provider re-keys it to the real
+# email on first identity resolution. Existing users keep working untouched.
+#
 # This module is provider-NEUTRAL. Each provider passes a small config
 # object and its own local token path; the mechanics live here exactly
-# once (Single Source of Truth). It is written so the same shape extends
-# to non-Google mail later (Outlook / Microsoft 365 / Yahoo) by swapping
-# endpoints - the loopback + PKCE + offline-refresh pattern is identical.
+# once (Single Source of Truth). The same shape extends to non-Google mail
+# later by swapping endpoints.
 #
 # A provider config object has:
 #   clientId, clientSecret   OAuth desktop-app credentials (local only)
@@ -22,7 +32,7 @@
 #   appName                  shown on the "connected" browser page
 #   diagSource               diagnostics label (never contains tokens)
 #
-# Diagnostics NEVER contain tokens, codes, secrets, or message text.
+# Diagnostics NEVER contain tokens, codes, secrets, or account addresses.
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -46,30 +56,70 @@ function New-GoogleOAuthPkce {
     return [pscustomobject]@{ verifier = $verifier; challenge = $challenge }
 }
 
-# ---- token store (local, gitignored, per provider) -----------------
-function Get-GoogleOAuthTokens {
+# ---- account-keyed token store (local, gitignored) -----------------
+function Clear-GoogleTokenFile { param([Parameter(Mandatory)][string]$Path) if (Test-Path $Path) { Remove-Item $Path -Force } }
+
+# Read the store, migrating a legacy flat single-account file in memory.
+function Read-GoogleAccountStore {
     param([Parameter(Mandatory)][string]$Path)
-    if (Test-Path $Path) { try { return (Get-Content $Path -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { } }
-    return $null
+    $data = $null
+    if (Test-Path $Path) { try { $data = Get-Content $Path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { } }
+    $accounts = @()
+    if ($data) {
+        if (($data.PSObject.Properties.Name -contains 'accounts') -and $data.accounts) {
+            $accounts = @($data.accounts)
+        } elseif (($data.PSObject.Properties.Name -contains 'access_token') -and $data.access_token) {
+            # legacy flat file -> one 'default' account (re-keyed to email on first use)
+            $accounts = @([pscustomobject]@{ id = 'default'; access_token = $data.access_token; refresh_token = $data.refresh_token; token_type = $data.token_type; scope = $data.scope; expires_at = $data.expires_at; obtained = $data.obtained })
+        }
+    }
+    return [pscustomobject]@{ meta = [pscustomobject]@{ version = '2.0' }; accounts = @($accounts) }
 }
-function Save-GoogleOAuthTokens {
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)] $Tokens)
-    ($Tokens | ConvertTo-Json -Depth 6) | Set-Content -Path $Path -Encoding UTF8
+function Write-GoogleAccountStore {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)] $Store)
+    ($Store | ConvertTo-Json -Depth 8) | Set-Content -Path $Path -Encoding UTF8
 }
-function Clear-GoogleOAuthTokens {
+function Get-GoogleAccountIds {
     param([Parameter(Mandatory)][string]$Path)
-    if (Test-Path $Path) { Remove-Item $Path -Force }
+    return @((Read-GoogleAccountStore -Path $Path).accounts | ForEach-Object { [string]$_.id })
+}
+function Get-GoogleAccountRecord {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Id)
+    return @((Read-GoogleAccountStore -Path $Path).accounts | Where-Object { $_.id -eq $Id }) | Select-Object -First 1
+}
+function Set-GoogleAccountRecord {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)] $Account)
+    $store = Read-GoogleAccountStore -Path $Path
+    $store.accounts = @(@($store.accounts | Where-Object { $_.id -ne $Account.id }) + $Account)
+    Write-GoogleAccountStore -Path $Path -Store $store
+}
+function Remove-GoogleAccountRecord {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Id)
+    $store = Read-GoogleAccountStore -Path $Path
+    $before = @($store.accounts).Count
+    $store.accounts = @(@($store.accounts) | Where-Object { $_.id -ne $Id })
+    if (@($store.accounts).Count -eq 0) { Clear-GoogleTokenFile -Path $Path } else { Write-GoogleAccountStore -Path $Path -Store $store }
+    return (@($store.accounts).Count -ne $before)
+}
+# Re-key a record (legacy 'default' -> real email). If NewId already exists,
+# the freshly-renamed record wins (a reconnect of the same account).
+function Rename-GoogleAccountRecord {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$OldId, [Parameter(Mandatory)][string]$NewId)
+    if ($OldId -eq $NewId) { return }
+    $store = Read-GoogleAccountStore -Path $Path
+    $rec = @($store.accounts | Where-Object { $_.id -eq $OldId }) | Select-Object -First 1
+    if (-not $rec) { return }
+    $rec.id = $NewId
+    $store.accounts = @(@($store.accounts | Where-Object { $_.id -ne $OldId -and $_.id -ne $NewId }) + $rec)
+    Write-GoogleAccountStore -Path $Path -Store $store
 }
 
-# ---- connect (interactive: system browser + loopback capture) ------
-# Opens the browser for Google sign-in + consent, captures the one-time
-# code on a loopback socket, exchanges it for tokens (PKCE + secret),
-# and stores them at $Config.tokenPath. Requires a configured client.
-function Connect-GoogleOAuth {
+# ---- interactive consent (loopback) - returns raw tokens, no save --
+# prompt=select_account lets the user pick a DIFFERENT account for each
+# connection; prompt=consent guarantees a refresh token every time.
+function Invoke-GoogleOAuthConsent {
     param([Parameter(Mandatory)] $Config)
-    if ([string]::IsNullOrWhiteSpace($Config.clientId)) {
-        return [pscustomobject]@{ ok = $false; state = 'not-configured'; detail = 'No OAuth client configured.' }
-    }
+    if ([string]::IsNullOrWhiteSpace($Config.clientId)) { return [pscustomobject]@{ ok = $false; state = 'not-configured'; detail = 'No OAuth client configured.' } }
 
     $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, 0)
     $listener.Start()
@@ -78,7 +128,7 @@ function Connect-GoogleOAuth {
 
     $pkce = New-GoogleOAuthPkce
     $stateTok = ConvertTo-GoogleB64Url -Bytes ([guid]::NewGuid().ToByteArray())
-    $authUrl = ('{0}?client_id={1}&redirect_uri={2}&response_type=code&scope={3}&access_type=offline&prompt=consent&code_challenge={4}&code_challenge_method=S256&state={5}' -f `
+    $authUrl = ('{0}?client_id={1}&redirect_uri={2}&response_type=code&scope={3}&access_type=offline&prompt=select_account+consent&code_challenge={4}&code_challenge_method=S256&state={5}' -f `
             $Config.authEndpoint, [uri]::EscapeDataString($Config.clientId), [uri]::EscapeDataString($redirect), [uri]::EscapeDataString($Config.scope), $pkce.challenge, $stateTok)
 
     Write-GoogleOAuthDiag -Source $Config.diagSource -Message ("OAuth begin: opening browser, awaiting loopback on port {0}." -f $port)
@@ -115,7 +165,20 @@ function Connect-GoogleOAuth {
         Write-GoogleOAuthDiag -Source $Config.diagSource -Level 'error' -Message 'Token exchange failed.'
         return [pscustomobject]@{ ok = $false; state = 'error'; detail = 'Google would not exchange the authorization for tokens.' }
     }
-    $store = [pscustomobject]@{
+    return [pscustomobject]@{ ok = $true; tokens = $tok }
+}
+
+# Connect ONE more account. Runs consent, resolves the account identity
+# (email) with the new token via the provider-supplied ResolveIdentity
+# scriptblock, and stores the tokens keyed by that email. Reconnecting an
+# existing account simply refreshes it (upsert by id).
+function Connect-GoogleAccount {
+    param([Parameter(Mandatory)] $Config, [Parameter(Mandatory)][scriptblock]$ResolveIdentity)
+    $c = Invoke-GoogleOAuthConsent -Config $Config
+    if (-not $c.ok) { return [pscustomobject]@{ ok = $false; state = $c.state; detail = $c.detail; id = $null } }
+    $tok = $c.tokens
+    $acct = [pscustomobject]@{
+        id            = $null
         access_token  = $tok.access_token
         refresh_token = $tok.refresh_token
         token_type    = $tok.token_type
@@ -123,42 +186,49 @@ function Connect-GoogleOAuth {
         expires_at    = (Get-Date).AddSeconds([int]$tok.expires_in - 60).ToString('o')
         obtained      = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     }
-    Save-GoogleOAuthTokens -Path $Config.tokenPath -Tokens $store
-    Write-GoogleOAuthDiag -Source $Config.diagSource -Message 'OAuth complete: tokens stored (read-only scope).'
-    return [pscustomobject]@{ ok = $true; state = 'connected'; detail = ('{0} connected (read-only).' -f $appName) }
+    $id = $null
+    try { $id = & $ResolveIdentity $acct.access_token } catch { }
+    if ([string]::IsNullOrWhiteSpace($id)) { $id = 'account-' + ([guid]::NewGuid().ToString('N').Substring(0, 6)) }
+    $acct.id = [string]$id
+    Set-GoogleAccountRecord -Path $Config.tokenPath -Account $acct
+    Write-GoogleOAuthDiag -Source $Config.diagSource -Message 'OAuth complete: account connected (read-only).'
+    return [pscustomobject]@{ ok = $true; state = 'connected'; id = $acct.id; detail = ('{0} connected (read-only).' -f $Config.appName) }
 }
 
-# Return a valid access token, refreshing with the refresh token if expired.
-function Get-GoogleOAuthAccessToken {
-    param([Parameter(Mandatory)] $Config)
-    $t = Get-GoogleOAuthTokens -Path $Config.tokenPath
-    if (-not $t -or -not $t.access_token) { return [pscustomobject]@{ ok = $false; state = 'not-connected'; detail = 'Not connected yet.' } }
+# Return a valid access token for ONE account, refreshing (and persisting)
+# that account's tokens if expired. A failure here affects only this account.
+function Get-GoogleAccountAccessToken {
+    param([Parameter(Mandatory)] $Config, [Parameter(Mandatory)][string]$Id)
+    $rec = Get-GoogleAccountRecord -Path $Config.tokenPath -Id $Id
+    if (-not $rec -or -not $rec.access_token) { return [pscustomobject]@{ ok = $false; state = 'not-connected'; detail = 'Not connected.'; id = $Id } }
     $expired = $true
-    try { $expired = ([datetime]::Parse($t.expires_at) -le (Get-Date)) } catch { }
-    if (-not $expired) { return [pscustomobject]@{ ok = $true; token = $t.access_token; state = 'connected' } }
-    if (-not $t.refresh_token) { return [pscustomobject]@{ ok = $false; state = 'needs-attention'; detail = 'Your Google authorization expired and needs to be renewed.' } }
-    $body = @{ client_id = $Config.clientId; client_secret = $Config.clientSecret; refresh_token = $t.refresh_token; grant_type = 'refresh_token' }
+    try { $expired = ([datetime]::Parse($rec.expires_at) -le (Get-Date)) } catch { }
+    if (-not $expired) { return [pscustomobject]@{ ok = $true; token = $rec.access_token; state = 'connected'; id = $Id } }
+    if (-not $rec.refresh_token) { return [pscustomobject]@{ ok = $false; state = 'needs-attention'; detail = 'Authorization expired; reconnect this account.'; id = $Id } }
+    $body = @{ client_id = $Config.clientId; client_secret = $Config.clientSecret; refresh_token = $rec.refresh_token; grant_type = 'refresh_token' }
     try {
         $r = Invoke-RestMethod -Method Post -Uri $Config.tokenEndpoint -Body $body -ContentType 'application/x-www-form-urlencoded'
-        $t.access_token = $r.access_token
-        $t.expires_at = (Get-Date).AddSeconds([int]$r.expires_in - 60).ToString('o')
-        if ($r.refresh_token) { $t.refresh_token = $r.refresh_token }
-        Save-GoogleOAuthTokens -Path $Config.tokenPath -Tokens $t
+        $rec.access_token = $r.access_token
+        $rec.expires_at = (Get-Date).AddSeconds([int]$r.expires_in - 60).ToString('o')
+        if ($r.refresh_token) { $rec.refresh_token = $r.refresh_token }
+        Set-GoogleAccountRecord -Path $Config.tokenPath -Account $rec
         Write-GoogleOAuthDiag -Source $Config.diagSource -Message 'Access token refreshed.'
-        return [pscustomobject]@{ ok = $true; token = $t.access_token; state = 'connected' }
+        return [pscustomobject]@{ ok = $true; token = $rec.access_token; state = 'connected'; id = $Id }
     } catch {
         Write-GoogleOAuthDiag -Source $Config.diagSource -Level 'error' -Message 'Token refresh failed.'
-        return [pscustomobject]@{ ok = $false; state = 'needs-attention'; detail = 'Your Google authorization expired and needs to be renewed.' }
+        return [pscustomobject]@{ ok = $false; state = 'needs-attention'; detail = 'Authorization expired; reconnect this account.'; id = $Id }
     }
 }
 
-function Disconnect-GoogleOAuth {
-    param([Parameter(Mandatory)] $Config)
-    $t = Get-GoogleOAuthTokens -Path $Config.tokenPath
-    if ($t -and $t.refresh_token) { try { Invoke-RestMethod -Method Post -Uri $Config.revokeEndpoint -Body @{ token = $t.refresh_token } -ContentType 'application/x-www-form-urlencoded' | Out-Null } catch { } }
-    Clear-GoogleOAuthTokens -Path $Config.tokenPath
-    Write-GoogleOAuthDiag -Source $Config.diagSource -Message 'Disconnected: local authorization removed.'
-    return [pscustomobject]@{ ok = $true; state = 'not-connected'; detail = 'Disconnected; local authorization removed.' }
+# Disconnect ONE account: revoke its refresh token with Google and remove
+# only that account's local tokens. Other accounts are untouched.
+function Disconnect-GoogleAccount {
+    param([Parameter(Mandatory)] $Config, [Parameter(Mandatory)][string]$Id)
+    $rec = Get-GoogleAccountRecord -Path $Config.tokenPath -Id $Id
+    if ($rec -and $rec.refresh_token) { try { Invoke-RestMethod -Method Post -Uri $Config.revokeEndpoint -Body @{ token = $rec.refresh_token } -ContentType 'application/x-www-form-urlencoded' | Out-Null } catch { } }
+    $removed = Remove-GoogleAccountRecord -Path $Config.tokenPath -Id $Id
+    Write-GoogleOAuthDiag -Source $Config.diagSource -Message 'Account disconnected: local authorization removed.'
+    return [pscustomobject]@{ ok = [bool]$removed; state = 'not-connected'; detail = 'Account disconnected; local authorization removed.'; id = $Id }
 }
 
 # ---- read-only REST GET (UTF-8 decoded correctly) ------------------

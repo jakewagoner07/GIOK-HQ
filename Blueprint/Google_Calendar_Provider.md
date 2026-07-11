@@ -1,5 +1,10 @@
 # The Google Calendar Provider (Read-Only)
 
+> **Multi-account (D17):** this one provider now reads *all* connected Google accounts and merges them
+> into one schedule (dedupe by iCalUID). It was also migrated onto the shared account-aware
+> `core/google-oauth.ps1`. See [Multi_Account_Google.md](Multi_Account_Google.md). The description
+> below covers the per-account mechanics.
+
 ## Tony understands your schedule
 
 *Project Diamond, Sprint D14. Tony's first Google integration - and the pattern for Gmail and every

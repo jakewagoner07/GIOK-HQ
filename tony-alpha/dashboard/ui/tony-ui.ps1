@@ -1200,42 +1200,52 @@ function Get-CalStateLabel {
         default          { 'Needs Attention' }
     }
 }
+# Render the connected-accounts list into a panel: each row shows the account
+# email, a per-account state pill, and a Disconnect button. Read-only; never
+# shows tokens. OnDisconnect/Refresh are provider-specific scriptblocks.
+function Update-GoogleAccountsPanel {
+    param($Panel, $Status, [scriptblock]$OnDisconnect, [scriptblock]$Refresh)
+    if (-not $Panel) { return }
+    $Panel.Children.Clear()
+    $accts = @($Status.accounts)
+    if ($accts.Count -eq 0) { $Panel.Children.Add((New-Text -Text 'No accounts connected yet.' -Size 12 -Color $script:Col.Muted)) | Out-Null; return }
+    foreach ($a in $accts) {
+        $capturedEmail = [string]$a.email
+        $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 6); $row.LastChildFill = $true
+        $btn = New-MiniButton -Text 'Disconnect' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick ({ param($s, $e) & $OnDisconnect $capturedEmail; & $Refresh }.GetNewClosure())
+        [Windows.Controls.DockPanel]::SetDock($btn, 'Right'); $row.Children.Add($btn) | Out-Null
+        $cols = Get-CalStateColors $a.state
+        $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 8; $pill.Padding = New-Object Windows.Thickness (8, 3, 8, 3); $pill.Margin = New-Object Windows.Thickness (8, 0, 8, 0); $pill.VerticalAlignment = 'Center'; $pill.Background = New-Brush $cols[0]
+        $pill.Child = (New-Text -Text (Get-CalStateLabel $a.state) -Size 10.5 -Weight 'Bold' -Color $cols[1])
+        [Windows.Controls.DockPanel]::SetDock($pill, 'Right'); $row.Children.Add($pill) | Out-Null
+        $em = New-Text -Text $capturedEmail -Size 12.5 -Color $script:Col.Ink; $em.VerticalAlignment = 'Center'
+        $row.Children.Add($em) | Out-Null
+        $Panel.Children.Add($row) | Out-Null
+    }
+}
 function Set-CalStatusDisplay {
     param($Status)
-    if (-not $script:CalPill) { return }
-    $cols = Get-CalStateColors $Status.state
-    $script:CalPill.Background = New-Brush $cols[0]
-    $script:CalPillText.Text = (Get-CalStateLabel $Status.state); $script:CalPillText.Foreground = New-Brush $cols[1]
     if ($script:CalDetail) { $script:CalDetail.Text = $Status.detail }
-    if ($script:CalAccount) { $script:CalAccount.Text = ('Account: {0}' -f $(if ($Status.account) { $Status.account } else { 'not connected' })) }
-    if ($script:CalRefresh) { $script:CalRefresh.Text = ('Last successful refresh: {0}' -f $(if ($Status.lastRefresh) { $Status.lastRefresh } else { 'never' })) }
-    if ($script:CalError) { $script:CalError.Text = ('Last error: {0}' -f $(if ($Status.lastError) { $Status.lastError } else { 'none' })) }
+    Update-GoogleAccountsPanel -Panel $script:CalAcctPanel -Status $Status `
+        -OnDisconnect { param($email) if (Get-Command Disconnect-GoogleCalendar -ErrorAction SilentlyContinue) { Disconnect-GoogleCalendar -Account $email | Out-Null } } `
+        -Refresh { Set-CalStatusDisplay (Get-GCalStatus) }
 }
 function New-CalendarProviderCard {
     $body = New-Object Windows.Controls.StackPanel
     $body.Children.Add((New-KeyValueRow -Key 'Provider' -Value 'Google Calendar (read-only)')) | Out-Null
-
-    if (Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) { $st = Get-GCalStatus } else { $st = [pscustomobject]@{ state = 'not-configured'; detail = 'Calendar provider not loaded.'; account = $null; lastRefresh = $null; lastError = $null } }
-
-    $body.Children.Add((New-Text -Text 'STATUS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
-    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 9; $pill.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $pill.HorizontalAlignment = 'Left'
-    $pillText = New-Text -Text (Get-CalStateLabel $st.state) -Size 12.5 -Weight 'Bold' -Color '#03543F'
-    $pill.Child = $pillText; $script:CalPill = $pill; $script:CalPillText = $pillText
-    $body.Children.Add($pill) | Out-Null
+    if (Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) { $st = Get-GCalStatus } else { $st = [pscustomobject]@{ state = 'not-configured'; detail = 'Calendar provider not loaded.'; account = $null; accounts = @() } }
 
     $detail = New-Text -Text $st.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)); $script:CalDetail = $detail; $body.Children.Add($detail) | Out-Null
-    $acct = New-Text -Text 'Account: not connected' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)); $script:CalAccount = $acct; $body.Children.Add($acct) | Out-Null
-    $body.Children.Add((New-Text -Text 'Access: read-only (Tony can view your schedule, never change it)' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
-    $refresh = New-Text -Text 'Last successful refresh: never' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:CalRefresh = $refresh; $body.Children.Add($refresh) | Out-Null
-    $err = New-Text -Text 'Last error: none' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:CalError = $err; $body.Children.Add($err) | Out-Null
+    $body.Children.Add((New-Text -Text 'Access: read-only (Tony can view your schedule, never change it)' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 4, 0, 6)))) | Out-Null
+    $body.Children.Add((New-Text -Text 'CONNECTED ACCOUNTS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 4)))) | Out-Null
+    $acctPanel = New-Object Windows.Controls.StackPanel; $script:CalAcctPanel = $acctPanel; $body.Children.Add($acctPanel) | Out-Null
 
-    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
-    $btns.Children.Add((New-MiniButton -Text 'Connect Google Calendar' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-GoogleCalendar -ErrorAction SilentlyContinue) { Connect-GoogleCalendar | Out-Null; Set-CalStatusDisplay (Get-GCalStatus -Live) } })) | Out-Null
-    $btns.Children.Add((New-MiniButton -Text 'Test Connection' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) { Set-CalStatusDisplay (Get-GCalStatus -Live) } })) | Out-Null
-    $btns.Children.Add((New-MiniButton -Text 'Disconnect' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) if (Get-Command Disconnect-GoogleCalendar -ErrorAction SilentlyContinue) { Disconnect-GoogleCalendar | Out-Null; Set-CalStatusDisplay (Get-GCalStatus) } })) | Out-Null
+    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 12, 0, 0)
+    $btns.Children.Add((New-MiniButton -Text 'Add a Google account' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-GoogleCalendar -ErrorAction SilentlyContinue) { Connect-GoogleCalendar | Out-Null; Set-CalStatusDisplay (Get-GCalStatus -Live) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Test all accounts' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) { Set-CalStatusDisplay (Get-GCalStatus -Live) } })) | Out-Null
     $body.Children.Add($btns) | Out-Null
 
-    $note = New-Text -Text 'Setup: create a Google Cloud OAuth client (Desktop app), enable the Calendar API, and put its id/secret in providers\calendar.config.json. Sign-in happens in your browser; Tony never sees your password and requests only read-only access.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
+    $note = New-Text -Text 'Setup: create a Google Cloud OAuth client (Desktop app), enable the Calendar API, and put its id/secret in providers\calendar.config.json. Connect one or more accounts - sign-in happens in your browser; Tony never sees your password and requests only read-only access.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
     $body.Children.Add($note) | Out-Null
 
     Set-CalStatusDisplay $st
@@ -1244,46 +1254,31 @@ function New-CalendarProviderCard {
     return $card
 }
 
-# Gmail (read-only) Settings card. Reuses the shared connection-state colors
-# and labels (Get-CalStateColors / Get-CalStateLabel) - state strings are
-# provider-neutral - with its own status display targets.
+# Gmail (read-only) Settings card. Reuses the shared connection-state colors,
+# labels, and the account-list panel - state strings are provider-neutral.
 function Set-GmailStatusDisplay {
     param($Status)
-    if (-not $script:GmailPill) { return }
-    $cols = Get-CalStateColors $Status.state
-    $script:GmailPill.Background = New-Brush $cols[0]
-    $script:GmailPillText.Text = (Get-CalStateLabel $Status.state); $script:GmailPillText.Foreground = New-Brush $cols[1]
     if ($script:GmailDetail) { $script:GmailDetail.Text = $Status.detail }
-    if ($script:GmailAccount) { $script:GmailAccount.Text = ('Account: {0}' -f $(if ($Status.account) { $Status.account } else { 'not connected' })) }
-    if ($script:GmailRefresh) { $script:GmailRefresh.Text = ('Last successful refresh: {0}' -f $(if ($Status.lastRefresh) { $Status.lastRefresh } else { 'never' })) }
-    if ($script:GmailError) { $script:GmailError.Text = ('Last error: {0}' -f $(if ($Status.lastError) { $Status.lastError } else { 'none' })) }
+    Update-GoogleAccountsPanel -Panel $script:GmailAcctPanel -Status $Status `
+        -OnDisconnect { param($email) if (Get-Command Disconnect-Gmail -ErrorAction SilentlyContinue) { Disconnect-Gmail -Account $email | Out-Null } } `
+        -Refresh { Set-GmailStatusDisplay (Get-GmailStatus) }
 }
-
 function New-GmailProviderCard {
     $body = New-Object Windows.Controls.StackPanel
     $body.Children.Add((New-KeyValueRow -Key 'Provider' -Value 'Gmail (read-only)')) | Out-Null
-
-    if (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { $st = Get-GmailStatus } else { $st = [pscustomobject]@{ state = 'not-configured'; detail = 'Gmail provider not loaded.'; account = $null; lastRefresh = $null; lastError = $null } }
-
-    $body.Children.Add((New-Text -Text 'STATUS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 4)))) | Out-Null
-    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 9; $pill.Padding = New-Object Windows.Thickness (11, 5, 11, 5); $pill.HorizontalAlignment = 'Left'
-    $pillText = New-Text -Text (Get-CalStateLabel $st.state) -Size 12.5 -Weight 'Bold' -Color '#03543F'
-    $pill.Child = $pillText; $script:GmailPill = $pill; $script:GmailPillText = $pillText
-    $body.Children.Add($pill) | Out-Null
+    if (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { $st = Get-GmailStatus } else { $st = [pscustomobject]@{ state = 'not-configured'; detail = 'Gmail provider not loaded.'; account = $null; accounts = @() } }
 
     $detail = New-Text -Text $st.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)); $script:GmailDetail = $detail; $body.Children.Add($detail) | Out-Null
-    $acct = New-Text -Text 'Account: not connected' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)); $script:GmailAccount = $acct; $body.Children.Add($acct) | Out-Null
-    $body.Children.Add((New-Text -Text 'Access: read-only (Tony reads to summarize what needs you - never sends, replies, or deletes)' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)))) | Out-Null
-    $refresh = New-Text -Text 'Last successful refresh: never' -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:GmailRefresh = $refresh; $body.Children.Add($refresh) | Out-Null
-    $err = New-Text -Text 'Last error: none' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 0)); $script:GmailError = $err; $body.Children.Add($err) | Out-Null
+    $body.Children.Add((New-Text -Text 'Access: read-only (Tony reads to summarize what needs you - never sends, replies, or deletes)' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 6)))) | Out-Null
+    $body.Children.Add((New-Text -Text 'CONNECTED ACCOUNTS' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 4)))) | Out-Null
+    $acctPanel = New-Object Windows.Controls.StackPanel; $script:GmailAcctPanel = $acctPanel; $body.Children.Add($acctPanel) | Out-Null
 
-    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
-    $btns.Children.Add((New-MiniButton -Text 'Connect Gmail' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-Gmail -ErrorAction SilentlyContinue) { Connect-Gmail | Out-Null; Set-GmailStatusDisplay (Get-GmailStatus -Live) } })) | Out-Null
-    $btns.Children.Add((New-MiniButton -Text 'Test Connection' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { Set-GmailStatusDisplay (Get-GmailStatus -Live) } })) | Out-Null
-    $btns.Children.Add((New-MiniButton -Text 'Disconnect' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) if (Get-Command Disconnect-Gmail -ErrorAction SilentlyContinue) { Disconnect-Gmail | Out-Null; Set-GmailStatusDisplay (Get-GmailStatus) } })) | Out-Null
+    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 12, 0, 0)
+    $btns.Children.Add((New-MiniButton -Text 'Add a Google account' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-Gmail -ErrorAction SilentlyContinue) { Connect-Gmail | Out-Null; Set-GmailStatusDisplay (Get-GmailStatus -Live) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Test all accounts' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { Set-GmailStatusDisplay (Get-GmailStatus -Live) } })) | Out-Null
     $body.Children.Add($btns) | Out-Null
 
-    $note = New-Text -Text 'Setup: reuse your Google Cloud project, enable the Gmail API, and put a Desktop-app client id/secret in providers\gmail.config.json (you can optionally list important contacts / client domains there for smarter triage). Sign-in happens in your browser; Tony never sees your password and requests only read-only access.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
+    $note = New-Text -Text 'Setup: reuse your Google Cloud project, enable the Gmail API, and put a Desktop-app client id/secret in providers\gmail.config.json (optionally list important contacts / client domains for smarter triage). Connect one or more accounts - sign-in happens in your browser; Tony never sees your password and requests only read-only access.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
     $body.Children.Add($note) | Out-Null
 
     Set-GmailStatusDisplay $st
