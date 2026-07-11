@@ -282,6 +282,33 @@ $script:LifeSpecs = @{
         cardFields = @(@{ key = 'detail'; label = 'Detail' }, @{ key = 'cadence'; label = 'Cadence' })
         emptyText  = 'Nothing here yet. Add a routine, a workout, or a recovery habit.'
     }
+    'Financial' = @{
+        domain = 'financial'; title = 'Financial'; source = 'life_os.json'; addVerb = 'Add'; addTitle = 'Add a financial item'
+        intro  = 'Obligations, targets, and review dates - the money you owe, aim for, and check. You enter every value; Tony never invents a number.'
+        goalDomain = 'financial'; titleKey = 'title'
+        addFields = @(
+            @{ key = 'kind'; label = 'Type'; type = 'combo'; options = @('obligation', 'target', 'review') },
+            @{ key = 'title'; label = 'Title *'; type = 'text'; required = $true },
+            @{ key = 'amount'; label = 'Amount (as you write it, e.g. $2,400/mo)'; type = 'text' },
+            @{ key = 'detail'; label = 'Detail'; type = 'multiline' },
+            @{ key = 'dueDate'; label = 'Due / review date (YYYY-MM-DD, optional)'; type = 'date' }
+        )
+        cardFields = @(@{ key = 'amount'; label = 'Amount' }, @{ key = 'detail'; label = 'Detail' }, @{ key = 'dueDate'; label = 'Due' })
+        emptyText  = 'Nothing here yet. Add an obligation, a target, or a review date - values are yours to enter.'
+    }
+    'Agency' = @{
+        domain = 'agency'; title = 'Agency'; source = 'life_os.json'; addVerb = 'Add'; addTitle = 'Add an agency item'
+        intro  = 'Production targets, strategic priorities, and next steps for the business. Agency goals live in Goals; the working priorities live here. You enter every value.'
+        goalDomain = 'agency'; titleKey = 'title'
+        addFields = @(
+            @{ key = 'kind'; label = 'Type'; type = 'combo'; options = @('production-target', 'strategic-priority', 'next-step') },
+            @{ key = 'title'; label = 'Title *'; type = 'text'; required = $true },
+            @{ key = 'detail'; label = 'Detail'; type = 'multiline' },
+            @{ key = 'metric'; label = 'Metric / target (as you write it)'; type = 'text' }
+        )
+        cardFields = @(@{ key = 'detail'; label = 'Detail' }, @{ key = 'metric'; label = 'Metric' })
+        emptyText  = 'Nothing here yet. Add a production target, a strategic priority, or the next step.'
+    }
 }
 function Get-LifeSpecKeys { return @($script:LifeSpecs.Keys) }
 
