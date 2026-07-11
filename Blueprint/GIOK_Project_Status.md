@@ -3,10 +3,27 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 5 — Executive Inbox** (on `feature/executive-inbox`, branched from `main` @
-`95c2a21`; RC2 and the Life Operating System already merged to `main`).
+Last updated: **Epic 6 — Workforce Activation** (on `feature/workforce-activation`, branched from
+`main` @ `d9319c9`; RC2, the Life Operating System, and the Executive Inbox already merged to `main`).
 
-> **Epic 5 status (Executive Inbox):** GIOK's **approval center** is built — a pending-only queue
+> **Epic 6 status (Workforce Activation):** the Workforce is **activated** — each specialist now
+> **proposes** into the Executive Inbox. New `core/workforce-proposals.ps1` holds per-specialist
+> producers (Sam — communications; Ava — calendar; Riley — timeline; Emma — priorities; Randy — CRM;
+> Mason — a queued document) and `Invoke-WorkforceProposals`, a deterministic de-dup/quality gate
+> (stable `type:sourceId`/`type:normalizedTitle` keys; suppress vs pending inbox **and** vs the
+> destination owner's active records; confidence floor + per-scan cap; suppressions logged to
+> diagnostics without private content). The scan runs **on demand** (Executive Inbox open + a "Check for
+> new proposals" button) — never inside Executive Context or the Briefing (which write nothing), never
+> on a timer. Tony gains **read-only** awareness (`Get-InboxSummary` folded into the Executive Context)
+> and a calm briefing mention ("The Workforce prepared N items for your review; M are time-sensitive").
+> Specialists registered under persona names (Sam — Head of Communications, she; Ava; Mason; Emma;
+> Riley; Randy). **Nothing writes to the OS automatically — only Jake's approval writes.** Verified end
+> to end against live Gmail + Calendar: Sam/Ava produced real proposals, dedup across scans added zero,
+> Emma proposed from real goals, Mason from a queued doc (silent without one), Randy quiet on an empty
+> pipeline, briefing + inbox render, no data-file or secret pollution. Local-only, not pushed. No
+> release blockers currently identified.
+>
+> **Epic 5 (Executive Inbox), merged to `main`:** GIOK's **approval center** — a pending-only queue
 > (`core/executive-inbox.ps1` → gitignored `executive_inbox.json`) where any Workforce member proposes
 > additions and **Jake approves / edits-then-approves / rejects**; Tony presents and **never
 > auto-approves**. On approve, the **owning module writes the real record** (`Add-Goal` /

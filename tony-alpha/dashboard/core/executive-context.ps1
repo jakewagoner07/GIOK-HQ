@@ -101,7 +101,7 @@ function Get-ExecutiveAssessment {
 # situational. This is what lets the provider answer WITHOUT rebuilding
 # context from raw fields.
 function Get-ExecutiveSummaryText {
-    param($Time, $Workspace, $Project, $Priorities, $OpenCount, $LatestAudit, $AnnualTheme, $Assessment, $Guidance, $Memory = @(), $Weather = $null, $Calendar = $null, $Email = $null)
+    param($Time, $Workspace, $Project, $Priorities, $OpenCount, $LatestAudit, $AnnualTheme, $Assessment, $Guidance, $Memory = @(), $Weather = $null, $Calendar = $null, $Email = $null, $Inbox = $null)
     $parts = @()
     $parts += ("It's {0} {1}, {2}." -f $Time.dayOfWeek, $Time.partOfDay, $Time.time)
     $where = if ($Project) { "working on $Project" }
@@ -123,6 +123,20 @@ function Get-ExecutiveSummaryText {
     if ($Email -and $Email.ok -and $Email.summary) {
         $es = $Email.summary
         $parts += ('Inbox: {0} today, {1} need attention, {2} awaiting a reply, {3} invitation(s).' -f $es.total, $es.needsAttention, $es.waitingForReply, $es.invitations)
+    }
+    if ($Inbox -and [int]$Inbox.pending -gt 0) {
+        # Read-only awareness of the Executive Inbox: counts only, never the
+        # private content of a proposal. Lets Tony mention what is waiting.
+        $labelMap = @{ communication = 'communication follow-up'; task = 'action item'; calendar = 'calendar item'; crm = 'CRM follow-up'; goal = 'goal'; project = 'project'; document = 'document item'; memory = 'memory' }
+        $bits = @()
+        foreach ($k in @($Inbox.byType.Keys | Sort-Object)) {
+            $n = [int]$Inbox.byType[$k]; if ($n -le 0) { continue }
+            $lbl = if ($labelMap.ContainsKey($k)) { $labelMap[$k] } else { $k }
+            $bits += ('{0} {1}{2}' -f $n, $lbl, $(if ($n -eq 1) { '' } else { 's' }))
+        }
+        $tail = if ($bits.Count -gt 0) { ' (' + ($bits -join ', ') + ')' } else { '' }
+        $ts = if ([int]$Inbox.timeSensitiveCount -gt 0) { (' {0} time-sensitive.' -f [int]$Inbox.timeSensitiveCount) } else { '' }
+        $parts += ('Executive Inbox: {0} Workforce proposal{1} awaiting your review{2}.{3}' -f [int]$Inbox.pending, $(if ([int]$Inbox.pending -eq 1) { '' } else { 's' }), $tail, $ts)
     }
     if (@($Memory).Count -gt 0) { $parts += ('Remembered (approved): ' + ((@($Memory) | Select-Object -First 3 | ForEach-Object { $_.value }) -join '; ') + '.') }
     if ($Guidance) { $parts += ('Tony''s judgment on this question: alignment {0}/100, priority {1}.' -f $Guidance.alignmentScore, $Guidance.priority) }
@@ -207,6 +221,10 @@ function Get-TonyExecutiveContext {
     # -- approved permanent memory (READ ONLY; the Memory Manager is the only writer) --
     $memory = if (& $has 'Get-Memories') { try { @(Get-Memories) } catch { @() } } else { @() }
 
+    # -- Executive Inbox awareness (READ ONLY; counts only, no proposal content). The
+    # inbox owns its writes; the context only reads how many proposals are waiting. --
+    $inbox = if (& $has 'Get-InboxSummary') { try { Get-InboxSummary -Now $Now } catch { $null } } else { $null }
+
     # -- Life OS domains (READ ONLY by reference; the workspaces own the writes) --
     # Folded into the ONE context so Tony, the Priority Engine, the Briefing, and
     # the Workforce specialists all read the same source - never a second copy.
@@ -244,7 +262,7 @@ function Get-TonyExecutiveContext {
         -LatestAudit $latestAudit -ActiveGoals $activeGoals -Observations $observations -Guidance $guidance -Question $CurrentQuestion
     $summary = Get-ExecutiveSummaryText -Time $time -Workspace $CurrentWorkspace -Project $CurrentProject `
         -Priorities $priorities -OpenCount $openCount -LatestAudit $latestAudit -AnnualTheme $annualTheme `
-        -Assessment $assessment -Guidance $guidance -Memory $memory -Weather $weather -Calendar $calendar -Email $email
+        -Assessment $assessment -Guidance $guidance -Memory $memory -Weather $weather -Calendar $calendar -Email $email -Inbox $inbox
     # one calm life-awareness sentence, only when something is genuinely relevant today
     $lifeLine = Get-LifeAwarenessLine -Life $life -ActiveGoals $activeGoals -OpenTasks $openTasks -Calendar $calendar
     if ($lifeLine) { $summary = ($summary.TrimEnd() + ' ' + $lifeLine) }
@@ -278,6 +296,7 @@ function Get-TonyExecutiveContext {
         recentConversation = $recentConversation
         recentDocument     = $recentDocument
         memory             = $memory       # approved memories (read-only reference; Memory Manager owns writes)
+        inbox              = $inbox        # Executive Inbox awareness (read-only counts; the inbox owns writes)
         liveSignals        = $LiveSignals  # generic live-provider signals map (weather, calendar, email, ...)
         weather            = $weather      # derived convenience references (or null); provided, never fetched here
         calendar           = $calendar

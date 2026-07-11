@@ -242,6 +242,22 @@ function Get-BriefingTimeline {
     return [pscustomobject]@{ notes = @($tl.notes | ForEach-Object { $_.text }); counts = $tl.counts }
 }
 
+# Waiting for review - one calm line about the Executive Inbox (Stage 8). Reads
+# the read-only inbox awareness the context already carries; mentions the count
+# and how many are time-sensitive, never a list of proposals. Returns $null when
+# nothing is pending (Tony simply says nothing about it).
+function Get-BriefingInboxReview {
+    param($Exec)
+    $ib = if ($Exec -and ($Exec.PSObject.Properties.Name -contains 'inbox')) { $Exec.inbox } else { $null }
+    if (-not $ib -or [int]$ib.pending -le 0) { return $null }
+    $n = [int]$ib.pending
+    $ts = [int]$ib.timeSensitiveCount
+    $line = ('The Workforce prepared {0} item{1} for your review.' -f $n, $(if ($n -eq 1) { '' } else { 's' }))
+    if ($ts -gt 0) { $line += (' {0} {1} time-sensitive.' -f $ts, $(if ($ts -eq 1) { 'is' } else { 'are' })) }
+    else { $line += ' None are urgent - review them when it suits you.' }
+    return [pscustomobject]@{ line = $line; pending = $n; timeSensitive = $ts }
+}
+
 # one) and composes the letter model. Data only - no UI, no writes.
 function Get-TonyExecutiveBriefing {
     param(
@@ -285,6 +301,7 @@ function Get-TonyExecutiveBriefing {
         priorities    = (Get-BriefingPriorities -Exec $exec)
         timeline      = (Get-BriefingTimeline -Context $exec -Now $Now)
         observation   = $observation
+        inboxReview   = (Get-BriefingInboxReview -Exec $exec)
         focus         = (Get-BriefingFocus -Exec $exec)
         encouragement = (Get-BriefingEncouragement -Now $Now)
         # reference back to the single context (not a copy) for any consumer that wants detail

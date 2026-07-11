@@ -199,6 +199,71 @@ function Invoke-InboxRoute {
     return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = 'The owning module is not available; left pending.' }
 }
 
+# =====================================================================
+# PROPOSAL KEYS + AWARENESS (Epic 6 - Workforce Activation)
+# ---------------------------------------------------------------------
+# Deterministic identity for a proposal so the Workforce never adds a
+# duplicate: a stable key is type:sourceId when a real source id exists,
+# else type:normalizedTitle. These are pure helpers shared by the inbox
+# and the producer gate (core/workforce-proposals.ps1).
+# =====================================================================
+
+# Normalize a title to a comparable form: lower-case, punctuation to spaces,
+# collapse whitespace, drop a leading "follow up:" so a follow-up and its plain
+# form collide. Pure.
+function Get-InboxNormalizedTitle {
+    param([string]$Title)
+    $t = ([string]$Title).ToLower().Trim()
+    $t = $t -replace '^\s*follow[ -]?up:\s*', ''
+    $t = $t -replace '[^a-z0-9 ]', ' '
+    $t = ($t -replace '\s+', ' ').Trim()
+    return $t
+}
+
+# The stable key for a candidate/proposal. type:sourceId when we have a real
+# source id, else type:normalizedTitle. Pure.
+function Get-ProposalKey {
+    param([string]$Type, [string]$Title, [string]$SourceId = '')
+    $ty = ([string]$Type).ToLower().Trim(); if (-not $ty) { $ty = 'task' }
+    if ($SourceId -and -not [string]::IsNullOrWhiteSpace($SourceId)) { return ('{0}:{1}' -f $ty, ([string]$SourceId).Trim().ToLower()) }
+    return ('{0}:{1}' -f $ty, (Get-InboxNormalizedTitle -Title $Title))
+}
+
+# The set of stable keys for the current pending proposals - the producer gate
+# checks candidates against this so nothing already waiting is re-proposed.
+function Get-InboxProposalKeys {
+    $keys = @{}
+    foreach ($it in @(Get-InboxItems -Status 'pending')) {
+        $k = Get-ProposalKey -Type $it.type -Title $it.title -SourceId $it.sourceId
+        $keys[$k] = $true
+        if ($it.sourceId) { $keys[('{0}:{1}' -f ([string]$it.type).ToLower(), ([string]$it.sourceId).Trim().ToLower())] = $true }
+    }
+    return $keys
+}
+
+# Read-only awareness summary for Tony (Stage 1). Counts only - never the
+# private content of a proposal. A read, not a write.
+function Get-InboxSummary {
+    param([datetime]$Now = (Get-Date))
+    $pending = @(Get-InboxItems -Status 'pending')
+    $byType = @{}
+    foreach ($it in $pending) { $t = [string]$it.type; if ($byType.ContainsKey($t)) { $byType[$t]++ } else { $byType[$t] = 1 } }
+    $oldest = 0
+    foreach ($it in $pending) { try { $age = [int]([math]::Floor(($Now - [datetime]$it.created).TotalDays)); if ($age -gt $oldest) { $oldest = $age } } catch { } }
+    $highConf = @($pending | Where-Object { [double]$_.confidence -ge 0.8 }).Count
+    $timeRx = '(?i)\b(today|tomorrow|overdue|past due|deadline|expir|urgent|asap|final notice|by (eod|end of day))\b'
+    $timeSensitive = @($pending | Where-Object {
+            ($_.type -in @('calendar', 'communication')) -or ($_.title -match $timeRx) -or ($_.description -match $timeRx)
+        }).Count
+    return [pscustomobject]@{
+        pending            = $pending.Count
+        byType             = $byType
+        oldestAgeDays      = $oldest
+        highConfidenceCount = $highConf
+        timeSensitiveCount = $timeSensitive
+    }
+}
+
 # APPROVE: the OWNING module writes the real record, then the proposal leaves the
 # inbox (no second copy). Never auto-called - only from Jake's explicit action.
 function Approve-InboxItem {

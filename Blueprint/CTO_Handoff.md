@@ -132,6 +132,20 @@ These are settled and should not be re-litigated without a blueprint change:
    (a `memory` proposal routes through `Approve-Memory`). **Read-only providers are never written** —
    `calendar`/`crm` approvals become honest follow-up Action Items, never a fabricated event or record.
 
+14. **The Workforce proposes; only Jake's approval writes (Epic 6, `Workforce_Activation.md`).** Each
+   specialist has a **producer** in `core/workforce-proposals.ps1` that turns an evidence-backed finding
+   into an Executive Inbox proposal; `Invoke-WorkforceProposals` runs them through a **deterministic
+   de-dup/quality gate** (stable `type:sourceId`/`type:normalizedTitle` keys; suppress vs pending inbox
+   **and** vs the destination owner's active records; confidence floor + per-scan cap; suppressions
+   logged to diagnostics as key+type+reason only, **never content**). Producing a proposal is **not** a
+   write to the operating system — it only populates the pending queue; **approval (always Jake's) is the
+   sole path to a real write**, through the existing owner (Decision 13). The scan runs **on demand**
+   (Executive Inbox open + a "Check for new proposals" button) — **never** inside Executive Context or the
+   Briefing (which write nothing) and **never** on a scheduler. Tony's awareness of the inbox is
+   **read-only** (`Get-InboxSummary`: counts only, folded into the Executive Context). Specialists are
+   registered under **persona names** (Sam — Head of Communications, *she*; Ava; Mason; Emma; Riley;
+   Randy). No new external provider, no auto approval, no auto send/delete/schedule/contact/CRM-write.
+
 ## Security / privacy rules
 
 - **Never commit secrets.** API keys, OAuth client secrets, access/refresh tokens, authorization

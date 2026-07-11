@@ -80,8 +80,9 @@ Before a candidate becomes a proposal, the gate:
    is not re-proposed; only a *changed* condition re-proposes.
 5. **Confidence floor + per-scan cap** — low-confidence candidates and overflow beyond a small per-scan
    cap are dropped, so Jake is never flooded.
-6. **Records the suppression reason in diagnostics** (`Write-TonyDiag`) — key + type + reason only,
-   **never the private content**.
+6. **Records the suppression reason in diagnostics** (`Write-TonyDiag`) — **specialist + type + reason
+   only**. Never the title or the key, since a title-derived key can embed a subject line or other
+   private content.
 
 ## Tony awareness (Stage 1) & presentation (Stage 8)
 

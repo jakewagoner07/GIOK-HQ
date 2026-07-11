@@ -347,6 +347,22 @@ function Get-LifeSpecKeys { return @($script:LifeSpecs.Keys) }
 # =====================================================================
 $script:InboxEditId = $null
 $script:InboxMsg = $null
+# Auto-scan runs once when Jake opens the inbox (Set-ActiveView sets this true);
+# internal re-renders (approve/reject/edit) leave it false so a rejected proposal
+# is never re-proposed mid-session. The button below scans on demand.
+$script:InboxAutoScan = $false
+
+# Run the Workforce proposal scan and turn the result into a calm banner line.
+# A proposal is not a write to the operating system - only Jake's approval writes.
+function Invoke-InboxScan {
+    if (-not (Get-Command Invoke-WorkforceProposals -ErrorAction SilentlyContinue)) { return }
+    try {
+        $now = if (Test-Path variable:script:TonyNow) { $script:TonyNow } else { (Get-Date) }
+        $r = Invoke-WorkforceProposals -Now $now
+        if ($r.added -gt 0) { $script:InboxMsg = ("The Workforce added {0} new proposal{1} for your review." -f $r.added, $(if ($r.added -eq 1) { '' } else { 's' })) }
+        elseif (-not $script:InboxMsg) { $script:InboxMsg = 'No new proposals - nothing else needs your attention right now.' }
+    } catch { }
+}
 
 function New-InboxConfidenceChip {
     param([double]$Conf)
@@ -355,10 +371,20 @@ function New-InboxConfidenceChip {
 }
 
 function New-ExecutiveInboxView {
+    # On open (only), let the Workforce scan for new proposals. Idempotent: the
+    # producer gate suppresses anything already pending or already owned.
+    if ($script:InboxAutoScan) { $script:InboxAutoScan = $false; Invoke-InboxScan }
+
     $outer = New-Object Windows.Controls.DockPanel
     $head = New-LifeHeader -Title 'Executive Inbox' -Source 'executive_inbox.json' -Intro 'What the Workforce discovered that could become part of your system - waiting for your decision. Nothing is ever added automatically: approve, edit then approve, or reject. Tony presents; you decide.'
     [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
     $body = New-Object Windows.Controls.StackPanel; $body.Margin = New-Object Windows.Thickness (4, 0, 12, 8)
+
+    $checkRow = New-Object Windows.Controls.StackPanel; $checkRow.Orientation = 'Horizontal'; $checkRow.Margin = New-Object Windows.Thickness (4, 0, 0, 8)
+    $checkRow.Children.Add((New-MiniButton -Text 'Check for new proposals' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+                param($s, $e); Invoke-InboxScan; Show-LifeView { New-ExecutiveInboxView }
+            })) | Out-Null
+    $body.Children.Add($checkRow) | Out-Null
 
     if ($script:InboxMsg) {
         $banner = New-Object Windows.Controls.Border; $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8; $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
