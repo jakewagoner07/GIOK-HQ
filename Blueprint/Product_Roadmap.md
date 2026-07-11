@@ -48,6 +48,11 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ **Executive Inbox (Epic 5)** — GIOK's approval center: the Workforce proposes additions, Jake
   approves/edits/rejects, and approvals route to the owning modules (no second copies). Tony never
   auto-approves. Pending-only `executive_inbox.json` (gitignored). See `Blueprint/Executive_Inbox.md`.
+- ✅ **Workforce Activation (Epic 6)** — the Workforce starts proposing: per-specialist producers
+  (`core/workforce-proposals.ps1`) turn evidence-backed findings into Executive Inbox proposals through
+  a deterministic de-dup/quality gate (stable keys; suppress vs pending + owner records; confidence
+  floor + caps). On-demand scan (inbox open + button); Tony gains read-only awareness + a calm briefing
+  mention. Only Jake's approval ever writes. See `Blueprint/Workforce_Activation.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
@@ -100,9 +105,11 @@ GIOK becomes the operating layer across devices and the agency.
 
 - ⬜ Desktop-icon launch / installer; keep core UI-agnostic, wrap it later
 - ⬜ Mobile / web / Android surfaces (per the alpha roadmap)
-- 🔄 Agent Workforce activated (the "AI Workforce" becomes real) — the D20 Workforce Engine + Epic 4
-  Executive Manager are live with six specialists (Sam, Ava, Emma, Riley, Mason, Randy); future
-  specialists (Finance, Social, Health, Research, Travel, Phone, Meeting) register the same interface
+- ✅ Agent Workforce activated (the "AI Workforce" becomes real) — the D20 Workforce Engine + Epic 4
+  Executive Manager are live with six specialists (Sam, Ava, Emma, Riley, Mason, Randy), and **Epic 6**
+  has them **proposing** into the Executive Inbox (evidence-backed, de-duplicated, approval-gated);
+  future specialists (Finance, Social, Health, Research, Travel, Phone, Meeting) register the same
+  interface and inherit the same producer/proposal pattern
 - 🔄 Agency integrations — **read-only GoHighLevel is built** (Randy, the CRM Manager; generic `crm`
   signal; HubSpot/Salesforce/Zoho/Pipedrive are provider backends, not a Randy redesign); write-with-
   approval is later and consent-gated

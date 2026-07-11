@@ -53,6 +53,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\document-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'core\workforce-engine.ps1')
 . (Join-Path $PSScriptRoot 'core\workforce-specialists.ps1')
+. (Join-Path $PSScriptRoot 'core\workforce-proposals.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-management.ps1')
 . (Join-Path $PSScriptRoot 'providers\claude-provider.ps1')
 . (Join-Path $PSScriptRoot 'providers\weather-provider.ps1')

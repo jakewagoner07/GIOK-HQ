@@ -95,6 +95,21 @@ pending.
 - **Tony owns the Executive Inbox.** He surfaces it calmly (a pending count in awareness), presents
   recommendations with their evidence and confidence, and **never auto-approves**. Jake decides.
 
+## How proposals get here (Epic 6 — Workforce Activation)
+
+Epic 5 built the gate; **Epic 6 fills it.** Each specialist now has a **producer** in
+`core/workforce-proposals.ps1` that turns an evidence-backed finding into a candidate proposal, and
+`Invoke-WorkforceProposals` runs the producers, de-duplicates, and calls `Add-InboxProposal` for the
+survivors. The scan runs **on demand** — when Jake opens the Executive Inbox and via a **"Check for new
+proposals"** button — never inside Executive Context or the Briefing (which write nothing) and never on
+a timer. A deterministic gate keeps it calm: a **stable proposal key** (`type:sourceId`, else
+`type:normalizedTitle`) suppresses anything already pending or already held by the destination owner, a
+**confidence floor** and **per-scan cap** prevent flooding, and every suppression is logged to
+diagnostics as key+type+reason only — never the private content. Tony gains a **read-only** awareness
+summary (`Get-InboxSummary`: pending count, counts by type, oldest age, high-confidence / time-sensitive
+counts) folded into the Executive Context, and mentions it calmly in the briefing. Full design:
+**[Workforce_Activation.md](Workforce_Activation.md)**.
+
 ## The page
 
 A new **Executive Inbox** workspace lists pending proposals — each showing who discovered it, its type,

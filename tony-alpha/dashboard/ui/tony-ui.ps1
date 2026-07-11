@@ -933,6 +933,13 @@ function New-ExecutiveBriefingCard {
         foreach ($note in @($m.timeline.notes)) { $sp.Children.Add((New-Text -Text ('-  ' + $note) -Size 12.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null }
     }
 
+    # waiting for review - a calm one-liner about the Executive Inbox (Stage 8).
+    # Only shown when the Workforce actually has something pending; never a list.
+    if (($m.PSObject.Properties.Name -contains 'inboxReview') -and $m.inboxReview -and [int]$m.inboxReview.pending -gt 0) {
+        $sp.Children.Add((New-BriefingLabel -Text 'WAITING FOR REVIEW')) | Out-Null
+        $sp.Children.Add((New-Text -Text $m.inboxReview.line -Size 13 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+    }
+
     # today's focus
     $sp.Children.Add((New-BriefingLabel -Text "TODAY'S FOCUS")) | Out-Null
     $sp.Children.Add((New-Text -Text $m.focus -Size 15 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)) | Out-Null
@@ -2647,7 +2654,7 @@ function Set-ActiveView {
         'Tony Memory'    { New-TonyMemoryView }
         'Identity'       { New-IdentityView }
         'Goals'          { New-GoalsView }
-        'Executive Inbox'{ New-ExecutiveInboxView }
+        'Executive Inbox'{ $script:InboxAutoScan = $true; New-ExecutiveInboxView }
         'First Conversation' { New-FirstConversationView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-LifeDomainView -Key 'Non-Negotiables' }

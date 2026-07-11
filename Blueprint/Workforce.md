@@ -42,7 +42,9 @@ Every member of the Workforce, present and future, meets the same standards:
 4. **No memory of its own.** Specialists hold no independent memory; the Executive Context and the
    permission-based Memory Manager are the only sources of truth.
 5. **Analyze and recommend — never act.** No specialist sends, writes, schedules, or changes anything.
-   It proposes; Tony presents; Jake decides.
+   It may **propose** (a pending item in the Executive Inbox); Tony presents; **Jake approves, edits, or
+   rejects**; only then does the owning module write. Proposing is *not* acting. *(Epic 6 — Workforce
+   Activation; see [Workforce_Activation.md](Workforce_Activation.md).)*
 6. **Evidence or silence.** A recommendation carries its evidence (source + source id) or it is not
    made.
 
@@ -94,14 +96,28 @@ every time.
 
 ---
 
+## Proposing to the Executive Inbox (Epic 6 — Workforce Activation)
+
+The Workforce is **activated**: each specialist may turn an evidence-backed finding into a **proposal**
+in the [Executive Inbox](Executive_Inbox.md). The permanent flow is
+**Discover → Analyze → Propose → Tony reviews → Jake approves → Owning module writes.** A proposal is
+**not** an action — producing one writes only to the pending inbox; approval (always Jake's) is the only
+thing that writes real data, through the existing owner. The producer layer lives in
+`core/workforce-proposals.ps1`; the full design (producer rules per specialist, the deterministic
+de-duplication/quality gate, the on-demand scan trigger, and Tony's read-only awareness + calm briefing
+mention) is in **[Workforce_Activation.md](Workforce_Activation.md)**. Invariants hold unchanged:
+pending-only inbox, owning modules the only writers, Memory Manager the only memory writer, Decision
+Framework final, no automatic approval, and Jake is never overwhelmed (dedup + confidence floor + caps).
+
 ## Current Workforce
 
-*(As implemented by D20, plus Randy — hired in Epic 3. Emma, Riley, and Randy are on staff. Emma's and
-Riley's tools — the Executive Priority Engine (D18) and the Executive Timeline (D19) — ship on their
-own branches and activate once those engines are in the build. Randy's first tool — a read-only
-**GoHighLevel** CRM backend (Epic 3 Phase 3) — is **built**; she activates once Jake connects a
-HighLevel token. Until a tool is present/connected, each analyst reports honestly that it is not yet
-available — never a fabricated result.)*
+*(As implemented by D20, plus Randy — hired in Epic 3. **Epic 6 registers each analyst under their
+persona name** — `Sam`, `Ava`, `Mason`, `Emma`, `Riley`, `Randy` — so Jake hears the person, not a role
+label. Emma's and Riley's tools — the Executive Priority Engine (D18) and the Executive Timeline (D19) —
+activate once those engines are in the build. Randy's first tool — a read-only **GoHighLevel** CRM
+backend (Epic 3 Phase 3) — is **built**; she activates once Jake connects a HighLevel token. Until a
+tool is present/connected, each analyst reports honestly that it is not yet available — never a
+fabricated result.)*
 
 ### Standard Report Format (all members)
 
@@ -145,11 +161,13 @@ Every specialist returns exactly this shape:
 - **Standard Report Format:** Tony does not file a specialist report — he produces the final
   recommendation from the merged reports.
 
-### Sam — Head of Email
+### Sam — Head of Communications
 
-- **Name:** Sam
-- **Title:** Head of Email  *(engine role: Email Analyst)*
-- **Mission:** Make sure Jake knows what in his inbox actually needs him — and lets the rest wait.
+- **Name:** Sam  *(she)*
+- **Title:** Head of Communications  *(registered engine name: `Sam`)*
+- **Mission:** **Ensure no important communication is missed, regardless of source.** Today her sources
+  are the connected Gmail account(s); other mailboxes (e.g. Yahoo) normalize to the same shape and feed
+  her later — one brain, many mailboxes.
 - **Responsibilities:** Review the inbox across all connected accounts; flag who is waiting on a
   reply, carrier/underwriting updates, and invitations; separate signal from newsletter noise.
 - **Authority:** Recommend which emails deserve attention and a reply. No authority to send, reply,
