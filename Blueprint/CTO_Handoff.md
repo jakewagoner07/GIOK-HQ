@@ -101,6 +101,16 @@ These are settled and should not be re-litigated without a blueprint change:
    `unavailable`, never fabricated), and **auth via a HighLevel Private Integration Token** (static
    bearer, gitignored, least-privilege `*.readonly` scopes; OAuth is the future multi-tenant alternative
    behind the same contract). Writes remain a later consent-gated sprint.
+11. **Tony MANAGES the Workforce, not just delegates (Epic 4, `Executive_Management.md`).** A pure core
+   module (`core/executive-management.ps1`) on top of D20 (it does not redesign the engine) promotes
+   Tony from delegator to Executive Manager: he decides who works, who begins first, who verifies, who
+   is skipped, when the evidence is enough, and when uncertainty needs another opinion — then merges into
+   one recommendation (Decision Framework still final). Permanent invariants: **progressive delegation**
+   (fewest specialists for narrow asks; breadth for broad), **least necessary work** (unavailable
+   specialists never woken; the single Executive Context reused; no specialist analyzed twice per run),
+   **deterministic trust scoring with NO invented history**, **conflicts surfaced and arbitrated**, and
+   **no new storage / no actions**. Its return is a **superset** of the D20 merged report, so all
+   consumers work unchanged.
 
 ## Security / privacy rules
 
@@ -121,28 +131,33 @@ These are settled and should not be re-litigated without a blueprint change:
 
 ## Current Git state
 
-- **Branch:** `feature/dashboard-alpha` (all work lives here; **never merge into `main`**).
-- **PR #1** open against `main`, **not merged** — it accumulates the whole build.
-- **HEAD:** `2a2d42a` *Build Read-Only Google Calendar Provider*; local = remote.
-- **Working tree:** clean except one intentional untracked file, `Founder/Tony_Feedback.md`.
-- **Workflow every sprint:** build → commit locally → **push only when Jake explicitly says so** →
-  keep on `feature/dashboard-alpha` → leave PR #1 open. After a push, confirm branch status, commit
-  hash, remote sync, PR inclusion, clean tree, and secret-safety.
+- **`main`** is at `2459b66` (Alpha PR #1 + D17 PR #2 merged). **Never merge into `main` without Jake.**
+- **`release/rc2-executive-intelligence`** is the current integration branch: D18, D19, D20 (+
+  constitution), Randy, and Executive Management merged in dependency order (history preserved) from
+  synchronized `main`. **Local-only until Jake approves a push; not merged into `main`.**
+- Feature branches still exist on the remote: `feature/executive-priority-engine` (`6dddef5`),
+  `feature/executive-timeline` (`50fb539`), `feature/workforce-engine` (`e65e8f8`; the constitution
+  `1ac6810` rides inside Randy/Exec-Management), `feature/randy-crm-manager` (`9cbb914`),
+  `feature/executive-management` (`510670f`).
+- **Working tree:** clean except the intentional untracked `Founder/` and the gitignored local
+  `crm.config.json` (Jake's real HighLevel token — never committed).
+- **Workflow every sprint:** build → commit locally → **push only when Jake explicitly says so**. After
+  a push, confirm branch status, commit hash, remote sync, clean tree, and a secret scan.
 
 ## Exact current stopping point
 
-Sprint **D14 (Read-Only Google Calendar Provider)** is **committed and pushed**. The provider's full
-architecture (OAuth 2.0 desktop + PKCE + loopback + offline refresh + read-only fetch + structured
-contract + Settings Connect/Test/Disconnect) is implemented and tested *except the live connection*,
-which needs Jake's Google Cloud OAuth client and browser consent (it cannot and must not be
-fabricated in a build environment). **Manual steps for Jake are in `Google_Calendar_Provider.md` and
-`GIOK_Project_Status.md`.** Nothing is mid-edit; the tree is clean.
+**RC2 — Executive Intelligence Integration** is committed on `release/rc2-executive-intelligence` and
+verified together (app launches; Emma/Riley activate on the merged engines; Randy uses the `crm` signal
+and connects live read-only; the Executive Manager delegates across all six specialists; both harnesses
+pass on the merged tree; Decision Framework final; all read-only). Nothing is mid-edit; the tree is
+clean. **Stopped before pushing**, awaiting CTO approval. No feature work was added during RC2.
 
 ## Recommended next steps
 
-1. **Jake completes Google OAuth setup** (Cloud project → enable Calendar API → OAuth consent →
-   Desktop client → paste into `calendar.config.json` → Settings → Connect). Then validate live.
-2. **D15 — Calendar go-live + calendar-aware Executive Briefing** (on-demand, not per render).
+1. **CTO review of RC2**, then push `release/rc2-executive-intelligence` (Jake's approval) and open its
+   PR against `main`.
+2. **Executive Automation Foundation (local scheduler)** — pre-compose the now priority-ranked,
+   time-aware, workforce-backed morning briefing (Phase 3's first "ahead of you" capability).
 3. **D16 — Gmail read-only provider** (same OAuth/registry/Settings pattern).
 4. Begin **Phase 3 (Executive Automation):** a local scheduler to pre-compose the morning briefing.
 

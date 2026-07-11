@@ -6,12 +6,16 @@ architecture, priorities, or history. Update this at the end of each sprint.*
 Last updated: **RC2 — Executive Intelligence Integration** (integrates D18, D19, D20, Randy, and
 Executive Management into one release candidate).
 
-> **D18 status:** D18 – Executive Priority Engine is feature complete and pushed to
-> `feature/executive-priority-engine`. Merge is intentionally deferred pending 3–5 days of founder
-> validation during normal daily use. No release blockers currently identified.
->
-> **D19 status:** D19 – Executive Timeline is feature complete on `feature/executive-timeline`
-> (branched from `main`, independent of the deferred D18). No release blockers currently identified.
+> **RC2 status (Executive Intelligence Integration):** the five approved pending branches are
+> integrated into one release candidate on `release/rc2-executive-intelligence` (branched from
+> synchronized `main` @ `2459b66`), merged in dependency order with history preserved: **D18** Executive
+> Priority Engine → **D19** Executive Timeline → **D20** Workforce Engine (+ constitution) → **Randy**
+> (read-only GoHighLevel CRM) → **Executive Management** (Epic 4). Verified together: the app launches;
+> **Emma (Priority) and Riley (Timeline) activate on the merged engines**; **Randy uses the generic
+> `crm` signal** (live GoHighLevel connects read-only); the **Executive Manager** delegates across all
+> six specialists with progressive delegation, trust scoring, and conflict arbitration; the Decision
+> Framework keeps final authority; everything read-only; nothing new stored. No release blockers
+> currently identified. **Not merged into `main` and not pushed** (awaiting CTO approval).
 
 ---
 
@@ -21,10 +25,10 @@ Executive Management into one release candidate).
 |---|---|
 | **Product** | GIOK — a desktop life/business operating system for Jake Wagoner (GIOK Agency, Ogden, UT), with **Tony**, an AI Chief of Staff, living inside it. |
 | **Current version** | **0.8 Alpha** (`tony-alpha/dashboard/theme/theme.json`) |
-| **Current branch** | `feature/executive-priority-engine` (branched from `main` @ `b1f011d`) |
-| **Current PR** | Alpha PR #1 and D17 PR #2 both **merged to `main`** (`main` @ `b1f011d`). D18 opens a new PR when pushed. |
-| **Latest commit** | `main` @ `b1f011d` (pushed); **D18 Executive Priority Engine committed on the feature branch, unpushed** (this checkpoint) |
-| **Remote sync** | D17 merged to `main`; **D18 local-only until Jake approves a push** |
+| **Current branch** | `release/rc2-executive-intelligence` (branched from `main` @ `2459b66`; integrates D18/D19/D20/Randy/Executive Management) |
+| **Current PR** | Alpha PR #1 and D17 PR #2 **merged to `main`** (`main` @ `2459b66`). RC2 opens a PR when pushed (CTO-approved). |
+| **Latest commit** | RC2 integration on the branch, **local-only until Jake approves a push**; `main` unchanged at `2459b66`. |
+| **Remote sync** | D18/D19/D20/Randy/Executive-Management each live on their own remote branch; RC2 is local until approved. |
 | **Platform** | Windows PowerShell 5.1 (STA) + .NET WPF. No Node/Python. Entry point: `tony-alpha/dashboard/dashboard.ps1`. |
 
 ---
@@ -100,6 +104,9 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | `593df92` (merge `b1f011d`) |
 | D18 | Executive Priority Engine — ranks every real item into Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss; folded into the Executive Briefing | `6dddef5` (RC2) |
 | D19 | Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing timestamps; folded into the briefing | `50fb539` (RC2) |
+| D20 | Workforce Engine — Tony delegates to specialist analysts and merges into one recommendation; constitutional org chart (`Workforce.md`) | `e65e8f8`/`1ac6810` (RC2) |
+| Epic 3 | Randy — read-only GoHighLevel CRM (generic `crm` signal, normalized model, live-validated); CRM-agnostic | `5935aea`/`3359351`/`9cbb914` (RC2) |
+| Epic 4 | Executive Management — Tony manages the Workforce (progressive delegation, trust scoring, conflict arbitration) | `510670f` (RC2) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
 
@@ -132,6 +139,19 @@ Jake's step**: enable the Gmail API on the existing Google Cloud project, add a 
   `core/email-intelligence.ps1` (dedupe by Message-ID); registered as the generic `email` signal.
   **Live-validated across two real accounts.** Read-only (never sends/labels/deletes); bodies never
   fetched. Settings → Gmail (per-account connect/disconnect).
+- **Live — CRM / GoHighLevel (read-only), MULTI-LOCATION (Epic 3):** HighLevel API v2 authenticated by
+  a **Private Integration Token** (static bearer in the gitignored `crm.config.json`). Reads pipelines,
+  opportunities, contacts, and opportunity-linked tasks **read-only (HTTP GET only)**, normalizes to the
+  vendor-neutral CRM model, and feeds **Randy the CRM Manager** the generic `crm` signal. Lead signals
+  derive from opportunities (not raw contacts); policies/renewals/requirements reported **unavailable**
+  when GHL doesn't expose them. **Live-validated on Jake's real account.** No CRM mirror.
+
+**Intelligence & management layers (RC2-integrated):** Executive Priority Engine (`executive-priority.ps1`,
+D18) and Executive Timeline (`executive-timeline.ps1`, D19) — both folded into the Executive Briefing and
+wrapped by the Emma/Riley analysts; the **Workforce Engine** (`workforce-engine.ps1` +
+`workforce-specialists.ps1`, D20) with six specialists (Sam, Ava, Emma, Riley, Mason, Randy); and the
+**Executive Manager** (`executive-management.ps1`, Epic 4) that manages them. All pure/read-only over the
+single Executive Context; Decision Framework keeps final authority.
 
 ---
 
@@ -217,6 +237,15 @@ Projects, Learning.
   verified across empty/busy days, family-vs-business, urgent-email-vs-time-block, cross-source
   dedupe, many-small-items, promotions, and a disconnected provider — fixtures + a live Home render
   ("Act first / Also today / Still visible"). No-loss invariant holds.
+
+**RC2 integration verification (all passing):** every `.ps1` parses; full app launches (Home / Agents /
+Tony render); all six specialists available with **Emma and Riley now activating on the merged Priority
+& Timeline engines** and Randy on the `crm` signal; the Executive-Management harness (36 checks:
+progressive delegation, least-necessary-work, conflict arbitration, low-confidence verification, trust
+scoring, evidence reuse / no duplicate calls, Context preserved, Decision Framework seam, no storage /
+no actions) and the CRM/Randy harness (59 checks) both pass on the merged tree; **live GoHighLevel
+connects read-only** post-merge; the Executive Manager delegated to Emma + Riley end-to-end (no-loss
+"kept visible" intact); both engines fold into the Executive Briefing. All integrations read-only.
 
 ## Next recommended sprint
 

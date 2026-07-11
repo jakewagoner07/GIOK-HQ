@@ -29,6 +29,16 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   awareness; Decision Framework as final authority; folded into the briefing (D18)
 - ✅ Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing
   timestamps only; no new storage; folded into the briefing (D19)
+- ✅ Workforce Engine — Tony delegates to specialist analysts and merges into one recommendation; the
+  only executive decision maker; framework for all future specialists (D20). Org chart + bylaws in the
+  constitutional `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason, Randy; Executive
+  Awareness Principle; Rule of Progressive Delegation).
+- ✅ Executive Management — Tony promoted from delegator to **Executive Manager**: decides who
+  works/verifies/is skipped and when the evidence is enough; progressive delegation, deterministic
+  trust scoring, conflict arbitration; pure module on top of D20 (Epic 4).
+- ✅ **RC2 — Executive Intelligence Integration** — D18, D19, D20, Randy, and Executive Management
+  merged into one release candidate; Emma and Riley activate on the merged engines; Randy uses the
+  generic `crm` signal; all read-only, Decision Framework still final.
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
@@ -81,8 +91,12 @@ GIOK becomes the operating layer across devices and the agency.
 
 - ⬜ Desktop-icon launch / installer; keep core UI-agnostic, wrap it later
 - ⬜ Mobile / web / Android surfaces (per the alpha roadmap)
-- ⬜ Agent Workforce activated (the "AI Workforce" becomes real)
-- ⬜ Agency integrations (e.g., GoHighLevel) — read then, later, act-with-approval
+- 🔄 Agent Workforce activated (the "AI Workforce" becomes real) — the D20 Workforce Engine + Epic 4
+  Executive Manager are live with six specialists (Sam, Ava, Emma, Riley, Mason, Randy); future
+  specialists (Finance, Social, Health, Research, Travel, Phone, Meeting) register the same interface
+- 🔄 Agency integrations — **read-only GoHighLevel is built** (Randy, the CRM Manager; generic `crm`
+  signal; HubSpot/Salesforce/Zoho/Pipedrive are provider backends, not a Randy redesign); write-with-
+  approval is later and consent-gated
 - ⬜ Cross-workspace automation; document ingestion into memory (approval-gated)
 
 ---

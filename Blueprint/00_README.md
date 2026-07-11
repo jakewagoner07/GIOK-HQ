@@ -63,6 +63,11 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Gmail Provider](Gmail_Provider.md) | Read-only Gmail — Executive Email Summary; shared OAuth + provider-neutral email intelligence (Outlook/M365/Yahoo plug in) |
 | — | [Multi-Account Google](Multi_Account_Google.md) | One Calendar + one Gmail provider reading MANY Google accounts (business + personal); per-account tokens, merged at the intelligence layer |
 | — | [Executive Timeline](Executive_Timeline.md) | Tony understands time — what's new/aging/overdue/ignored/expiring, derived only from existing timestamps; no new storage |
+| — | [The GIOK Workforce](Workforce.md) | **Constitutional** — the permanent org chart and bylaws of Tony's team (Tony, Sam, Ava, Emma, Riley, Mason, Randy + future hires); the Executive Awareness Principle and Rule of Progressive Delegation |
+| — | [Workforce Engine](Workforce_Engine.md) | Tony's management layer — delegate to specialist analysts, merge reports, present one recommendation; Tony stays the only decision maker (D20) |
+| — | [Executive Management](Executive_Management.md) | Promotes Tony from delegator to Executive Manager — decides who works/verifies/is skipped and when evidence is enough; progressive delegation, deterministic trust scoring, conflict arbitration (Epic 4) |
+| — | [Randy — CRM Manager](Randy_CRM_Manager.md) | **Constitutional** — hires Randy, the CRM Manager; her charter and why she is built around CRM as a discipline (not GoHighLevel) so future CRMs need no redesign |
+| — | [CRM Provider](CRM_Provider.md) | Read-only GoHighLevel backend + normalizer behind the generic `crm` signal Randy consumes; the normalized CRM model; preserves all five invariants |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
