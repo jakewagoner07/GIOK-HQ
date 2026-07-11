@@ -28,7 +28,25 @@ function Save-ConversationLog {
     param([Parameter(Mandatory)] $Data)
     if (-not $Data.meta) { $Data | Add-Member -NotePropertyName meta -NotePropertyValue ([pscustomobject]@{ version = '1.0.0'; updated = $null }) -Force }
     $Data.meta.updated = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    ($Data | ConvertTo-Json -Depth 8) | Set-Content -Path (Get-ConversationPath) -Encoding UTF8
+    $json = ($Data | ConvertTo-Json -Depth 8)
+    $path = Get-ConversationPath
+    # The reported failure is a transient file LOCK: the running app and a rapid
+    # second turn (or a test) race on conversation.json and one write throws
+    # "the process cannot access the file ... in use". A plain single Set-Content
+    # surfaces that as a hard error and loses the turn. Retry with a short backoff
+    # rides out the brief contention; the app never holds the handle open, so the
+    # lock is always momentary.
+    $attempt = 0
+    while ($true) {
+        try {
+            $json | Set-Content -Path $path -Encoding UTF8
+            return
+        } catch {
+            $attempt++
+            if ($attempt -ge 5) { throw }
+            Start-Sleep -Milliseconds (60 * $attempt)
+        }
+    }
 }
 
 function Get-NextConversationId {
