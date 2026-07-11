@@ -84,9 +84,14 @@ GIOK becomes the operating layer across devices and the agency.
 - ⬜ Desktop-icon launch / installer; keep core UI-agnostic, wrap it later
 - ⬜ Mobile / web / Android surfaces (per the alpha roadmap)
 - ⬜ Agent Workforce activated (the "AI Workforce" becomes real) — built on the D20 **Workforce
-  Engine**; future specialists (GoHighLevel, Finance, CRM, Social, Health, Research, Travel, Phone,
-  Meeting analysts) register the same interface with no redesign
-- ⬜ Agency integrations (e.g., GoHighLevel) — read then, later, act-with-approval
+  Engine**; future specialists (Finance, Social, Health, Research, Travel, Phone, Meeting analysts)
+  register the same interface with no redesign
+- 🔄 **Epic 3 — Business Intelligence / CRM (`Randy_CRM_Manager.md`).** **Randy the CRM Manager** is
+  hired (constitutional); she understands **CRM as a discipline, not GoHighLevel**, so future CRMs need
+  no redesign. Phase 1 (constitution) + Phase 2 (provider architecture, `CRM_Provider.md`) are
+  **design-complete**; the read-only CRM provider + Randy's specialist are the next build.
+- ⬜ Agency integrations (GoHighLevel first, then HubSpot/Salesforce/Zoho/Pipedrive/custom) — read
+  then, later, act-with-approval; each a provider backend + normalizer behind the `crm` signal
 - ⬜ Cross-workspace automation; document ingestion into memory (approval-gated)
 
 ---

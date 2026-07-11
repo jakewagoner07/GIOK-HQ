@@ -18,6 +18,15 @@ deferral note (D18 and D19 remain on their own branches, unmerged).
 > those engines merge. The permanent org chart and bylaws are formalized in the constitutional
 > `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason + future hires; Executive Awareness
 > Principle; Rule of Progressive Delegation). No release blockers currently identified.
+>
+> **Epic 3 status (Business Intelligence / CRM):** **Randy — CRM Manager** is hired as a permanent,
+> constitutional Workforce member on `feature/randy-crm-manager` (branched on top of the D20 Workforce
+> foundation, so it inherits the constitution). Randy understands **CRM as a discipline, not
+> GoHighLevel** — future CRMs (HubSpot, Salesforce, Zoho, Pipedrive, custom) are provider backends, not
+> a Randy redesign. Phase 1 (Randy's charter, `Blueprint/Randy_CRM_Manager.md`) and Phase 2 (CRM
+> provider architecture, `Blueprint/CRM_Provider.md`) are **documentation only — design-complete, no
+> CRM code yet**; the read-only CRM provider + Randy's specialist are the next build (separate commit).
+> No release blockers currently identified.
 
 ---
 

@@ -63,6 +63,8 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Multi-Account Google](Multi_Account_Google.md) | One Calendar + one Gmail provider reading MANY Google accounts (business + personal); per-account tokens, merged at the intelligence layer |
 | — | [The GIOK Workforce](Workforce.md) | **Constitutional** — the permanent org chart and bylaws of Tony's team (Tony, Sam, Ava, Emma, Riley, Mason + future hires); the Executive Awareness Principle and Rule of Progressive Delegation |
 | — | [Workforce Engine](Workforce_Engine.md) | Tony's management layer — delegate to specialist analysts, merge reports, present one recommendation; Tony stays the only decision maker |
+| — | [Randy — CRM Manager](Randy_CRM_Manager.md) | **Constitutional** — hires Randy, the CRM Manager; her charter, boundaries, and why she is built around CRM as a discipline (not around GoHighLevel) so future CRMs need no redesign |
+| — | [CRM Provider](CRM_Provider.md) | **Design only (no code yet)** — how GIOK will read a CRM: the normalized CRM model + live-provider seam Randy consumes, preserving all five invariants; GoHighLevel is the first backend |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |
