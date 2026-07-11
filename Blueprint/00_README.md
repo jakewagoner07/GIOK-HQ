@@ -56,11 +56,18 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Tony Observation Engine](Tony_Observation_Engine.md) | Tony notices patterns — observations, not reminders; celebrate, guide, never criticize |
 | — | [Executive Context Engine](Executive_Context_Engine.md) | Tony's single, live situational awareness — assembled before every response, never stored |
 | — | [Executive Briefing](Executive_Briefing.md) | The morning letter from Tony — Home's centerpiece; calm, personal, never a dashboard |
+| — | [Executive Priority Engine](Executive_Priority_Engine.md) | Ranks every real item into Act Now / Do Today / Keep Visible / Low-Value Noise — nothing legitimate is ever forgotten |
 | — | [Tony Memory, With Permission](Tony_Memory_With_Permission.md) | Tony never remembers without asking — the permission model, Memory Review, and user control |
 | — | [Weather Provider](Weather_Provider.md) | Tony's first live provider — the permanent architecture every future live service follows |
 | — | [Google Calendar Provider](Google_Calendar_Provider.md) | Read-only Google Calendar via OAuth — Tony understands your schedule; the pattern for Gmail |
 | — | [Gmail Provider](Gmail_Provider.md) | Read-only Gmail — Executive Email Summary; shared OAuth + provider-neutral email intelligence (Outlook/M365/Yahoo plug in) |
 | — | [Multi-Account Google](Multi_Account_Google.md) | One Calendar + one Gmail provider reading MANY Google accounts (business + personal); per-account tokens, merged at the intelligence layer |
+| — | [Executive Timeline](Executive_Timeline.md) | Tony understands time — what's new/aging/overdue/ignored/expiring, derived only from existing timestamps; no new storage |
+| — | [The GIOK Workforce](Workforce.md) | **Constitutional** — the permanent org chart and bylaws of Tony's team (Tony, Sam, Ava, Emma, Riley, Mason, Randy + future hires); the Executive Awareness Principle and Rule of Progressive Delegation |
+| — | [Workforce Engine](Workforce_Engine.md) | Tony's management layer — delegate to specialist analysts, merge reports, present one recommendation; Tony stays the only decision maker (D20) |
+| — | [Executive Management](Executive_Management.md) | Promotes Tony from delegator to Executive Manager — decides who works/verifies/is skipped and when evidence is enough; progressive delegation, deterministic trust scoring, conflict arbitration (Epic 4) |
+| — | [Randy — CRM Manager](Randy_CRM_Manager.md) | **Constitutional** — hires Randy, the CRM Manager; her charter and why she is built around CRM as a discipline (not GoHighLevel) so future CRMs need no redesign |
+| — | [CRM Provider](CRM_Provider.md) | Read-only GoHighLevel backend + normalizer behind the generic `crm` signal Randy consumes; the normalized CRM model; preserves all five invariants |
 | — | [First Conversation](First_Conversation.md) | Why GIOK starts with conversation, not configuration |
 | — | [Identity](Identity.md) | The Identity workspace — GIOK's foundation; Vision & Goals live here |
 | — | [Continuous Improvement](Continuous_Improvement.md) | Plan → Execute → Audit → Improve; Morning Briefing & End of Day Audit |

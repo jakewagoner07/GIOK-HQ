@@ -301,6 +301,25 @@ function Invoke-TonyBrain {
         Get-TonyExecutiveContext -CurrentWorkspace $CurrentWorkspace -CurrentQuestion $UserInput -Now $Now -History $History -LiveSignals $liveSignals
     } else { $null }
 
+    # WORKFORCE: for a status / review / "what happened" ask, Tony convenes the
+    # relevant specialist analysts, collects their standard reports, and merges
+    # them into ONE recommendation. Specialists never bypass Tony - only this
+    # merged synthesis reaches the provider. Guarded so ordinary questions are
+    # untouched; Tony remains the single executive decision maker.
+    # Tony MANAGES the Workforce (Epic 4): the Executive Manager decides who
+    # works, who verifies, who is skipped, and when the evidence is enough -
+    # then merges into one recommendation (Decision Framework keeps final
+    # authority inside the merge). Falls back to the raw D20 delegation if the
+    # manager module is not in the build. The returned object is a superset of
+    # the merged report, so the provider consumes it unchanged.
+    $workforce = $null
+    if ((Get-Command Test-WorkforceRelevant -ErrorAction SilentlyContinue) -and (Test-WorkforceRelevant $UserInput)) {
+        try {
+            if (Get-Command Invoke-ExecutiveManager -ErrorAction SilentlyContinue) { $workforce = Invoke-ExecutiveManager -Task $UserInput -Context $exec -Now $Now }
+            elseif (Get-Command Invoke-Workforce -ErrorAction SilentlyContinue) { $workforce = Invoke-Workforce -Task $UserInput -Context $exec -Now $Now }
+        } catch { $workforce = $null }
+    }
+
     # reuse the referenced base context for the reasoning engine (no re-assembly)
     $context = if ($exec -and $exec.base) { $exec.base } else { Get-TonyContext -Now $Now }
     $decision = Get-TonyDecision -UserInput $UserInput -Context $context
@@ -339,6 +358,7 @@ function Invoke-TonyBrain {
         workspace = $CurrentWorkspace
         openTaskCount = @($openTasks).Count
         liveSignals = $liveSignals   # generic live-provider signals (weather, calendar, ...); explained naturally
+        workforce = $workforce       # merged specialist report (present only for delegated questions)
     }
 
     $request = New-TonyRequest -UserQuestion $UserInput -Context $ctxForProvider -Identity $identity -Goals $goals -Mission $mission `

@@ -25,6 +25,20 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ Memory With Permission — ask-first, Memory Review, user control (D12)
 - ✅ Document Intelligence foundation — read for meaning, approval-gated (D6)
 - ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
+- ✅ Executive Priority Engine — Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss
+  awareness; Decision Framework as final authority; folded into the briefing (D18)
+- ✅ Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing
+  timestamps only; no new storage; folded into the briefing (D19)
+- ✅ Workforce Engine — Tony delegates to specialist analysts and merges into one recommendation; the
+  only executive decision maker; framework for all future specialists (D20). Org chart + bylaws in the
+  constitutional `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason, Randy; Executive
+  Awareness Principle; Rule of Progressive Delegation).
+- ✅ Executive Management — Tony promoted from delegator to **Executive Manager**: decides who
+  works/verifies/is skipped and when the evidence is enough; progressive delegation, deterministic
+  trust scoring, conflict arbitration; pure module on top of D20 (Epic 4).
+- ✅ **RC2 — Executive Intelligence Integration** — D18, D19, D20, Randy, and Executive Management
+  merged into one release candidate; Emma and Riley activate on the merged engines; Randy uses the
+  generic `crm` signal; all read-only, Decision Framework still final.
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
@@ -77,27 +91,31 @@ GIOK becomes the operating layer across devices and the agency.
 
 - ⬜ Desktop-icon launch / installer; keep core UI-agnostic, wrap it later
 - ⬜ Mobile / web / Android surfaces (per the alpha roadmap)
-- ⬜ Agent Workforce activated (the "AI Workforce" becomes real)
-- ⬜ Agency integrations (e.g., GoHighLevel) — read then, later, act-with-approval
+- 🔄 Agent Workforce activated (the "AI Workforce" becomes real) — the D20 Workforce Engine + Epic 4
+  Executive Manager are live with six specialists (Sam, Ava, Emma, Riley, Mason, Randy); future
+  specialists (Finance, Social, Health, Research, Travel, Phone, Meeting) register the same interface
+- 🔄 Agency integrations — **read-only GoHighLevel is built** (Randy, the CRM Manager; generic `crm`
+  signal; HubSpot/Salesforce/Zoho/Pipedrive are provider backends, not a Randy redesign); write-with-
+  approval is later and consent-gated
 - ⬜ Cross-workspace automation; document ingestion into memory (approval-gated)
 
 ---
 
 ## Next recommended sprints
 
-1. **D18 — Executive Automation Foundation (local scheduler).**
-   Pre-compose the morning briefing (now MULTI-ACCOUNT Calendar- AND Gmail-aware) so it's ready the
-   instant GIOK opens; the seam already exists in the briefing/context engines.
-   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and it now has
-   rich multi-account signals worth pre-computing.
+1. **D19 — Executive Automation Foundation (local scheduler).**
+   Pre-compose the morning briefing (now MULTI-ACCOUNT and PRIORITY-RANKED) so it's ready the instant
+   GIOK opens; the seam already exists in the briefing/context/priority engines.
+   *Why next:* turns "connected" into "ahead of you" — the first Phase-3 capability, and the D18
+   Executive Priority Engine gives it a ranked plan worth pre-computing.
 
-2. **D19 — Projects Model.**
+2. **D20 — Projects Model.**
    A real projects store so the Executive Context `project` field is live, Action Items can link to a
    project/goal, and priority "why" gets specific.
    *Why next:* removes standing technical debt and sharpens judgment across Home, briefing, and
    context — compounding value for every later sprint.
 
-3. **D20 — Meeting Prep + Focus-Block Protection.**
+3. **D21 — Meeting Prep + Focus-Block Protection.**
    Using Calendar + Gmail (now across all accounts), Tony drafts a short prep for the next meeting and
    proposes protecting the clearest free block.
    *Why next:* the first genuinely "chief-of-staff" proactive help, and a natural on-ramp to
