@@ -25,6 +25,10 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
 - ✅ Memory With Permission — ask-first, Memory Review, user control (D12)
 - ✅ Document Intelligence foundation — read for meaning, approval-gated (D6)
 - ✅ Native UTF-8 + response-pipeline correctness (D7.2, D10.1)
+- 🔄 Executive Priority Engine (D18) — on branch, merge deferred for founder validation
+- 🔄 Executive Timeline (D19) — on branch, unmerged
+- ✅ Workforce Engine — Tony delegates to specialist analysts and merges into one recommendation;
+  the only executive decision maker; framework for all future specialists (D20)
 
 **Remaining in Phase 1 (small):** a real **Projects model** (unblocks the reserved `project` context
 field and sharpens priority reasons). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
@@ -77,7 +81,9 @@ GIOK becomes the operating layer across devices and the agency.
 
 - ⬜ Desktop-icon launch / installer; keep core UI-agnostic, wrap it later
 - ⬜ Mobile / web / Android surfaces (per the alpha roadmap)
-- ⬜ Agent Workforce activated (the "AI Workforce" becomes real)
+- ⬜ Agent Workforce activated (the "AI Workforce" becomes real) — built on the D20 **Workforce
+  Engine**; future specialists (GoHighLevel, Finance, CRM, Social, Health, Research, Travel, Phone,
+  Meeting analysts) register the same interface with no redesign
 - ⬜ Agency integrations (e.g., GoHighLevel) — read then, later, act-with-approval
 - ⬜ Cross-workspace automation; document ingestion into memory (approval-gated)
 

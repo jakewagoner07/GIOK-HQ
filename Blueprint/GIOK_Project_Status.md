@@ -3,11 +3,19 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: end of **Sprint D17** (Multi-Account Google Integration), after RC1 + the alpha merge to `main`.
+Last updated: end of **Sprint D20** (Workforce Engine), branched from `main` after D17 + the D18
+deferral note (D18 and D19 remain on their own branches, unmerged).
 
 > **D18 status:** D18 – Executive Priority Engine is feature complete and pushed to
 > `feature/executive-priority-engine`. Merge is intentionally deferred pending 3–5 days of founder
 > validation during normal daily use. No release blockers currently identified.
+>
+> **D19 status:** D19 – Executive Timeline is feature complete on `feature/executive-timeline`. No
+> release blockers currently identified.
+>
+> **D20 status:** D20 – Workforce Engine is feature complete on `feature/workforce-engine` (branched
+> from `main`, independent of D18/D19). The Priority and Timeline analysts activate automatically once
+> those engines merge. No release blockers currently identified.
 
 ---
 
@@ -48,7 +56,9 @@ Talk with Tony / Command bar / Home
 **Supporting engines (all core/):** Observation Engine (`tony-observations.ps1`), Memory Manager
 (`memory-manager.ps1`, the only permanent-memory writer), Executive Briefing
 (`executive-briefing.ps1`, Home's centerpiece), Document Intelligence (`document-intelligence.ps1`),
-Live-Provider registry (`live-providers.ps1`).
+Live-Provider registry (`live-providers.ps1`), and the **Workforce Engine** (`workforce-engine.ps1` +
+`workforce-specialists.ps1`, D20) — a specialist registry Tony delegates to and merges, staying the
+only executive decision maker.
 
 **Two registries, deliberately separate:**
 - **AI provider registry** (in `tony-brain.ps1`): who *reasons* for Tony (Claude; auto-select).
@@ -93,7 +103,10 @@ Experience, Identity, End of Day Audit, Project Diamond Blueprint, Sunday Night 
 | D15 | Calendar Intelligence (first/last/total, free blocks, meeting-heavy days) fed into the Executive Briefing | `7c73e10` (+`722dce4`) |
 | D16 | Gmail Provider — read-only Executive Email Summary on shared OAuth + provider-neutral email intelligence | `8dc0dcc` (+`9cbe816`) |
 | RC1 | Alpha Cleanup & Release Review (retired dead `tony-memory.ps1`; fixed `Get-ConversationPath` collision) — merged to `main` | `0530933` (merge `74c0a63`) |
-| D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | (this checkpoint) |
+| D17 | Multi-Account Google — one Calendar + one Gmail provider read MANY accounts; per-account tokens; merge/dedupe at the intelligence layer | `593df92` (merge `b1f011d`) |
+| D18 | Executive Priority Engine — Act Now / Do Today / Keep Visible / Low-Value Noise; no-loss | `6dddef5` (branch; **merge deferred for founder validation**) |
+| D19 | Executive Timeline — Tony understands time (new/aging/overdue/waiting/expiring) from existing timestamps | `50fb539` (branch, unmerged) |
+| D20 | Workforce Engine — management layer; delegate to specialist analysts, merge reports, one recommendation; Tony stays the only decision maker | (this checkpoint) |
 
 Each sprint has a Blueprint doc; see `Blueprint/00_README.md` for the index.
 
@@ -210,7 +223,16 @@ Projects, Learning.
 
 ## Next recommended sprint
 
-**D18 — Executive Automation Foundation (local scheduler).** Pre-compose the morning briefing (now
-multi-account Calendar- and Gmail-aware) so it is ready the instant GIOK opens — the first Phase-3
-"ahead of you" capability. (The Calendar provider was migrated onto the shared `core/google-oauth.ps1`
-during D17, so that deferred item is done.) See `Product_Roadmap.md` for the full ordering.
+**Merge validation (D18/D19/D20) → then Executive Automation Foundation (local scheduler).** Several
+capabilities now sit on unmerged branches awaiting founder validation (D18 Priority, D19 Timeline,
+D20 Workforce). Once merged, the local scheduler can pre-compose a multi-account, priority-ranked,
+time-aware, workforce-backed morning briefing. See `Product_Roadmap.md` for the full ordering.
+
+**Testing note (D20 Workforce Engine):** verified — 5 specialists register with the standard
+interface; relevance + delegation; standard report shape; merge into one recommendation with
+evidence + reasoning (transparency); quality control rejects poor reports; conflicting opinions
+flagged (`showRawToJake`); low-confidence → `needsVerification`; Priority/Timeline analysts degrade
+honestly without their engines and light up with them; ordinary questions bypass the workforce; the
+Executive Briefing is unchanged; a live "What happened overnight?" produced a merged, transparent
+answer; conversation, memory, Document Intelligence, Calendar, and Gmail all still pass; full app
+launch clean.

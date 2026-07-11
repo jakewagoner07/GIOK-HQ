@@ -213,6 +213,22 @@ function Get-ClaudeUserContent {
             $lines += ("LIVE EMAIL UNAVAILABLE ({0}). Tell Jake honestly using exactly this reason; do NOT guess what is in his inbox and do NOT invent messages." -f $em.status.detail)
         }
     }
+    # WORKFORCE: Tony delegated to specialist analysts and merged their reports.
+    # Present ONE recommendation in Tony's voice, and be transparent about which
+    # specialists were used, what evidence they reviewed, and why - never invent
+    # a specialist, a finding, or evidence.
+    $wf = if ($Request.context -and ($Request.context.PSObject.Properties.Name -contains 'workforce')) { $Request.context.workforce } else { $null }
+    if ($wf -and @($wf.specialistsUsed).Count -gt 0) {
+        $lines += ''
+        $lines += ("WORKFORCE REPORT (you delegated this and merged the results; overall confidence {0}). Specialists consulted: {1}." -f $wf.confidence, ((@($wf.specialistsUsed)) -join ', '))
+        foreach ($r in @($wf.reports)) { $lines += (" - {0}: {1}" -f $r.specialist, $r.output) }
+        if (@($wf.evidence).Count -gt 0) { $lines += ('Evidence reviewed: ' + ((@($wf.evidence | Select-Object -First 6) | ForEach-Object { $_.detail }) -join '; ') + '.') }
+        if (@($wf.conflicts).Count -gt 0) { $lines += ('The specialists disagreed on: ' + ((@($wf.conflicts) | ForEach-Object { ('{0} ({1} vs {2})' -f $_.scope, $_.a, $_.b) }) -join '; ') + ' - flag this for Jake to decide.') }
+        if (@($wf.recommendedActions).Count -gt 0) { $lines += ('Recommended next steps: ' + ((@($wf.recommendedActions) | Select-Object -First 5) -join '; ') + '.') }
+        if ($wf.needsVerification) { $lines += 'One report was low-confidence - present it as a lead, not a certainty.' }
+        if ($wf.showRawToJake) { $lines += 'Because of a conflict or low confidence, offer to show Jake the raw specialist details if he wants them.' }
+        $lines += "Speak as Tony, the Chief of Staff who MANAGED this - give ONE clear recommendation, then briefly name which specialists you used and the key evidence (transparency). Do NOT dump every report. Use ONLY the findings above; never invent a specialist, evidence, or number. Your judgment (and Family before Financial) has the final say."
+    }
     # A durable fact worth keeping even alongside the summary: who Jake is.
     if ($Request.identity -and $Request.identity.tonyReflection -and $Request.identity.tonyReflection.text) { $lines += "About the user (from their first conversation): $($Request.identity.tonyReflection.text)" }
     if ($Request.reasoningHint) { $lines += "Intent: $($Request.reasoningHint)" }
