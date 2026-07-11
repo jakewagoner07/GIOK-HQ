@@ -182,20 +182,41 @@ function Get-ClaudeUserContent {
             $acctTxt = if ($c.accountCount -gt 1) { ('across {0} Google accounts (primary {1})' -f $c.accountCount, $c.account) } else { [string]$c.account }
             $lines += ("LIVE CALENDAR ({0}, fetched {1}, timezone {2}): {3} event(s) today, {4} tomorrow." -f $acctTxt, $c.timestamp, $c.timezone, $c.todayCount, $c.tomorrowCount)
             if ($c.nextEvent) { $lines += ("Next: ""{0}"" {1}-{2}{3}." -f $c.nextEvent.title, $c.nextEvent.start.ToString('ddd h:mm tt'), $c.nextEvent.end.ToString('h:mm tt'), $(if ($c.nextEvent.location) { ' at ' + $c.nextEvent.location } else { '' })) }
-            # Show today's + tomorrow's events IN FULL (the actionable horizon), then a
-            # few upcoming - NEVER a flat first-N that can silently drop a later event or a
-            # secondary-account event (the old "-First 12" over an 8-day window hid events
-            # past the 12 earliest, which structurally favored dense mornings over
-            # interspersed personal/secondary-account events). Multi-account: tag each event
-            # with its source account so Tony can attribute it to the right calendar.
             $refDate = try { [datetime]::Parse($c.timestamp).Date } catch { (Get-Date).Date }
-            $near = @($c.events | Where-Object { $_.start.Date -le $refDate.AddDays(1) })
-            $later = @($c.events | Where-Object { $_.start.Date -gt $refDate.AddDays(1) } | Select-Object -First 8)
             $multiAcct = ([int]$c.accountCount -gt 1)
-            foreach ($ev in @(@($near) + @($later) | Select-Object -First 60)) {
-                $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd') + ', all day' } else { $ev.start.ToString('ddd h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
-                $acctTag = if ($multiAcct -and @($ev.sourceAccounts).Count -gt 0) { ' [' + ((@($ev.sourceAccounts)) -join ', ') + ']' } else { '' }
-                $lines += (" - {0}: {1}{2}{3}{4}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }), $acctTag)
+
+            # DATE-SPECIFIC QUESTIONS ("what do I have tomorrow", "anything Sunday and
+            # Monday", "what's on my calendar tomorrow"): build the EXACT, deterministic,
+            # date-filtered list first - merged across ALL accounts, each event keeping its
+            # source account - and make it the AUTHORITATIVE answer set. This guarantees a
+            # personal-calendar (secondary-account) or later event is never buried in, or
+            # dropped from, the broad multi-day list. We do NOT rely on the LLM to pick the
+            # right day out of an 8-day dump.
+            $focus = if (Get-Command Get-FocusedCalendar -ErrorAction SilentlyContinue) { Get-FocusedCalendar -Calendar $c -Text $Request.userQuestion -Now $refDate } else { $null }
+            if ($focus) {
+                $lines += ''
+                $lines += ("CALENDAR - DIRECT ANSWER for {0} (merged across ALL Jake's connected Google accounts): {1} event(s)." -f $focus.label, $focus.count)
+                if ($focus.count -eq 0) {
+                    $lines += "  Nothing is scheduled on that date on ANY of his calendars - tell him plainly that it's clear."
+                } else {
+                    foreach ($ev in $focus.events) {
+                        $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd MMM d') + ', all day' } else { $ev.start.ToString('ddd MMM d, h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
+                        $acctTag = if (@($ev.sourceAccounts).Count -gt 0) { ' [' + ((@($ev.sourceAccounts)) -join ', ') + ']' } else { '' }
+                        $lines += ("  * {0}: {1}{2}{3}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $acctTag)
+                    }
+                }
+                $lines += "This is the EXACT, COMPLETE list for the date(s) Jake asked about, already merged across EVERY one of his connected Google accounts. Answer his question DIRECTLY and ONLY from this list - include EVERY event, never omit one. The [bracketed] tag is the account each event is on; when the events span more than one account, make explicit which are on his business calendar and which are on his personal calendar. If the list is empty, tell him that date is clear. Never invent an event, date, or time."
+            } else {
+                # No specific date named: show today's + tomorrow's events IN FULL (the
+                # actionable horizon) plus a few upcoming - never a flat first-N that can
+                # silently drop a later or secondary-account event.
+                $near = @($c.events | Where-Object { $_.start.Date -le $refDate.AddDays(1) })
+                $later = @($c.events | Where-Object { $_.start.Date -gt $refDate.AddDays(1) } | Select-Object -First 8)
+                foreach ($ev in @(@($near) + @($later) | Select-Object -First 60)) {
+                    $whenTxt = if ($ev.allDay) { $ev.start.ToString('ddd') + ', all day' } else { $ev.start.ToString('ddd h:mm tt') + '-' + $ev.end.ToString('h:mm tt') }
+                    $acctTag = if ($multiAcct -and @($ev.sourceAccounts).Count -gt 0) { ' [' + ((@($ev.sourceAccounts)) -join ', ') + ']' } else { '' }
+                    $lines += (" - {0}: {1}{2}{3}{4}" -f $whenTxt, $ev.title, $(if ($ev.location) { ' @ ' + $ev.location } else { '' }), $(if ($ev.meetingLink) { ' (video link)' } else { '' }), $acctTag)
+                }
             }
             if (@($c.freeWindows).Count -gt 0) { $lines += ('Free windows: ' + ((@($c.freeWindows) | ForEach-Object { $_.start.ToString('ddd h:mm tt') + '-' + $_.end.ToString('h:mm tt') + ' (' + $_.minutes + 'm)' }) -join '; ')) }
             if (@($c.conflicts).Count -gt 0) { $lines += ('Scheduling conflicts: ' + ((@($c.conflicts) | ForEach-Object { $_.a + ' overlaps ' + $_.b }) -join '; ')) }
