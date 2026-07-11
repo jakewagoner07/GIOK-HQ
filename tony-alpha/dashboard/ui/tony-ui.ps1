@@ -2650,8 +2650,8 @@ function Set-ActiveView {
         'First Conversation' { New-FirstConversationView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-LifeDomainView -Key 'Non-Negotiables' }
-        'Family'         { New-WorkspacePlaceholder -Title 'Family' -Belongs $script:WorkspaceBelongs['Family'] }
-        'Health'         { New-WorkspacePlaceholder -Title 'Health' -Belongs $script:WorkspaceBelongs['Health'] }
+        'Family'         { New-LifeDomainView -Key 'Family' }
+        'Health'         { New-LifeDomainView -Key 'Health' }
         'Financial'      { New-WorkspacePlaceholder -Title 'Financial' -Belongs $script:WorkspaceBelongs['Financial'] }
         'Home Projects'  { New-WorkspacePlaceholder -Title 'Home Projects' -Belongs $script:WorkspaceBelongs['Home Projects'] }
         'Learning'       { New-WorkspacePlaceholder -Title 'Learning' -Belongs $script:WorkspaceBelongs['Learning'] }
@@ -2737,8 +2737,8 @@ function New-TonyShell {
         [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory'; dim = $false }
         [pscustomobject]@{ cp = @(0x2705); label = 'Non-Negotiables'; key = 'Non-Negotiables'; dim = $false }
-        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family'; dim = $true }
-        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $true }
+        [pscustomobject]@{ cp = @(0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466); label = 'Family'; key = 'Family'; dim = $false }
+        [pscustomobject]@{ cp = @(0x2764, 0xFE0F); label = 'Health'; key = 'Health'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4B0); label = 'Financial'; key = 'Financial'; dim = $true }
         [pscustomobject]@{ cp = @(0x1F4BC); label = 'Agency'; key = 'Agency'; dim = $true }
         [pscustomobject]@{ cp = @(0x1F3E1); label = 'Home Projects'; key = 'Home Projects'; dim = $true }

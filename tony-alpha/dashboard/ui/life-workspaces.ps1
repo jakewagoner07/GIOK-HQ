@@ -256,6 +256,32 @@ $script:LifeSpecs = @{
         cardFields = @(@{ key = 'cadence'; label = 'Cadence' }, @{ key = 'purpose'; label = 'Purpose' }, @{ key = 'protection'; label = 'Protect' })
         emptyText  = 'No non-negotiables yet. Add your first bright line above - Tony will help you protect it.'
     }
+    'Family' = @{
+        domain = 'family'; title = 'Family'; source = 'life_os.json'; addVerb = 'Add'; addTitle = 'Add a family item'
+        intro  = 'The people who matter most - commitments, important dates, priorities, and anything you are keeping an eye on. Family before Financial, always.'
+        goalDomain = 'family'; titleKey = 'title'
+        addFields = @(
+            @{ key = 'kind'; label = 'Type'; type = 'combo'; options = @('commitment', 'important-date', 'priority', 'concern') },
+            @{ key = 'title'; label = 'Title *'; type = 'text'; required = $true },
+            @{ key = 'detail'; label = 'Detail'; type = 'multiline' },
+            @{ key = 'date'; label = 'Date (YYYY-MM-DD, optional)'; type = 'date' }
+        )
+        cardFields = @(@{ key = 'detail'; label = 'Detail' }, @{ key = 'date'; label = 'Date' })
+        emptyText  = 'Nothing here yet. Add a family commitment, an important date, or something on your mind.'
+    }
+    'Health' = @{
+        domain = 'health'; title = 'Health'; source = 'life_os.json'; addVerb = 'Add'; addTitle = 'Add a health item'
+        intro  = 'Your routines, workouts, recovery, and the next action that keeps you strong. Health goals live in Goals; the day-to-day lives here.'
+        goalDomain = 'health'; titleKey = 'title'
+        addFields = @(
+            @{ key = 'kind'; label = 'Type'; type = 'combo'; options = @('routine', 'workout', 'recovery', 'next-action') },
+            @{ key = 'title'; label = 'Title *'; type = 'text'; required = $true },
+            @{ key = 'detail'; label = 'Detail'; type = 'multiline' },
+            @{ key = 'cadence'; label = 'Cadence (daily, 3x/week, ...)'; type = 'text' }
+        )
+        cardFields = @(@{ key = 'detail'; label = 'Detail' }, @{ key = 'cadence'; label = 'Cadence' })
+        emptyText  = 'Nothing here yet. Add a routine, a workout, or a recovery habit.'
+    }
 }
 function Get-LifeSpecKeys { return @($script:LifeSpecs.Keys) }
 
