@@ -330,10 +330,95 @@ function Get-GCalStatus {
 }
 
 # Is a question about the calendar/schedule? Tony Brain uses this to route.
+# Broad on purpose: a missed calendar question means Tony answers a schedule
+# question with NO calendar data at all (the real failure mode) - and a false
+# positive only costs one read-only fetch. Catches the natural phrasings people
+# actually use ("what do I have tomorrow", "do I have anything Sunday",
+# "what's my week look like") in addition to the explicit calendar vocabulary.
 function Test-CalendarRelevant {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
-    return [bool]($Text -match '(?i)\b(calendar|schedule|scheduled|appointment|appointments|meeting|meetings|agenda|event|events|booked|free time|time for|next (appointment|meeting|event)|my (day|week|afternoon|morning)|what.?s on|how busy|conflicts?|availability|available)\b')
+    $rx = '(?i)\b(' +
+        'calendar|schedule|scheduled|appointment|appointments|meeting|meetings|agenda|event|events|booked|' +
+        'free time|time for|next (appointment|meeting|event)|how busy|conflicts?|availability|available|' +
+        'what (do|have|did) i (have|got|get)|do i have (any|anything|something|much|plans|stuff)|' +
+        'anything (on|planned|scheduled|going on|happening|booked)|' +
+        'what.?s (on|happening|going on)|what.?s (on )?(my |the )?(day|week|weekend|schedule|agenda|plate|calendar)|' +
+        'my (day|week|weekend|afternoon|morning|evening|schedule|agenda) (look|ahead|like|going|planned)|' +
+        'this (week|weekend)|week ahead|plans? (for|on|this|tomorrow|today|tonight)' +
+        ')\b'
+    return [bool]($Text -match $rx)
+}
+
+# ---- deterministic date resolution for date-specific calendar questions ----
+# Turn a natural question into the exact set of dates it asks about (within the
+# fetched 8-day window). Pure and testable; no network. Returns $null when the
+# question names no specific date (so the caller falls back to the general read).
+function Format-CalDateLabel {
+    param($Dates, [datetime]$Now = (Get-Date))
+    $today = $Now.Date
+    $names = @()
+    foreach ($d in @($Dates)) {
+        if ($d -eq $today) { $names += 'today' }
+        elseif ($d -eq $today.AddDays(1)) { $names += 'tomorrow' }
+        else { $names += $d.ToString('dddd, MMM d') }
+    }
+    if (@($names).Count -eq 1) { return $names[0] }
+    if (@($names).Count -le 3) { return (($names[0..($names.Count - 2)] -join ', ') + ' and ' + $names[-1]) }
+    return ('{0} through {1}' -f $names[0], $names[-1])
+}
+
+function Resolve-CalendarDates {
+    param([string]$Text, [datetime]$Now = (Get-Date))
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $t = ' ' + $Text.ToLower() + ' '
+    $today = $Now.Date
+    $win = 7   # we only hold today..today+7 (the 8-day fetch window)
+    $pairs = @()
+
+    if ($t -match '\btoday\b' -or $t -match '\btonight\b') { $pairs += [pscustomobject]@{ d = $today } }
+    if ($t -match '\btomorrow\b') { $pairs += [pscustomobject]@{ d = $today.AddDays(1) } }
+
+    $names = @('sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday')
+    for ($i = 0; $i -lt 7; $i++) {
+        if ($t -match ('\b' + $names[$i] + 's?\b')) {
+            $delta = ($i - [int]$today.DayOfWeek + 7) % 7   # 0..6; 0 = today (nearest upcoming occurrence)
+            $pairs += [pscustomobject]@{ d = $today.AddDays($delta) }
+        }
+    }
+    if ($t -match '\bweekend\b') {
+        $satDelta = (6 - [int]$today.DayOfWeek + 7) % 7
+        $sat = $today.AddDays($satDelta)
+        $pairs += [pscustomobject]@{ d = $sat }; $pairs += [pscustomobject]@{ d = $sat.AddDays(1) }
+    }
+    if ($t -match '\b(this week|week ahead|rest of (the|this) week|coming week|upcoming week|next few days|next 7 days|whole week)\b') {
+        for ($i = 0; $i -le 6; $i++) { $pairs += [pscustomobject]@{ d = $today.AddDays($i) } }
+    }
+    if (@($pairs).Count -eq 0) { return $null }
+
+    $seen = @{}; $dates = @()
+    foreach ($p in @($pairs | Sort-Object { $_.d })) {
+        if ($p.d -lt $today -or $p.d -gt $today.AddDays($win)) { continue }
+        $k = $p.d.ToString('yyyy-MM-dd'); if ($seen.ContainsKey($k)) { continue }
+        $seen[$k] = $true; $dates += $p.d
+    }
+    if (@($dates).Count -eq 0) { return $null }
+    return [pscustomobject]@{ dates = @($dates); label = (Format-CalDateLabel -Dates $dates -Now $Now); count = @($dates).Count }
+}
+
+# Build the EXACT, complete event list for the date(s) a question asks about,
+# merged across ALL accounts, each event keeping its source account. This is the
+# authoritative answer set for a date-specific question - so a personal-calendar
+# or later event is never buried in, or dropped from, a long multi-day list.
+function Get-FocusedCalendar {
+    param($Calendar, [string]$Text, [datetime]$Now = (Get-Date))
+    if (-not $Calendar -or -not $Calendar.ok) { return $null }
+    $res = Resolve-CalendarDates -Text $Text -Now $Now
+    if (-not $res) { return $null }
+    $set = @{}; foreach ($d in $res.dates) { $set[$d.ToString('yyyy-MM-dd')] = $true }
+    $evs = @(@($Calendar.events) | Where-Object { $set.ContainsKey($_.start.Date.ToString('yyyy-MM-dd')) } | Sort-Object start)
+    $accts = @(@($evs) | ForEach-Object { @($_.sourceAccounts) } | Where-Object { $_ } | Select-Object -Unique)
+    return [pscustomobject]@{ label = $res.label; dates = @($res.dates); events = @($evs); count = @($evs).Count; accounts = @($accts) }
 }
 
 # ---- register with the generic live-provider registry --------------
