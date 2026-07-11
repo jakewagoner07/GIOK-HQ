@@ -59,6 +59,7 @@ try {
 . (Join-Path $PSScriptRoot 'providers\gohighlevel-provider.ps1')
 . (Join-Path $PSScriptRoot 'theme\theme-loader.ps1')
 . (Join-Path $PSScriptRoot 'ui\tony-ui.ps1')
+. (Join-Path $PSScriptRoot 'ui\life-workspaces.ps1')
 
 $theme = Get-Theme
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }

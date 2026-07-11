@@ -2646,6 +2646,7 @@ function Set-ActiveView {
         'Capture'        { New-CaptureView }
         'Tony Memory'    { New-TonyMemoryView }
         'Identity'       { New-IdentityView }
+        'Goals'          { New-GoalsView }
         'First Conversation' { New-FirstConversationView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-WorkspacePlaceholder -Title 'Non-Negotiables' -Belongs $script:WorkspaceBelongs['Non-Negotiables'] }
@@ -2731,6 +2732,7 @@ function New-TonyShell {
         [pscustomobject]@{ cp = @(0x1F4E5); label = 'Capture'; key = 'Capture'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4CB); label = 'Action Items'; key = 'Action Items'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F9ED); label = 'Identity'; key = 'Identity'; dim = $false }
+        [pscustomobject]@{ cp = @(0x1F3AF); label = 'Goals'; key = 'Goals'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F680); label = 'Mission Control'; key = 'Mission Control'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F916); label = 'AI Workforce'; key = 'Agents'; dim = $false }
         [pscustomobject]@{ cp = @(0x1F4AC); label = 'Tony'; key = 'Tony Memory'; dim = $false }

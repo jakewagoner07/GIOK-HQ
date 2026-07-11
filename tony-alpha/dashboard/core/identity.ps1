@@ -85,15 +85,118 @@ function Set-IdentityGoalsFromText {
     Save-IdentityFile -Name 'goals.json' -Object ([pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'first-conversation' }; goals = @($goals) })
 }
 function Add-IdentityGoal {
+    # Back-compat wrapper (used by Document Intelligence / Capture): create a
+    # basic goal in the ONE goal store via the enriched Add-Goal.
     param([string]$Title)
+    return (Add-Goal -Title $Title)
+}
+
+# =====================================================================
+# ENRICHED GOAL LAYER (Life OS Stage 1)
+# The ONE goal store stays at identity/goals.json, owned here. The schema is
+# enriched (domain/reason/targetDate/status/nextStep/notes) and legacy records
+# (id/title/progress/target only) are back-filled on read - no second store.
+# =====================================================================
+$script:GoalDomains = @('personal', 'family', 'health', 'financial', 'agency', 'learning')
+function Get-GoalDomains { return $script:GoalDomains }
+function Get-GoalStatuses { return @('active', 'paused', 'done', 'archived') }
+
+# Back-fill any goal (old or new) to the full schema. Pure; never writes.
+function ConvertTo-NormalizedGoal {
+    param($G)
+    $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $has = { param($n) ($G.PSObject.Properties.Name -contains $n) }
+    $prog = 0; if ((& $has 'progress') -and $null -ne $G.progress) { try { $prog = [int]$G.progress } catch { $prog = 0 } }
+    if ($prog -lt 0) { $prog = 0 } elseif ($prog -gt 100) { $prog = 100 }
+    $status = if ((& $has 'status') -and $G.status) { [string]$G.status } elseif ($prog -ge 100) { 'done' } else { 'active' }
+    return [pscustomobject]@{
+        id         = [string]$G.id
+        title      = [string]$G.title
+        domain     = $(if ((& $has 'domain') -and $G.domain) { [string]$G.domain } else { 'personal' })
+        reason     = $(if (& $has 'reason') { [string]$G.reason } else { '' })
+        target     = $(if (& $has 'target') { [string]$G.target } else { '' })
+        targetDate = $(if (& $has 'targetDate') { [string]$G.targetDate } else { '' })
+        progress   = $prog
+        status     = $status
+        nextStep   = $(if (& $has 'nextStep') { [string]$G.nextStep } else { '' })
+        notes      = $(if (& $has 'notes') { [string]$G.notes } else { '' })
+        created    = $(if ((& $has 'created') -and $G.created) { [string]$G.created } else { $now })
+        updated    = $(if ((& $has 'updated') -and $G.updated) { [string]$G.updated } else { $now })
+    }
+}
+
+function Get-GoalStore {
+    $g = Get-IdentityFile 'goals.json'
+    if (-not $g) { $g = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'life-os'; updated = '' }; goals = @() } }
+    if (-not ($g.PSObject.Properties.Name -contains 'goals') -or $null -eq $g.goals) { $g | Add-Member -NotePropertyName goals -NotePropertyValue @() -Force }
+    return $g
+}
+function Save-GoalStore {
+    param($Store)
+    if (-not ($Store.meta.PSObject.Properties.Name -contains 'updated')) { $Store.meta | Add-Member -NotePropertyName updated -NotePropertyValue '' -Force }
+    $Store.meta.updated = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    Save-IdentityFile -Name 'goals.json' -Object $Store
+}
+
+# Normalized reads (what the workspace, context, and priority engine consume).
+function Get-GoalsList   { return @(@((Get-GoalStore).goals) | ForEach-Object { ConvertTo-NormalizedGoal $_ }) }
+function Get-ActiveGoals { return @(Get-GoalsList | Where-Object { $_.status -in @('active', 'paused') }) }
+function Get-GoalById    { param([string]$Id) return @(Get-GoalsList | Where-Object { $_.id -eq $Id })[0] }
+
+function Add-Goal {
+    param([string]$Title, [string]$Domain = 'personal', [string]$Reason = '', [string]$TargetDate = '', [string]$NextStep = '', [string]$Notes = '', [int]$Progress = 0)
     if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
-    $g = Get-IdentityGoals
-    if (-not $g) { $g = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0'; source = 'document-intelligence' }; goals = @() } }
-    $max = 0; foreach ($x in @($g.goals)) { if ($x.id -match '^G-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
-    $new = [pscustomobject]@{ id = ('G-{0:000}' -f ($max + 1)); title = $Title.Trim(); progress = 0; target = ([string](Get-Date).Year) }
-    $g.goals = @($g.goals) + $new
-    Save-IdentityFile -Name 'goals.json' -Object $g
+    if ($script:GoalDomains -notcontains $Domain) { $Domain = 'personal' }
+    $store = Get-GoalStore
+    $max = 0; foreach ($x in @($store.goals)) { if ($x.id -match '^G-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
+    $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    if ($Progress -lt 0) { $Progress = 0 } elseif ($Progress -gt 100) { $Progress = 100 }
+    $new = [pscustomobject]@{
+        id = ('G-{0:000}' -f ($max + 1)); title = $Title.Trim(); domain = $Domain; reason = $Reason.Trim()
+        target = ''; targetDate = $TargetDate.Trim(); progress = $Progress; status = $(if ($Progress -ge 100) { 'done' } else { 'active' })
+        nextStep = $NextStep.Trim(); notes = $Notes.Trim(); created = $now; updated = $now
+    }
+    $store.goals = @($store.goals) + $new
+    Save-GoalStore $store
     return $new
+}
+
+# Edit any subset of fields. $Fields is a hashtable of goal fields to set.
+function Update-Goal {
+    param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][hashtable]$Fields)
+    $store = Get-GoalStore; $changed = $false
+    $normalized = @(@($store.goals) | ForEach-Object { ConvertTo-NormalizedGoal $_ })
+    foreach ($g in $normalized) {
+        if ($g.id -eq $Id) {
+            foreach ($k in $Fields.Keys) {
+                if ($g.PSObject.Properties.Name -contains $k) {
+                    $v = $Fields[$k]
+                    if ($k -eq 'domain' -and ($script:GoalDomains -notcontains $v)) { continue }
+                    if ($k -eq 'status' -and ((Get-GoalStatuses) -notcontains $v)) { continue }
+                    if ($k -eq 'progress') { $v = [int]$v; if ($v -lt 0) { $v = 0 } elseif ($v -gt 100) { $v = 100 } }
+                    $g.$k = $v; $changed = $true
+                }
+            }
+            if ($Fields.ContainsKey('progress') -and -not $Fields.ContainsKey('status')) {
+                if ([int]$g.progress -ge 100 -and $g.status -eq 'active') { $g.status = 'done' }
+            }
+            $g.updated = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        }
+    }
+    if ($changed) { $store.goals = @($normalized); Save-GoalStore $store }
+    return $changed
+}
+function Set-GoalStatus   { param([string]$Id, [string]$Status) return (Update-Goal -Id $Id -Fields @{ status = $Status }) }
+function Set-GoalProgress { param([string]$Id, [int]$Progress) return (Update-Goal -Id $Id -Fields @{ progress = $Progress }) }
+function Complete-Goal    { param([string]$Id) return (Update-Goal -Id $Id -Fields @{ status = 'done'; progress = 100 }) }
+function Archive-Goal     { param([string]$Id) return (Update-Goal -Id $Id -Fields @{ status = 'archived' }) }
+function Restore-Goal     { param([string]$Id) return (Update-Goal -Id $Id -Fields @{ status = 'active' }) }
+function Remove-Goal {
+    param([Parameter(Mandatory)][string]$Id)
+    $store = Get-GoalStore; $before = @($store.goals).Count
+    $store.goals = @(@($store.goals) | Where-Object { $_.id -ne $Id })
+    if (@($store.goals).Count -ne $before) { Save-GoalStore $store; return $true }
+    return $false
 }
 
 function Set-IdentityAnnualThemeFromText {
