@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy this file to crm.config.json (which is gitignored) and fill in your own values. This is GIOK's READ-ONLY CRM provider. Its first backend is GoHighLevel (HighLevel API v2). Randy the CRM Manager reads a normalized, vendor-neutral CRM signal produced from this backend - she never sees GoHighLevel directly. See Blueprint/CRM_Provider.md and Blueprint/Randy_CRM_Manager.md.",
+
+  "_auth_comment": "AUTHENTICATION: use a HighLevel Private Integration Token (PIT). In HighLevel go to Settings > Private Integrations (Sub-Account level for a single agency), create an integration, give it ONLY these READ scopes: contacts.readonly, opportunities.readonly, calendars.readonly, calendars/events.readonly, locations.readonly. Copy the generated token (shown once) into 'token' below. A PIT is a static bearer token - it lives ONLY in this gitignored file, is never logged, and can be revoked in the HighLevel UI at any time. (An OAuth Marketplace app is the alternative, but it requires publishing an app and a redirect flow - unnecessary and higher-surface for a single internal read-only user; PIT is the safest supported approach here.)",
+  "provider": "gohighlevel",
+  "token": "pit-YOUR_PRIVATE_INTEGRATION_TOKEN",
+
+  "_endpoint_comment": "Leave apiBase and version as-is unless HighLevel changes them. version 2021-07-28 is the required HighLevel API v2 version header.",
+  "apiBase": "https://services.leadconnectorhq.com",
+  "version": "2021-07-28",
+
+  "_locations_comment": "One or more HighLevel locations (sub-accounts) to read, READ-ONLY. For a single agency this is one entry. 'id' is the HighLevel locationId; 'label' is a friendly name Randy uses. Randy reads ALL listed locations through ONE provider and merges at the intelligence layer (never a provider per location). If one location fails, the others still work.",
+  "locations": [
+    { "id": "YOUR_LOCATION_ID", "label": "GIOK Agency" }
+  ],
+
+  "_tuning_comment": "OPTIONAL tuning for Randy's honesty thresholds. agingLeadHours: a contact with no update in this many hours is surfaced as an aging lead (last-updated is an honest PROXY for last-contact; GoHighLevel does not expose a true last-contacted field). stalledOpportunityDays: an open opportunity with no activity in this many days is 'stalled'. underwritingStageKeywords: pipeline STAGE names (case-insensitive substring) that mean 'in underwriting' - this is derived from your real pipeline stage identity, never fabricated.",
+  "agingLeadHours": 48,
+  "stalledOpportunityDays": 14,
+  "underwritingStageKeywords": ["underwriting", "uw", "in review"],
+
+  "_appointments_comment": "OPTIONAL. HighLevel's calendar-events endpoint requires a calendarId or userId. If you want Randy to surface CRM appointments, list one or more here; otherwise Randy honestly reports appointments as unavailable (it does NOT guess). Google Calendar (Ava) already covers your primary schedule.",
+  "appointmentCalendarIds": [],
+  "appointmentUserIds": [],
+
+  "_readonly_comment": "This provider is READ-ONLY by construction: it only ever issues HTTP GET requests, never creates/updates/deletes contacts, opportunities, tasks, appointments, or sends any message. There is no local CRM mirror - data is fetched on demand and never stored."
+}

@@ -1,9 +1,12 @@
-# CRM Provider — Architecture (Design Only)
+# CRM Provider — Architecture
 
-> **Status: DESIGN ONLY. No provider code exists yet.** This document settles *how* GIOK will read a
-> CRM before any line of CRM code is written, so the implementation — when it comes — has nothing left
-> to invent. It is the blueprint for the seam that [Randy](Randy_CRM_Manager.md) will one day read.
-> Building the provider is a **separate, future sprint** and a **separate commit**.
+> **Status: IMPLEMENTED (read-only), Epic 3 Phase 3.** The design below is now built: a read-only
+> **GoHighLevel** backend + normalizer (`providers/gohighlevel-provider.ps1`), the provider-neutral
+> book-of-business intelligence layer (`core/crm-intelligence.ps1`), and Randy's specialist
+> (in `core/workforce-specialists.ps1`). GoHighLevel is the **first** backend behind the generic `crm`
+> signal; a second CRM is a new backend + normalizer with **no change to Randy**. Writes remain a
+> later, consent-gated sprint. See **As Built** at the end for the exact endpoints, auth, and honest
+> availability.
 
 This design exists to guarantee one thing: that GIOK can read a CRM **without violating any of GIOK's
 five permanent invariants** — Project Diamond, the Executive Context, the Decision Framework, Single
@@ -131,19 +134,62 @@ than inventing a new one.
 
 ---
 
-## Future build phases (not now)
+## Build phases
 
-For sequencing when Jake approves implementation — each a separate sprint and commit:
+1. **CRM Provider (read-only) + normalizer for GoHighLevel** — **DONE (Epic 3 Phase 3).** Registers the
+   `crm` live signal; maps GHL into the Normalized CRM Model; multi-location (D17 pattern);
+   status/test.
+2. **Randy specialist** — **DONE (Epic 3 Phase 3).** `Register-Specialist` consuming the normalized
+   `crm` signal; standard report (`scope = crm`); activates when the provider is connected,
+   `unavailable`/`no-data` honestly when not (the Emma/Riley degradation pattern).
+3. **Second CRM backend** (e.g., HubSpot) — future; proves agnosticism by adding only a backend +
+   normalizer, with **zero changes to Randy**.
+4. **Consent-gated CRM writes** — future; the first actions (e.g., log a note, create a follow-up), each
+   behind explicit confirm-before-act. Only after read-only has earned trust.
 
-1. **CRM Provider (read-only) + normalizer for GoHighLevel** — register the `crm` live signal; map GHL
-   into the Normalized CRM Model; per-sub-account tokens (D17 pattern); Settings connect/test/disconnect.
-2. **Randy specialist** — `Register-Specialist` consuming the normalized `crm` signal; standard report
-   (`scope = crm`); activates when the provider is present, `unavailable` honestly when not (the
-   Emma/Riley degradation pattern).
-3. **Second CRM backend** (e.g., HubSpot) — proves agnosticism by adding only a backend + normalizer,
-   with **zero changes to Randy**.
-4. **Consent-gated CRM writes** — the first actions (e.g., log a note, create a follow-up), each behind
-   explicit confirm-before-act. Only after read-only has earned trust.
+---
+
+## As Built (Epic 3 Phase 3)
+
+**Authentication — HighLevel Private Integration Token (PIT).** A static bearer token created in the
+HighLevel UI (Settings > Private Integrations), stored ONLY in the gitignored
+`providers/crm.config.json`, sent as `Authorization: Bearer <token>` with the required
+`Version: 2021-07-28` header against base `https://services.leadconnectorhq.com`. *Tradeoff:* a
+Marketplace **OAuth 2.0** app is the alternative, but it requires publishing an app and running a
+redirect/refresh flow — unnecessary surface for a single internal read-only user. A PIT is the safest
+supported approach for Jake's current account: one revocable credential, least-privilege read scopes,
+no redirect. (If Jake later needs multi-agency delegation, OAuth can be added behind the same
+provider contract without touching Randy.)
+
+**Minimum read-only scopes:** `contacts.readonly`, `opportunities.readonly`, `calendars.readonly`,
+`calendars/events.readonly`, `locations.readonly`.
+
+**Endpoints used (all HTTP GET — read-only by construction; the HTTP helper refuses any non-GET):**
+
+| Purpose | Endpoint | Note |
+|---|---|---|
+| Probe / location name | `GET /locations/{locationId}` | test-connection + label |
+| Pipeline stage identity | `GET /opportunities/pipelines?locationId=` | camelCase `locationId` |
+| Pipeline + tasks | `GET /opportunities/search?location_id=&status=open&getTasks=true` | **underscore** `location_id` |
+| Leads / contacts | `GET /contacts/?locationId=` | fully-specified in the v2 spec |
+| Appointments (optional) | `GET /calendars/events?locationId=&startTime=&endTime=&calendarId\|userId` | epoch-ms window |
+
+*Note on contacts:* HighLevel marks `GET /contacts/` deprecated in favor of `POST /contacts/search`,
+but the current official OpenAPI spec leaves the search request body **undefined** (`properties: {}`).
+Per the "official docs are the source of truth" rule, the provider uses the fully-specified
+`GET /contacts/` and will migrate when the search body is documented. (This is the one deprecation
+tradeoff; it is read-only either way.)
+
+**Honestly unavailable via GoHighLevel's standard API** (reported as `available:false` with a reason,
+never fabricated): **policies, renewals, and outstanding requirements** — GHL has no native insurance
+objects. **Underwriting** IS surfaced, but only as *real pipeline-stage identity* (an opportunity in a
+stage whose name matches the configured underwriting keywords) — derived from Jake's own pipeline, not
+invented. **Appointments** are unavailable unless a calendarId/userId is configured (HighLevel requires
+one to read events); Ava's Google Calendar already covers the primary schedule.
+
+**Follow-ups** are sourced from **opportunity-linked tasks** (`getTasks=true`) — a bounded read that
+needs no extra calls and builds no task mirror. A full cross-book task sweep is intentionally not done
+(rate-limit friendliness + no mirror); this is the honest, current scope.
 
 ## Related
 - [Randy_CRM_Manager.md](Randy_CRM_Manager.md) — the specialist who reads this seam (constitutional).

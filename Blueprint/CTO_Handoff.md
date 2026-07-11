@@ -92,9 +92,15 @@ These are settled and should not be re-litigated without a blueprint change:
    a new CRM (HubSpot, Salesforce, Zoho, Pipedrive, custom) is a **provider backend + normalizer**,
    never a redesign of the specialist. The CRM reads through the existing live-provider registry as the
    `crm` signal into the one Executive Context (no CRM store, no mirror DB — Single Source of Truth),
-   and Randy consumes only the **normalized CRM model**. Provider architecture is designed in
-   `Blueprint/CRM_Provider.md` (**design only; no CRM code yet** — read-only first, writes are a later
-   consent-gated sprint).
+   and Randy consumes only the **normalized CRM model**. Provider architecture is in
+   `Blueprint/CRM_Provider.md`. **Built (Epic 3 Phase 3):** a read-only **GoHighLevel** backend
+   (`providers/gohighlevel-provider.ps1`) + provider-neutral `core/crm-intelligence.ps1` + Randy.
+   Permanent invariants for every CRM backend: **read-only by construction** (the HTTP helper issues
+   **only GET**; no create/update/delete, no messaging), **no CRM mirror** (fetch on demand, store
+   nothing), **honest availability** (unexposed data such as policies/renewals/requirements is reported
+   `unavailable`, never fabricated), and **auth via a HighLevel Private Integration Token** (static
+   bearer, gitignored, least-privilege `*.readonly` scopes; OAuth is the future multi-tenant alternative
+   behind the same contract). Writes remain a later consent-gated sprint.
 
 ## Security / privacy rules
 

@@ -93,11 +93,12 @@ every time.
 
 ## Current Workforce
 
-*(As implemented by D20, plus Randy — hired in Epic 3. Emma, Riley, and Randy are on staff; their
-tools — the Executive Priority Engine (D18), the Executive Timeline (D19), and the CRM provider (Epic
-3, design complete / code pending) — ship on their own branches and their analysts activate
-automatically once those tools are in the build. Until then they report honestly that the tool is not
-yet present — never a fabricated result.)*
+*(As implemented by D20, plus Randy — hired in Epic 3. Emma, Riley, and Randy are on staff. Emma's and
+Riley's tools — the Executive Priority Engine (D18) and the Executive Timeline (D19) — ship on their
+own branches and activate once those engines are in the build. Randy's first tool — a read-only
+**GoHighLevel** CRM backend (Epic 3 Phase 3) — is **built**; she activates once Jake connects a
+HighLevel token. Until a tool is present/connected, each analyst reports honestly that it is not yet
+available — never a fabricated result.)*
 
 ### Standard Report Format (all members)
 
@@ -248,8 +249,8 @@ Every specialist returns exactly this shape:
 first member with a dedicated constitutional file, establishing the pattern for future named hires.)*
 
 - **Name:** Randy
-- **Title:** CRM Manager  *(engine role: CRM Analyst; tool: the CRM provider — design complete
-  ([CRM_Provider.md](CRM_Provider.md)), code pending)*
+- **Title:** CRM Manager  *(engine role: CRM Analyst; tool: read-only GoHighLevel CRM provider —
+  **built**, Epic 3 Phase 3 ([CRM_Provider.md](CRM_Provider.md)); activates on connect)*
 - **Mission:** Keep Jake ahead of his book of business — follow-ups, renewals, underwriting,
   requirements, and real revenue — without letting a client, lead, or requirement fall through.
 - **Responsibilities:** Lead and client management; pipeline awareness; renewals; underwriting;

@@ -89,9 +89,12 @@ GIOK becomes the operating layer across devices and the agency.
 - 🔄 **Epic 3 — Business Intelligence / CRM (`Randy_CRM_Manager.md`).** **Randy the CRM Manager** is
   hired (constitutional); she understands **CRM as a discipline, not GoHighLevel**, so future CRMs need
   no redesign. Phase 1 (constitution) + Phase 2 (provider architecture, `CRM_Provider.md`) are
-  **design-complete**; the read-only CRM provider + Randy's specialist are the next build.
-- ⬜ Agency integrations (GoHighLevel first, then HubSpot/Salesforce/Zoho/Pipedrive/custom) — read
-  then, later, act-with-approval; each a provider backend + normalizer behind the `crm` signal
+  design-complete; **Phase 3 — the read-only GoHighLevel provider + Randy's specialist — is BUILT**
+  (`gohighlevel-provider.ps1` + `crm-intelligence.ps1`; HighLevel API v2, read-only, GET-only),
+  pending Jake's live HighLevel token.
+- ⬜ Second CRM backend (HubSpot/Salesforce/Zoho/Pipedrive/custom) — proves agnosticism by adding only
+  a backend + normalizer behind the `crm` signal, with zero changes to Randy; then, later,
+  act-with-approval (consent-gated writes)
 - ⬜ Cross-workspace automation; document ingestion into memory (approval-gated)
 
 ---

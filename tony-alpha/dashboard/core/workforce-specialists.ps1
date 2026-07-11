@@ -39,6 +39,17 @@ function Get-WorkforceCalendar {
     }
     return $null
 }
+# Randy reads the normalized 'crm' signal - prefer what the Executive Context
+# already carries; otherwise call the CRM provider ONCE (only when connected).
+# She never touches a CRM API or a vendor - only the normalized model.
+function Get-WorkforceCRM {
+    param($Context)
+    if ($Context -and ($Context.PSObject.Properties.Name -contains 'crm') -and $Context.crm -and $Context.crm.ok) { return $Context.crm }
+    if ((Get-Command Get-CRMStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-CRM -ErrorAction SilentlyContinue)) {
+        try { if ((Get-CRMStatus).state -in @('configured', 'connected', 'degraded')) { return (Get-CRM) } } catch { }
+    }
+    return $null
+}
 
 if (Get-Command Register-Specialist -ErrorAction SilentlyContinue) {
 
@@ -149,6 +160,46 @@ if (Get-Command Register-Specialist -ErrorAction SilentlyContinue) {
                 $ev = @($tl.overdue + $tl.aging | Select-Object -First 4 | ForEach-Object { [pscustomobject]@{ source = $_.source; sourceId = $_.sourceId; detail = ('{0} ({1}d)' -f $_.title, $_.ageDays) } })
                 New-SpecialistReport -Specialist 'Timeline Analyst' -Purpose 'Identifies what is new, aging, overdue, waiting, or expiring.' -Input 'existing timestamps' -Output $out `
                     -Confidence 0.8 -Evidence $ev -Status 'ok' -RecommendedActions @() -Assessment $(if (@($tl.overdue).Count -gt 0 -or $tl.counts.waiting -gt 0) { 'needs-attention' } else { 'clear' }) -Scope 'time'
+            }
+        })
+
+    # ---- Randy - CRM Manager (reads the normalized 'crm' signal) --------
+    # Randy understands CRM as a discipline, not GoHighLevel. She reads ONLY
+    # the normalized crm signal (leads, pipeline, follow-ups, underwriting),
+    # never a vendor API, never acts, and reports to Tony only. Activates when
+    # the CRM provider is present + connected; reports honestly otherwise.
+    Register-Specialist -Specialist ([pscustomobject]@{
+            name         = 'Randy'
+            purpose      = 'Reviews the book of business - leads, pipeline, follow-ups, and what needs attention.'
+            capabilities = @('pipeline health', 'aging leads', 'stalled/underwriting deals', 'overdue follow-ups', 'business health')
+            relevant     = { param($t) [bool]($t -match '(?i)\b(crm|pipeline|lead|leads|prospect|opportunit|renewal|underwriting|follow.?up|policy|policies|book of business|revenue|deal|deals|client(s)?|what happened|catch me up|status|attention|where do (things|we) stand)\b') }
+            status       = { $c = (Get-Command Get-CRMStatus -ErrorAction SilentlyContinue); if ($c) { $st = Get-CRMStatus; [pscustomobject]@{ available = ($st.state -in @('configured', 'connected', 'degraded')); detail = $st.detail } } else { [pscustomobject]@{ available = $false; detail = 'CRM provider not loaded.' } } }
+            analyze      = {
+                param($req)
+                if (-not (Get-Command Get-CRM -ErrorAction SilentlyContinue)) {
+                    return (New-SpecialistReport -Specialist 'Randy' -Purpose 'Reviews the book of business.' -Input 'n/a' -Output 'The CRM is not part of this build yet - I cannot review the book of business right now.' -Confidence 0.2 -Status 'unavailable' -Scope 'crm')
+                }
+                $crm = Get-WorkforceCRM -Context $req.context
+                if (-not $crm -or -not $crm.ok) {
+                    $why = if ($crm -and $crm.status) { [string]$crm.status.detail } else { 'GoHighLevel is not connected.' }
+                    return (New-SpecialistReport -Specialist 'Randy' -Purpose 'Reviews the book of business.' -Input 'the CRM' -Output ('I could not review the CRM. {0}' -f $why) -Confidence 0.2 -Status 'no-data' -Scope 'crm')
+                }
+                $sum = $crm.summary
+                if (-not $sum) { return (New-SpecialistReport -Specialist 'Randy' -Purpose 'Reviews the book of business.' -Input 'the CRM' -Output 'The CRM connected but returned nothing to review.' -Confidence 0.4 -Status 'no-data' -Scope 'crm') }
+                $bh = $sum.businessHealth
+                $out = [string]$sum.headline
+                $ev = @($sum.attentionItems | Select-Object -First 5 | ForEach-Object { [pscustomobject]@{ source = 'crm'; sourceId = [string]$_.sourceId; detail = ('{0}: {1}' -f $_.title, $_.detail) } })
+                $acts = @()
+                foreach ($a in @($sum.attentionItems | Select-Object -First 3)) {
+                    if ($a.kind -eq 'overdue-follow-up') { $acts += ('Handle the overdue follow-up: {0}' -f $a.title) }
+                    elseif ($a.kind -eq 'stalled-underwriting') { $acts += ('Unblock the underwriting deal: {0}' -f $a.title) }
+                    elseif ($a.kind -eq 'stalled-opportunity') { $acts += ('Revive the stalled opportunity: {0}' -f $a.title) }
+                    elseif ($a.kind -eq 'aging-lead') { $acts += ('Reach out to the aging lead: {0}' -f $a.title) }
+                }
+                $conf = if ($crm.opportunities.capped -or $crm.contacts.capped) { 0.7 } else { 0.8 }
+                New-SpecialistReport -Specialist 'Randy' -Purpose 'Reviews the book of business - leads, pipeline, follow-ups, and what needs attention.' `
+                    -Input ('CRM across {0} location(s): {1} open opp(s), {2} contact(s)' -f $crm.locationCount, $bh.openOpportunities, $bh.contactCount) -Output $out `
+                    -Confidence $conf -Evidence $ev -Status 'ok' -RecommendedActions $acts -Assessment $(if ($sum.hasAttention) { 'needs-attention' } else { 'clear' }) -Scope 'crm'
             }
         })
 }

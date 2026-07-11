@@ -38,3 +38,12 @@ tony-alpha/dashboard/providers/gmail.config.json
 !**/gmail.config.example.json
 tony-alpha/gmail.tokens.json
 **/gmail.tokens.json
+
+# CRM (GoHighLevel) — PRIVATE, local only, never committed. The provider uses a
+# HighLevel Private Integration Token (a static credential). Only the safe
+# example is tracked; the real token / tokens file never touch GitHub.
+tony-alpha/dashboard/providers/crm.config.json
+**/crm.config.json
+!**/crm.config.example.json
+tony-alpha/crm.tokens.json
+**/crm.tokens.json

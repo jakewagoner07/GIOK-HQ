@@ -24,9 +24,15 @@ deferral note (D18 and D19 remain on their own branches, unmerged).
 > foundation, so it inherits the constitution). Randy understands **CRM as a discipline, not
 > GoHighLevel** — future CRMs (HubSpot, Salesforce, Zoho, Pipedrive, custom) are provider backends, not
 > a Randy redesign. Phase 1 (Randy's charter, `Blueprint/Randy_CRM_Manager.md`) and Phase 2 (CRM
-> provider architecture, `Blueprint/CRM_Provider.md`) are **documentation only — design-complete, no
-> CRM code yet**; the read-only CRM provider + Randy's specialist are the next build (separate commit).
-> No release blockers currently identified.
+> provider architecture, `Blueprint/CRM_Provider.md`) are documentation. **Phase 3 (read-only
+> GoHighLevel CRM provider) is now BUILT:** `providers/gohighlevel-provider.ps1` (vendor backend +
+> normalizer, HighLevel API v2, read-only, HTTP-GET-only), `core/crm-intelligence.ps1` (provider-neutral
+> book-of-business intelligence), and **Randy** registered in `core/workforce-specialists.ps1`. Verified
+> with a 48-check mocked harness (disconnected, auth-fail, empty, multi-location, one-location-fails,
+> leads/opps/stages, aging/stalled, overdue follow-ups, duplicates, Randy's standard report, Tony
+> delegation, GET-only/no-write, no-mirror) + a clean full-app Home render. **Live validation is pending
+> Jake connecting a HighLevel Private Integration token** in `crm.config.json` (cannot be fabricated in a
+> build environment). No release blockers currently identified.
 
 ---
 
@@ -150,6 +156,14 @@ Jake's step**: enable the Gmail API on the existing Google Cloud project, add a 
   `core/email-intelligence.ps1` (dedupe by Message-ID); registered as the generic `email` signal.
   **Live-validated across two real accounts.** Read-only (never sends/labels/deletes); bodies never
   fetched. Settings → Gmail (per-account connect/disconnect).
+- **Live — CRM / GoHighLevel (read-only), MULTI-LOCATION (Epic 3 Phase 3):** HighLevel API v2
+  (`services.leadconnectorhq.com`, `Version: 2021-07-28`), authenticated by a **Private Integration
+  Token** (static bearer in the gitignored `crm.config.json`). Reads pipelines, opportunities,
+  contacts, and opportunity-linked tasks **read-only (HTTP GET only)** across one or more locations,
+  normalizes them to the vendor-neutral CRM model, and feeds **Randy the CRM Manager** the generic
+  `crm` signal. Policies/renewals/requirements are honestly reported **unavailable** (not native to
+  GHL); underwriting is derived from real pipeline-stage identity. No CRM mirror — fetched on demand.
+  **Live validation pending Jake's HighLevel token.**
 
 ---
 
@@ -173,6 +187,7 @@ Projects, Learning.
 | `tony-alpha/calendar.tokens.json` | Google Calendar **per-account** access/refresh tokens (accounts[]) |
 | `tony-alpha/dashboard/providers/gmail.config.json` | Gmail OAuth client id/secret + optional triage lists |
 | `tony-alpha/gmail.tokens.json` | Gmail **per-account** access/refresh tokens (accounts[]) |
+| `tony-alpha/dashboard/providers/crm.config.json` | HighLevel Private Integration Token + location id(s) + CRM tuning (read-only) |
 | `tony-alpha/conversation.json` | Talk-with-Tony history |
 | `tony-alpha/tony_memory.json` | Approved permanent memories |
 | `**/memory-export-*.json` | User memory exports |
@@ -180,7 +195,7 @@ Projects, Learning.
 | `tony-alpha/logs/`, `**/tony-diagnostics.log` | Local diagnostics (never contain tokens/keys) |
 
 **Committed safe templates:** `claude.config.example.json`, `calendar.config.example.json`,
-`gmail.config.example.json` (placeholders only).
+`gmail.config.example.json`, `crm.config.example.json` (placeholders only).
 
 ---
 

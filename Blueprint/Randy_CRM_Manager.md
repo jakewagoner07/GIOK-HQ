@@ -12,6 +12,13 @@ Randy is hired under the same bylaws as every other member of the Workforce (cha
 voice to Jake, existing sources only, analyze-and-recommend-never-act, evidence or silence). Nothing
 here overrides the [Workforce Constitution](Workforce.md) — it extends it.
 
+> **Tool status (Epic 3 Phase 3): Randy's first tool is built.** A read-only **GoHighLevel** backend
+> now feeds her the normalized `crm` signal (`providers/gohighlevel-provider.ps1` +
+> `core/crm-intelligence.ps1`; Randy in `core/workforce-specialists.ps1`). She activates automatically
+> once Jake connects a HighLevel Private Integration token in `crm.config.json`; until then she reports
+> honestly that the CRM is not connected. GoHighLevel is only her first tool — the charter below is
+> vendor-neutral and does not change when the CRM does. See [CRM_Provider.md](CRM_Provider.md).
+
 ---
 
 ## Mission
