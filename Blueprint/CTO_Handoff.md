@@ -75,6 +75,17 @@ These are settled and should not be re-litigated without a blueprint change:
    ASCII-rewriting "cleanup" layers.
 8. **PS 5.1 reality:** no-BOM `.ps1` files are read as ANSI, so **source stays pure ASCII** — build
    non-ASCII at runtime (`[char]0xXXXX`, `\uXXXX` regex). No ternary; `$Input` is reserved.
+9. **Tony manages specialists; Tony never becomes one (D20 Workforce Engine).** Specialists register
+   the standard interface (`workforce-engine.ps1`), analyze existing provider outputs only (no
+   duplicate logic, no new storage, no independent agent memory), and return standard reports. They
+   never act, never reach Jake directly, and cannot bypass Tony — only Tony's merged synthesis is
+   presented, with transparency (specialists used, evidence, reasoning) and the Decision Framework as
+   final authority. Future specialists plug in with no redesign. The **org chart and bylaws are
+   constitutional** — see `Blueprint/Workforce.md` (Tony, Sam, Ava, Emma, Riley, Mason + future
+   hires), which also settles two permanent rules: the **Executive Awareness Principle** ("Tony never
+   silently ignores meaningful information; he reduces complexity without reducing awareness") and the
+   **Rule of Progressive Delegation** ("Tony delegates to the fewest specialists necessary to
+   confidently answer the question").
 
 ## Security / privacy rules
 
