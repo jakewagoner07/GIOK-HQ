@@ -215,6 +215,13 @@ function Convert-YahooMessage {
     $precedence = (Get-RfcHeader $h 'Precedence').ToLower()
     $autoSub = (Get-RfcHeader $h 'Auto-Submitted').ToLower().Trim()
     $contentType = (Get-RfcHeader $h 'Content-Type').ToLower()
+    # bulk/ESP fingerprints (Yahoo has no promo category labels, so we rely on
+    # the standard bulk headers real newsletters carry - Feedback-ID, campaign/
+    # ESP markers, List-Unsubscribe-Post). Mirrors the Gmail bulk heuristics.
+    $feedbackId = Get-RfcHeader $h 'Feedback-ID'
+    $listUnsubPost = Get-RfcHeader $h 'List-Unsubscribe-Post'
+    $espMarker = ''
+    foreach ($n in @('X-Campaign', 'X-campaignid', 'X-CSA-Complaints', 'X-Mailgun-Sid', 'X-SG-EID', 'X-SG-ID', 'X-Mandrill-User', 'X-MC-User', 'X-SES-Outgoing', 'CFBL-Address')) { $v = Get-RfcHeader $h $n; if (-not [string]::IsNullOrWhiteSpace($v)) { $espMarker = $n; break } }
 
     $acct = ([string]$Account).ToLower()
     $recips = ("{0} {1}" -f $to, $cc).ToLower()
@@ -226,9 +233,12 @@ function Convert-YahooMessage {
     $unread = -not ($flagsL -match '\\seen')
     $important = [bool]($flagsL -match '\\flagged')
 
-    $promo = (-not [string]::IsNullOrWhiteSpace($listUnsub))
+    # A List-Unsubscribe (or its RFC 8058 -Post partner) marks marketing/list mail.
+    $promo = (-not [string]::IsNullOrWhiteSpace($listUnsub)) -or (-not [string]::IsNullOrWhiteSpace($listUnsubPost))
     $bulk = $false
     if (-not [string]::IsNullOrWhiteSpace($listId)) { $bulk = $true }
+    elseif (-not [string]::IsNullOrWhiteSpace($feedbackId)) { $bulk = $true }
+    elseif ($espMarker) { $bulk = $true }
     elseif ($precedence -match 'bulk|list|junk') { $bulk = $true }
     elseif ($autoSub -and $autoSub -ne 'no') { $bulk = $true }
     $invite = [bool](($contentType -match 'text/calendar|method=request') -or ($subject -match '(?i)^\s*(invitation|updated invitation|canceled event|new event):'))
@@ -271,7 +281,11 @@ function Read-YahooFetchParts {
     return [pscustomobject]@{ flags = $flags; internalDate = $internal; uid = $uid; header = $header }
 }
 
-$script:YahooHeaderFields = 'FROM TO CC SUBJECT DATE MESSAGE-ID REFERENCES LIST-ID LIST-UNSUBSCRIBE PRECEDENCE AUTO-SUBMITTED CONTENT-TYPE'
+# NOTE: we fetch the FULL header block via BODY.PEEK[HEADER] (headers only, no
+# body - still read-only, never marks \Seen). Yahoo's IMAP silently returns only
+# a SUBSET of a multi-field BODY.PEEK[HEADER.FIELDS (...)] request (dropping
+# List-Unsubscribe/List-Id), which would let newsletters masquerade as real mail;
+# the full header avoids that quirk and gives reliable promo/bulk classification.
 
 # ---- THE backend read (daily): new + unread mail, read-only, normalized ----
 function Get-YahooMessages {
@@ -304,7 +318,7 @@ function Get-YahooMessages {
 
         $messages = @()
         foreach ($u in $take) {
-            $f = Invoke-Imap -Session $session -Command ('UID FETCH {0} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS ({1})])' -f $u, $script:YahooHeaderFields)
+            $f = Invoke-Imap -Session $session -Command ('UID FETCH {0} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER])' -f $u)
             if (-not $f.ok) { continue }
             $parts = Read-YahooFetchParts -Lines $f.lines
             if (-not $parts.header) { continue }
@@ -343,7 +357,7 @@ function Search-YahooMail {
         $uids = @($uids | Select-Object -Unique | Sort-Object { [int]$_ } -Descending | Select-Object -First $Max)
         $results = @()
         foreach ($u in $uids) {
-            $f = Invoke-Imap -Session $session -Command ('UID FETCH {0} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS ({1})])' -f $u, $script:YahooHeaderFields)
+            $f = Invoke-Imap -Session $session -Command ('UID FETCH {0} (UID FLAGS INTERNALDATE BODY.PEEK[HEADER])' -f $u)
             if (-not $f.ok) { continue }
             $parts = Read-YahooFetchParts -Lines $f.lines
             if (-not $parts.header) { continue }
