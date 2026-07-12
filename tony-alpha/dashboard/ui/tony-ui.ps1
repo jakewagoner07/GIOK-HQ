@@ -380,8 +380,11 @@ function Send-TonyMessage {
     if (Get-Command Get-RecentConversation -ErrorAction SilentlyContinue) { $priorHistory = @(Get-RecentConversation -Count 8) }
 
     $data = Get-ConversationLog
-    Add-ConversationMessage -Data $data -Role 'user' -Text $t | Out-Null
+    $userMsg = Add-ConversationMessage -Data $data -Role 'user' -Text $t
     Save-ConversationLog -Data $data
+    $userMsgId = if ($userMsg) { [string]$userMsg.id } else { '' }
+    # the previous user turn - lets capture resolve a bare "this sounds like a project"
+    $priorUser = ''; $pu = @($priorHistory | Where-Object { $_.role -eq 'user' }); if ($pu.Count -gt 0) { $priorUser = [string]$pu[-1].text }
     Add-ConvBubble -Role 'user' -Text $t -Time (Get-Date).ToString('h:mm tt') -Animate $true
     if ($script:ConvInput) { $script:ConvInput.Text = ''; $script:ConvInput.Tag = '' }
 
@@ -400,6 +403,16 @@ function Send-TonyMessage {
         return
     }
 
+    # Conversational Capture (Epic 7): recognize structured intent and PREPARE the
+    # right Executive Inbox proposal (discoveredBy=Tony). This NEVER writes to the
+    # operating system - it only adds to the pending inbox; Jake approves. Pure,
+    # deterministic, idempotent. On moderate confidence it asks one question and
+    # creates nothing; on low it does nothing.
+    $capture = $null
+    if (Get-Command Invoke-ConversationalCapture -ErrorAction SilentlyContinue) {
+        try { $capture = Invoke-ConversationalCapture -Text $t -MessageId $userMsgId -Now (Get-Date) -Prior $priorUser } catch { $capture = $null }
+    }
+
     # General question -> Tony Brain (context: workspace + recent conversation).
     Show-ConvThinking
     $work = $script:TonyActiveView
@@ -413,9 +426,12 @@ function Send-TonyMessage {
             } catch { $msg = 'Something went sideways on my end - give me another try.' }
         }
         Hide-ConvThinking
+        # append the calm, TRUTHFUL capture line (prepared/clarify/duplicate) - never a claim of a direct write
+        if ($capture -and $capture.tonyLine) { $msg = ($msg.TrimEnd() + "`n`n" + $capture.tonyLine) }
         $rd = Get-ConversationLog; Add-ConversationMessage -Data $rd -Role 'tony' -Text $msg -Provider $provider | Out-Null; Save-ConversationLog -Data $rd
         Add-ConvBubble -Role 'tony' -Text $msg -Time (Get-Date).ToString('h:mm tt') -Animate $true
-        Add-MemoryPromptIfAny -Text $t
+        # if capture already prepared a proposal, don't ALSO surface the memory chip (avoid double-asking)
+        if (-not ($capture -and $capture.action -eq 'proposed')) { Add-MemoryPromptIfAny -Text $t }
     }.GetNewClosure()
 
     if ($script:ConvWindow) { $script:ConvWindow.Dispatcher.BeginInvoke([Action]$respond, [Windows.Threading.DispatcherPriority]::Background) | Out-Null }

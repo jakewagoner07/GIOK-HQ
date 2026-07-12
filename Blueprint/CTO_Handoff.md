@@ -146,6 +146,20 @@ These are settled and should not be re-litigated without a blueprint change:
    registered under **persona names** (Sam — Head of Communications, *she*; Ava; Mason; Emma; Riley;
    Randy). No new external provider, no auto approval, no auto send/delete/schedule/contact/CRM-write.
 
+15. **Conversational statements become Executive Inbox proposals, never direct writes (Epic 7,
+   `Conversational_Capture.md`).** When Jake states a goal/task/routine/deadline/fact in normal
+   conversation, a **pure, provider-agnostic, deterministic** intent engine
+   (`core/conversational-capture.ps1`) recognizes the structured intent and prepares **one** proposal in
+   the Executive Inbox (`discoveredBy = Tony`, `source = conversation`, `sourceId = <message id>`) — Tony
+   **never** writes directly to Goals, Life OS, Action Items, Memory, Calendar, CRM, or Documents; only
+   Jake's approval writes, through the existing owner (Decision 13). Routing is **deterministic, not
+   LLM-only** — any future AI interpretation must pass through this validator, which is the authority.
+   Confidence bands: high → propose + a truthful "prepared for your Executive Inbox"; moderate → **one**
+   clarifying question and **no** proposal; low/casual → nothing (not every sentence becomes a proposal).
+   De-dup is **content-based** (`type:normalizedTitle` vs pending inbox + owner records) so it is
+   idempotent, even across different message ids. Tony must **never claim something was added before Jake
+   approves it** (enforced by a claude-provider guardrail). No new store, tab, provider, or schema change.
+
 ## Security / privacy rules
 
 - **Never commit secrets.** API keys, OAuth client secrets, access/refresh tokens, authorization

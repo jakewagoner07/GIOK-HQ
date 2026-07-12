@@ -53,6 +53,12 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   a deterministic de-dup/quality gate (stable keys; suppress vs pending + owner records; confidence
   floor + caps). On-demand scan (inbox open + button); Tony gains read-only awareness + a calm briefing
   mention. Only Jake's approval ever writes. See `Blueprint/Workforce_Activation.md`.
+- ✅ **Conversational Capture (Epic 7)** — Jake tells Tony in normal conversation ("I want to lose 20
+  pounds") and a pure deterministic intent engine (`core/conversational-capture.ps1`) prepares the right
+  Executive Inbox proposal (`discoveredBy=Tony`, `sourceId`=message id). Gate + weak-language demotion +
+  type routing across all 10 V1 types; high→propose, moderate→one clarifying question, low→nothing;
+  content-based idempotent dedup. Tony never writes directly; reuses the existing inbox + routing (no new
+  store/tab/provider). See `Blueprint/Conversational_Capture.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

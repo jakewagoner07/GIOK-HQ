@@ -95,6 +95,19 @@ pending.
 - **Tony owns the Executive Inbox.** He surfaces it calmly (a pending count in awareness), presents
   recommendations with their evidence and confidence, and **never auto-approves**. Jake decides.
 
+## Proposals from conversation (Epic 7 — Conversational Capture)
+
+Jake doesn't have to open a workspace to add something. When he **tells Tony** in normal conversation —
+"I want to lose 20 pounds", "Family dinner every Sunday is non-negotiable", "Remind me to call Mike
+tomorrow" — a pure deterministic intent engine (`core/conversational-capture.ps1`) recognizes the
+structured intent and prepares the right proposal here (`discoveredBy = Tony`, `source = conversation`,
+`sourceId = <message id>`). **Tony never writes to Goals, Life OS, Action Items, Memory, Calendar, CRM,
+or Documents** — the statement becomes a pending proposal Jake approves, edits, or rejects, exactly like
+a Workforce proposal. High confidence → one proposal + a truthful "I've prepared it for your Executive
+Inbox"; moderate → **one clarifying question, no proposal**; low/casual → nothing. De-duplication is
+content-based, so saying the same thing twice never creates a second proposal. Full design:
+**[Conversational_Capture.md](Conversational_Capture.md)**.
+
 ## How proposals get here (Epic 6 — Workforce Activation)
 
 Epic 5 built the gate; **Epic 6 fills it.** Each specialist now has a **producer** in

@@ -109,6 +109,12 @@ mention) is in **[Workforce_Activation.md](Workforce_Activation.md)**. Invariant
 pending-only inbox, owning modules the only writers, Memory Manager the only memory writer, Decision
 Framework final, no automatic approval, and Jake is never overwhelmed (dedup + confidence floor + caps).
 
+**Tony proposes too (Epic 7 — Conversational Capture).** Beyond the specialists, **Tony himself** turns
+what Jake *says* into proposals: a statement in normal conversation ("I want to lose 20 pounds") is
+recognized by a pure deterministic intent engine and prepared as an Executive Inbox proposal
+(`discoveredBy = Tony`). Same gate, same approval, same invariants — Tony never writes directly. See
+[Conversational_Capture.md](Conversational_Capture.md).
+
 ## Current Workforce
 
 *(As implemented by D20, plus Randy — hired in Epic 3. **Epic 6 registers each analyst under their

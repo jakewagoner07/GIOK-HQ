@@ -3,8 +3,28 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 6 — Workforce Activation** (on `feature/workforce-activation`, branched from
-`main` @ `d9319c9`; RC2, the Life Operating System, and the Executive Inbox already merged to `main`).
+Last updated: **Epic 7 — Conversational Capture** (on `feature/conversational-capture`, branched from
+`main` @ `64f607c`; RC2, the Life Operating System, the Executive Inbox, the multi-account calendar fix,
+and Workforce Activation already merged to `main`).
+
+> **Epic 7 status (Conversational Capture):** Jake can now **tell Tony** something in normal
+> conversation and Tony prepares the right **Executive Inbox proposal** — he never writes to the OS.
+> New `core/conversational-capture.ps1` is a **pure, provider-agnostic, deterministic** intent engine:
+> a gate (only real commitments/goals/reminders/routines/facts pass), weak-language demotion
+> ("maybe/someday/eventually" → clarify, never a silent proposal), a type-routing table across all 10
+> V1 types (goal, action item, project, non-negotiable, family, health, financial, agency, learning,
+> memory), and high/moderate/low confidence bands. High → one proposal + a truthful "I've prepared it
+> for your Executive Inbox"; moderate → **one clarifying question, no proposal**; low/casual → nothing.
+> `sourceId` = the conversation message id (provenance); de-dup is **content-based** (`type:normalizedTitle`
+> vs pending inbox + owner records) so it is idempotent. Hooked into `Send-TonyMessage` (surfaces one
+> calm line, suppresses the redundant memory chip when it proposes) with a claude-provider guardrail so
+> Tony never claims a direct write. Reuses the existing inbox + routing — **no new store, tab, or
+> provider; no schema change.** Verified (fully isolated, zero real data touched): all 10 clear types
+> propose correctly, ambiguous asks, casual/weak/question create nothing, duplicate creates no second
+> proposal, approve routes to the correct owner, reject/edit-then-approve work, the engine's only write
+> is `Add-InboxProposal`, Workforce Activation still adds+dedups, capture and Workforce coexist in one
+> inbox, full app launches, secret scan + git integrity clean. Local-only, not pushed. No release
+> blockers currently identified.
 
 > **Epic 6 status (Workforce Activation):** the Workforce is **activated** — each specialist now
 > **proposes** into the Executive Inbox. New `core/workforce-proposals.ps1` holds per-specialist
