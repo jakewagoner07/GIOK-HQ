@@ -57,3 +57,10 @@ tony-alpha/dashboard/providers/crm.config.json
 !**/crm.config.example.json
 tony-alpha/crm.tokens.json
 **/crm.tokens.json
+
+# Yahoo Mail IMAP — PRIVATE, local only, never committed. The provider uses a
+# Yahoo third-party App Password (a static credential) for read-only IMAP. Only
+# the safe example is tracked; the app password never touches GitHub.
+tony-alpha/dashboard/providers/yahoo.config.json
+**/yahoo.config.json
+!**/yahoo.config.example.json

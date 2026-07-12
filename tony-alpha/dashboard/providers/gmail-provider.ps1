@@ -200,6 +200,7 @@ function Convert-GmailMessage {
         threadId      = [string]$Raw.threadId
         messageId     = $messageId
         sourceAccount = $SourceAccount
+        provider      = 'gmail'
         from          = $from.email
         fromName      = $from.name
         subject       = $subject
@@ -385,13 +386,8 @@ function Test-EmailRelevant {
     return [bool]($Text -match '(?i)\b(e-?mails?|inbox|gmail|mailbox|messages?\s+(from|in)|unread|who\s+(emailed|e-mailed|wrote)|anything\s+(important\s+)?(in\s+)?(my\s+)?(email|inbox)|need(s)?\s+(a\s+)?(reply|response)|newsletters?)\b')
 }
 
-# ---- register with the generic live-provider registry --------------
-if (Get-Command Register-LiveProvider -ErrorAction SilentlyContinue) {
-    Register-LiveProvider -Provider ([pscustomobject]@{
-            name        = 'email'
-            description = 'Read-only Gmail across one or more Google accounts (OAuth 2.0 desktop, PKCE). Backend = gmail. Explained by Tony as one Executive Email Summary.'
-            relevant    = { param($text) Test-EmailRelevant $text }
-            query       = { param($opts) Get-Email -When 'today' }
-            status      = { param($live) Get-GmailStatus -Live:([bool]$live) }
-        })
-}
+# NOTE: Gmail is a communication BACKEND, not the 'email' signal itself. The
+# generic 'email' live signal is registered by the provider-neutral aggregator
+# (core/communications.ps1), which merges Gmail + Yahoo into ONE Executive Email
+# Summary. Gmail exposes Get-Email / Get-GmailStatus as this backend's read; the
+# aggregator consumes them. (Moved here in Epic 8 - one registrant for 'email'.)

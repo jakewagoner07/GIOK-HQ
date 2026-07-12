@@ -160,6 +160,22 @@ These are settled and should not be re-litigated without a blueprint change:
    idempotent, even across different message ids. Tony must **never claim something was added before Jake
    approves it** (enforced by a claude-provider guardrail). No new store, tab, provider, or schema change.
 
+16. **Communications are provider-neutral: many vendor backends, ONE normalized signal and ONE summary
+   (Epic 8, `Yahoo_Provider.md`).** Sam is **Head of Communications** (she) and never learns the vendor.
+   Each mail/message source is a **backend** (Gmail via OAuth; **Yahoo via read-only IMAP + a Yahoo
+   app password** — the official method, not OAuth) that normalizes to the **same** model (preserving
+   `sourceAccount` + `provider`) and exposes messages only. The provider-neutral aggregator
+   (`core/communications.ps1`) is the **only** place backends merge; it runs the **existing**
+   `Get-ExecutiveEmailSummary` **exactly once** — there is **no second Email Intelligence engine and no
+   second Executive Email Summary** — and is the **single** registrant of the `email` live signal.
+   **Vendor-specific logic never leaks into Sam.** All mailbox access is **read-only** (Yahoo: `EXAMINE`
+   + `BODY.PEEK` headers only — never marks seen, never fetches bodies; never STORE/APPEND/EXPUNGE/COPY/
+   MOVE/DELETE). **Historical search runs only on explicit request** (read-only, evidence shown, approval
+   required, never auto-scans the mailbox). Credentials stay in gitignored `*.config.json` (only
+   `*.example.json` tracked); the app password, message contents, and personal data are **never logged** —
+   diagnostics carry only provider, state, counts, timing, and a safe error class. Future backends
+   (Outlook/M365, SMS, voicemail, Slack/Teams, social) plug in here identically — no new engine, no new tab.
+
 ## Security / privacy rules
 
 - **Never commit secrets.** API keys, OAuth client secrets, access/refresh tokens, authorization
