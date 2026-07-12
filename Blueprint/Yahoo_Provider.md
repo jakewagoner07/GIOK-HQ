@@ -62,10 +62,13 @@ dashboard, no new store.
 Each Yahoo message maps to the shared model, preserving provenance:
 `id`, `threadId` (thread/conversation identity where available), `messageId` (RFC822 Message-ID, used to
 dedupe across accounts/providers), `sourceAccount` (the Yahoo address), **`provider = 'yahoo'`**, `from`,
-`fromName`, `subject`, `snippet` (empty in V1 — metadata only), `date` (IMAP `INTERNALDATE`),
-`unread` (absence of the `\Seen` flag), `important`, `fromMe`, `toMe`, `promo`, `bulk`, `invite`,
-`hasAttachments` (attachment metadata), `labels`. **Bodies are never fetched** in daily mode — everything
-is classified from headers + flags, which the existing engine already does.
+`fromName`, `subject` (**RFC 2047 decoded** — `=?UTF-8?Q?…?=` / `?B?` subjects are decoded to plain
+text by the provider-neutral `ConvertFrom-MimeSubject`, shared with Gmail), `snippet` (empty in V1 —
+metadata only), `date` (IMAP `INTERNALDATE`), `unread` (absence of the `\Seen` flag), `important`,
+`fromMe`, `toMe`, `promo`, `bulk`, `invite`, `hasAttachments` (attachment metadata), `labels`. **Bodies
+are never fetched** in daily mode — everything is classified from headers + flags, which the existing
+engine already does. Sam's proposals carry the **provider + source account** in their evidence
+(e.g. `[Yahoo - jake.wagoner@yahoo.com] From Mike: Policy documents needed`) — never a token or password.
 
 ## Sam's combined report
 Sam gives Tony **one** communications read across every inbox, e.g. *"Sam reviewed three inboxes — two

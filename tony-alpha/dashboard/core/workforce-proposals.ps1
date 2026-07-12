@@ -115,7 +115,15 @@ function Get-SamProposals {
     $out = @()
     foreach ($a in @($email.summary.attentionItems)) {
         $from = [string]$a.from; $subj = [string]$a.subject; $mid = [string]$a.messageId
-        $ev = @([pscustomobject]@{ source = 'email'; sourceId = $mid; detail = ('{0}: {1}' -f $from, $subj) })
+        # Provenance: preserve provider + source account (plus sender, subject, id).
+        # Concise, human, and NEVER a token/password/private header. E.g.
+        #   [Yahoo - jake.wagoner@yahoo.com] From Mike: Policy documents needed
+        $src0 = @($a.sources)[0]
+        $prov = if ($src0) { [string]$src0.provider } else { '' }
+        $acct = if ($src0) { [string]$src0.account } else { '' }
+        $provLabel = switch ($prov.ToLower()) { 'gmail' { 'Gmail' } 'yahoo' { 'Yahoo' } '' { '' } default { $prov.Substring(0, 1).ToUpper() + $prov.Substring(1) } }
+        $tag = if ($provLabel -and $acct) { ('[{0} - {1}] ' -f $provLabel, $acct) } elseif ($provLabel) { ('[{0}] ' -f $provLabel) } elseif ($acct) { ('[{0}] ' -f $acct) } else { '' }
+        $ev = @([pscustomobject]@{ source = 'email'; provider = $prov; account = $acct; sender = $from; subject = $subj; sourceId = $mid; detail = ('{0}From {1}: {2}' -f $tag, $from, $subj) })
         switch ([string]$a.category) {
             'urgent'            { $out += New-ProposalCandidate -DiscoveredBy 'Sam' -Type 'communication' -Title ('Reply to {0}: {1}' -f $from, $subj) -Description 'Flagged time-sensitive; a person is likely waiting.' -Confidence 0.85 -Source 'email' -SourceId $mid -Evidence $ev }
             'needs-reply'       { $out += New-ProposalCandidate -DiscoveredBy 'Sam' -Type 'communication' -Title ('Reply to {0}: {1}' -f $from, $subj) -Description 'A person wrote and is likely waiting for a response.' -Confidence 0.8 -Source 'email' -SourceId $mid -Evidence $ev }

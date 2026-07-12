@@ -3,9 +3,24 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 8 — Sam + Yahoo Mail** (on `feature/sam-yahoo-communications`, branched from
-`main` @ `b1ee6df`; RC2, the Life Operating System, the Executive Inbox, the multi-account calendar fix,
-Workforce Activation, and Conversational Capture already merged to `main`).
+Last updated: **Communications Polish Sprint** (on `fix/communications-polish`, branched from `main` @
+`f4b16e4`; Epic 8 Sam + Yahoo Mail and all prior epics merged to `main`).
+
+> **Communications Polish Sprint status:** three targeted fixes to the Gmail + Yahoo experience, **no
+> architecture change** (one aggregator, one Executive Email Summary, Sam provider-neutral, all mailbox
+> access read-only, inbox pending-only). (1) **MIME subject decoding** - a provider-neutral RFC 2047
+> decoder (`ConvertFrom-MimeSubject` in `email-intelligence.ps1`) decodes `=?UTF-8?Q?...?=` / `?B?`
+> subjects (multi-word, any charset), preserves plain subjects, and fails safely to the original; called
+> at each provider's normalization boundary (Gmail + Yahoo), so subjects display normally everywhere.
+> (2) **Sam evidence provenance** - each communication proposal's evidence now carries provider, source
+> account, sender, subject, and message id, with a concise human tag (e.g. `[Yahoo - jake.wagoner@yahoo.com]
+> From Mike: Policy documents needed`); no tokens/passwords/private headers. (3) **Carrier false positive**
+> - the OneDrive "memories" notice was matching the `policy` carrier hint via footer boilerplate "Privacy
+> Policy"; `Test-EmailCarrier` now strips benign `<privacy|cookie|return|refund|shipping|exchange> policy`
+> phrases before matching, so genuine insurance signals ("insurance policy", "policy renewal", "policy
+> number", underwriting) are unaffected. Verified live: real Yahoo subjects decode (0 raw `=?...?=`),
+> OneDrive no longer carrier, Yahoo unread unchanged (read-only), Sam evidence tagged, idempotent, all
+> subsystems + full app launch pass; regression fixtures added. Local-only, not pushed.
 
 > **Epic 8 status (Sam + Yahoo):** Sam is formally **Head of Communications** (she) and provider-neutral —
 > she reads **one combined signal** across Business Gmail, Personal Gmail, and **Yahoo Mail** and gives
