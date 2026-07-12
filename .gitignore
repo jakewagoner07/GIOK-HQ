@@ -64,3 +64,6 @@ tony-alpha/crm.tokens.json
 tony-alpha/dashboard/providers/yahoo.config.json
 **/yahoo.config.json
 !**/yahoo.config.example.json
+
+# Founder's private notes — local only, never committed (kept on Jake's machine).
+Founder/
