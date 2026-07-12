@@ -956,6 +956,12 @@ function New-ExecutiveBriefingCard {
         $sp.Children.Add((New-Text -Text $m.inboxReview.line -Size 13 -Color $script:Col.Ink -Wrap $true)) | Out-Null
     }
 
+    # your life - one or two calm, life-aware lines (Tier 1). Only when relevant.
+    if (($m.PSObject.Properties.Name -contains 'lifeFocus') -and @($m.lifeFocus).Count -gt 0) {
+        $sp.Children.Add((New-BriefingLabel -Text 'YOUR LIFE')) | Out-Null
+        foreach ($line in @($m.lifeFocus)) { $sp.Children.Add((New-Text -Text $line -Size 13 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 3)))) | Out-Null }
+    }
+
     # today's focus
     $sp.Children.Add((New-BriefingLabel -Text "TODAY'S FOCUS")) | Out-Null
     $sp.Children.Add((New-Text -Text $m.focus -Size 15 -Weight 'SemiBold' -Color $script:Col.AccentInk -Wrap $true)) | Out-Null

@@ -91,6 +91,19 @@ automatic actions · never fabricate values/progress/dates/risks/advice · Decis
 **Family Before Financial** and **People Matter More Than Money** permanent · the briefing stays calm and
 selective.
 
+## Delivered (implementation)
+Tier 1 is implemented across four source files, additive and read-only:
+- `core/executive-context.ps1` — `Get-LifeContextDigest` (pure) + `lifeDigest` folded onto the one context.
+- `providers/claude-provider.ps1` — enriched **LIFE CONTEXT** block + no-invention / no-advice guardrail.
+- `core/executive-briefing.ps1` — `Get-BriefingLifeFocus` + `lifeFocus` model field.
+- `ui/tony-ui.ps1` — the optional **YOUR LIFE** briefing section (rendered only when `lifeFocus` is non-empty).
+
+Verification: deterministic digest/prompt/briefing suite all pass (empty→omitted, caps, paused excluded,
+30-day family horizon, missing dates tolerated, source/id preserved, family-first, no-advice guardrail);
+live Tony answers all four domain questions honestly (says "none set yet" + offers capture when empty, no
+fabrication); full app launches and Home renders; Priority Engine + Decision Framework + Executive Inbox +
+Conversational Capture unchanged. No new store/tab/provider/agent.
+
 ## Related
 - [Life_Operating_System.md](Life_Operating_System.md) · [Executive_Context_Engine.md](Executive_Context_Engine.md)
   · [Executive_Briefing.md](Executive_Briefing.md) · [Tony_Decision_Framework.md](Tony_Decision_Framework.md)

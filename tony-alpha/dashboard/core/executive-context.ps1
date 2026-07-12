@@ -162,6 +162,52 @@ function Get-LifeAwarenessLine {
     return ''
 }
 
+# Build a CONCISE, capped, source-tagged digest of the life domains Jake actually
+# uses so Tony can understand (and selectively surface) Health, Financial,
+# Learning, and upcoming Family - reading ONLY the already-loaded life items +
+# active goals (no store read here, no new store). Pure and deterministic:
+# paused/inactive are already excluded upstream; goals are filtered to ACTIVE
+# only; missing dates are tolerated; nothing is fabricated. Every entry keeps its
+# id + source ('goal' or 'life:<domain>'). Caps keep the prompt small.
+function Get-LifeContextDigest {
+    param($Life, $ActiveGoals = @(), [datetime]$Now = (Get-Date), [int]$Cap = 4, [int]$FamilyHorizonDays = 30)
+    $today = $Now.Date
+    $daysAway = {
+        param($s)
+        if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+        try { return [int]([datetime]::Parse($s).Date - $today).TotalDays } catch { return $null }
+    }
+    # active goals for a domain (exclude paused/done/archived; only status 'active')
+    $goalsFor = {
+        param($dom)
+        @(@($ActiveGoals) | Where-Object { $_.status -eq 'active' -and ([string]$_.domain).ToLower() -eq $dom } | Select-Object -First $Cap | ForEach-Object {
+                [pscustomobject]@{ id = [string]$_.id; source = 'goal'; title = [string]$_.title; progress = [int]$_.progress; nextStep = [string]$_.nextStep; targetDate = [string]$_.targetDate; targetDaysAway = (& $daysAway $_.targetDate); updated = [string]$_.updated }
+            })
+    }
+    if (-not $Life) { $Life = [pscustomobject]@{ family = @(); health = @(); financial = @(); learning = @() } }
+
+    # FAMILY - upcoming dated commitments (today..+horizon), sorted, capped (not just today)
+    $famUpcoming = @()
+    foreach ($f in @($Life.family)) {
+        $da = & $daysAway $f.date
+        if ($null -ne $da -and $da -ge 0 -and $da -le $FamilyHorizonDays) {
+            $famUpcoming += [pscustomobject]@{ id = [string]$f.id; source = 'life:family'; title = [string]$f.title; date = [string]$f.date; daysAway = $da; kind = [string]$f.kind }
+        }
+    }
+    $famUpcoming = @($famUpcoming | Sort-Object daysAway | Select-Object -First 3)
+
+    $healthItems = @(@($Life.health) | Select-Object -First $Cap | ForEach-Object { [pscustomobject]@{ id = [string]$_.id; source = 'life:health'; title = [string]$_.title; kind = [string]$_.kind; cadence = [string]$_.cadence; detail = [string]$_.detail } })
+    $finItems = @(@($Life.financial) | Select-Object -First $Cap | ForEach-Object { [pscustomobject]@{ id = [string]$_.id; source = 'life:financial'; title = [string]$_.title; kind = [string]$_.kind; amount = [string]$_.amount; dueDate = [string]$_.dueDate; daysAway = (& $daysAway $_.dueDate) } })
+    $lrnItems = @(@($Life.learning) | Select-Object -First $Cap | ForEach-Object { [pscustomobject]@{ id = [string]$_.id; source = 'life:learning'; title = [string]$_.title; resource = [string]$_.resource; progress = [string]$_.progress; nextStep = [string]$_.nextStep; updated = [string]$_.updated } })
+
+    return [pscustomobject]@{
+        family    = [pscustomobject]@{ upcoming = @($famUpcoming); activeCount = @($Life.family).Count }
+        health    = [pscustomobject]@{ goals = @(& $goalsFor 'health'); items = @($healthItems) }
+        financial = [pscustomobject]@{ goals = @(& $goalsFor 'financial'); items = @($finItems) }
+        learning  = [pscustomobject]@{ goals = @(& $goalsFor 'learning'); items = @($lrnItems) }
+    }
+}
+
 function Get-TonyExecutiveContext {
     param(
         [string]$CurrentWorkspace = 'unknown',
@@ -240,6 +286,9 @@ function Get-TonyExecutiveContext {
         nonNegotiables = @($nonNegotiables); family = @($family); familyToday = @($familyToday)
         health = @($health); financial = @($financial); agency = @($agency); learning = @($learning); projects = @($projects)
     }
+    # concise, capped, read-only digest so Tony understands Health/Financial/
+    # Learning/upcoming-Family without dumping every record (Tier 1 feedback loop)
+    $lifeDigest = Get-LifeContextDigest -Life $life -ActiveGoals $activeGoals -Now $Now
 
     # -- live-provider signals (passed in, never fetched here): weather, calendar, ... --
     $weather  = if ($LiveSignals -and $LiveSignals.ContainsKey('weather'))  { $LiveSignals['weather'] }  else { $null }
@@ -283,6 +332,7 @@ function Get-TonyExecutiveContext {
         goals              = $goals
         activeGoals        = $activeGoals
         life               = $life           # Life OS domains (read-only reference; workspaces own writes)
+        lifeDigest         = $lifeDigest     # concise per-domain digest (Health/Financial/Learning/upcoming Family)
         nonNegotiables     = @($nonNegotiables)
         familyToday        = @($familyToday)
         projects           = @($projects)

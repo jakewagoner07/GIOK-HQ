@@ -3,8 +3,29 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Communications Polish Sprint** (on `fix/communications-polish`, branched from `main` @
-`f4b16e4`; Epic 8 Sam + Yahoo Mail and all prior epics merged to `main`).
+Last updated: **V1 Completion - Tier 1: Close the Life OS Feedback Loop** (on
+`feature/v1-life-feedback-loop`, branched from `main` @ `2b41f56`; Communications Polish, Epic 8, and all
+prior epics merged to `main`).
+
+> **V1 Completion Tier 1 status (Close the Life OS feedback loop):** the Life OS was writable but
+> **write-only** - Health, Financial, Learning, and broader Family data was invisible to Tony's reasoning,
+> the briefing, and conversation. Tier 1 closes the read-back half of the loop with **no new store, tab,
+> provider, or agent** - a pure digest over data the **one** Executive Context already loads. (1)
+> **Executive Context** - `Get-LifeContextDigest` (pure, in `executive-context.ps1`) folds the loaded Life
+> OS domains + active goals into a concise, capped `lifeDigest` (family commitments within 30 days; active
+> health/financial/learning goals + items; paused excluded; caps ~4; `source` + `id` preserved; nothing
+> fabricated); it writes nothing. (2) **Tony conversation** - the enriched provider **LIFE CONTEXT** block
+> lets Tony answer "what health goals am I working on?", "what financial obligations do I have?", "what am
+> I trying to learn?", "what family is coming up?" from the digest, with a no-invention / no medical-legal-
+> tax-investment-advice guardrail; when a domain is empty he says so plainly and offers to capture it. (3)
+> **Executive Briefing** - `Get-BriefingLifeFocus` surfaces at most one or two calm life lines (family
+> first), rotated by day-of-year to avoid daily repetition, and **omits the section entirely** when
+> nothing is relevant. (4) **Priority/Workforce** - Priority Engine + Decision Framework (Family-before-
+> Financial final) already read active goals + non-negotiables and are unchanged; Executive Inbox and
+> Conversational Capture untouched. Verified: deterministic digest/prompt/briefing suite all pass; live
+> Tony answers all four domain questions honestly (currently no life data set -> "none yet" + capture
+> offer, zero fabrication); full app launches and Home renders; secret scan + git integrity clean (4 source
+> files changed, no private files). Local-only, not pushed. No release blockers currently identified.
 
 > **Communications Polish Sprint status:** three targeted fixes to the Gmail + Yahoo experience, **no
 > architecture change** (one aggregator, one Executive Email Summary, Sam provider-neutral, all mailbox

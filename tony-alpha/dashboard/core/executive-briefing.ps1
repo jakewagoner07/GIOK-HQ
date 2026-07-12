@@ -258,6 +258,43 @@ function Get-BriefingInboxReview {
     return [pscustomobject]@{ line = $line; pending = $n; timeSensitive = $ts }
 }
 
+# Life focus - one calm, life-aware line (occasionally two), surfaced ONLY when
+# something is genuinely worth Jake's attention now (Tier 1 feedback loop). Reads
+# the read-only life digest the context already carries. Never medical/legal/tax/
+# investment advice, never invented urgency; omitted when nothing is relevant. To
+# avoid repeating the same unchanged line daily it rotates among eligible
+# observations by day-of-year and leans on date/`updated` timestamps (no new store).
+function Get-BriefingLifeFocus {
+    param($Exec)
+    $ld = if ($Exec -and ($Exec.PSObject.Properties.Name -contains 'lifeDigest')) { $Exec.lifeDigest } else { $null }
+    if (-not $ld) { return $null }
+    $now = if ($Exec.generatedAt) { [datetime]$Exec.generatedAt } else { (Get-Date) }
+    $busy = $false
+    $cal = if ($Exec.PSObject.Properties.Name -contains 'calendar') { $Exec.calendar } else { $null }
+    if ($cal -and $cal.ok -and $cal.insights -and $cal.insights.today) { $busy = [bool]$cal.insights.today.meetingHeavy }
+    $whenTxt = { param($d) if ($d -eq 0) { 'today' } elseif ($d -eq 1) { 'tomorrow' } else { ('in {0} days' -f $d) } }
+    $obs = @()
+    # 1) a family commitment this week worth protecting (Family before Financial)
+    $fam = @($ld.family.upcoming | Where-Object { $null -ne $_.daysAway -and $_.daysAway -le 7 } | Sort-Object daysAway)
+    if ($fam.Count -gt 0) { $obs += [pscustomobject]@{ p = 1; text = ('You have a family commitment this week worth protecting: {0} ({1}).' -f $fam[0].title, (& $whenTxt $fam[0].daysAway)) } }
+    # 2) a financial due/review date approaching (<= 14 days) - surfaced, never advised on
+    $fin = @($ld.financial.items | Where-Object { $null -ne $_.daysAway -and $_.daysAway -ge 0 -and $_.daysAway -le 14 } | Sort-Object daysAway)
+    if ($fin.Count -gt 0) { $obs += [pscustomobject]@{ p = 2; text = ('A financial item is coming up: {0}{1} - due {2}.' -f $fin[0].title, $(if ($fin[0].amount) { ' ' + $fin[0].amount } else { '' }), (& $whenTxt $fin[0].daysAway)) } }
+    # 3) a health goal with a clear next step but a full day
+    $hg = @($ld.health.goals | Where-Object { $_.nextStep })
+    if ($hg.Count -gt 0 -and $busy) { $obs += [pscustomobject]@{ p = 3; text = ('Your health goal "{0}" has a clear next step, but the day is full - protect a little time for it.' -f $hg[0].title) } }
+    # 4) a learning goal that hasn't moved recently (uses the goal's own `updated` timestamp)
+    foreach ($g in @($ld.learning.goals | Where-Object { [int]$_.progress -lt 100 })) {
+        $stale = $false; try { $stale = ((($now - [datetime]$g.updated).TotalDays) -ge 14) } catch { $stale = $false }
+        if ($stale) { $obs += [pscustomobject]@{ p = 4; text = ('Your learning goal "{0}" hasn''t moved recently - one small next step would keep momentum.' -f $g.title) }; break }
+    }
+    if (@($obs).Count -eq 0) { return $null }
+    $obs = @($obs | Sort-Object p)
+    $picks = @($obs[0].text)   # the highest-value (date-anchored where present)
+    if (@($obs).Count -gt 1) { $rest = @($obs[1..($obs.Count - 1)]); $picks += $rest[[int]($now.DayOfYear % $rest.Count)].text }   # rotate the second to avoid daily sameness
+    return @($picks)
+}
+
 # one) and composes the letter model. Data only - no UI, no writes.
 function Get-TonyExecutiveBriefing {
     param(
@@ -302,6 +339,7 @@ function Get-TonyExecutiveBriefing {
         timeline      = (Get-BriefingTimeline -Context $exec -Now $Now)
         observation   = $observation
         inboxReview   = (Get-BriefingInboxReview -Exec $exec)
+        lifeFocus     = (Get-BriefingLifeFocus -Exec $exec)
         focus         = (Get-BriefingFocus -Exec $exec)
         encouragement = (Get-BriefingEncouragement -Now $Now)
         # reference back to the single context (not a copy) for any consumer that wants detail

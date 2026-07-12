@@ -259,10 +259,23 @@ function Get-ClaudeUserContent {
         $ft = @($life.familyToday); if ($ft.Count -gt 0) { $ll += ('FAMILY COMMITMENT TODAY: ' + ((@($ft) | ForEach-Object { $_.title }) -join '; ') + ' - protect it.') }
         $ag = @($life.agency); if ($ag.Count -gt 0) { $ll += ('Agency priorities: ' + ((@($ag | Select-Object -First 3) | ForEach-Object { $_.title + $(if ($_.metric) { ' (' + $_.metric + ')' } else { '' }) }) -join '; ') + '.') }
         $pr = @($life.projects); if ($pr.Count -gt 0) { $ll += ('Active home projects: ' + ((@($pr | Select-Object -First 3) | ForEach-Object { $_.title + $(if ($_.nextAction) { ' - next: ' + $_.nextAction } else { '' }) }) -join '; ') + '.') }
+        # Health / Financial / Learning / upcoming Family (Tier 1 feedback loop) -
+        # concise digest so Tony can ANSWER domain questions; use only these facts.
+        $ld = if ($Request.context -and ($Request.context.PSObject.Properties.Name -contains 'lifeDigest')) { $Request.context.lifeDigest } else { $null }
+        if ($ld) {
+            $fu = @($ld.family.upcoming); if ($fu.Count -gt 0) { $ll += ('Upcoming family commitments: ' + ((@($fu) | ForEach-Object { $_.title + $(if ($null -ne $_.daysAway) { ' (' + $(if ($_.daysAway -eq 0) { 'today' } elseif ($_.daysAway -eq 1) { 'tomorrow' } else { 'in ' + $_.daysAway + ' days' }) + ', ' + $_.date + ')' } else { '' }) }) -join '; ') + ' - protect them.') }
+            $hg = @($ld.health.goals); if ($hg.Count -gt 0) { $ll += ('Health goals: ' + ((@($hg) | ForEach-Object { $_.title + ' (' + $_.progress + '%' + $(if ($_.nextStep) { ', next: ' + $_.nextStep } else { '' }) + $(if ($_.targetDate) { ', target ' + $_.targetDate } else { '' }) + ')' }) -join '; ') + '.') }
+            $hi = @($ld.health.items); if ($hi.Count -gt 0) { $ll += ('Health routines/actions: ' + ((@($hi) | ForEach-Object { $_.title + $(if ($_.cadence) { ' (' + $_.cadence + ')' } else { '' }) }) -join '; ') + '.') }
+            $fg = @($ld.financial.goals); if ($fg.Count -gt 0) { $ll += ('Financial goals: ' + ((@($fg) | ForEach-Object { $_.title + ' (' + $_.progress + '%' + $(if ($_.nextStep) { ', next: ' + $_.nextStep } else { '' }) + $(if ($_.targetDate) { ', target ' + $_.targetDate } else { '' }) + ')' }) -join '; ') + '.') }
+            $fi = @($ld.financial.items); if ($fi.Count -gt 0) { $ll += ('Financial obligations/targets: ' + ((@($fi) | ForEach-Object { $_.title + $(if ($_.amount) { ' ' + $_.amount } else { '' }) + $(if ($_.dueDate) { ' due ' + $_.dueDate + $(if ($null -ne $_.daysAway -and $_.daysAway -ge 0) { ' (in ' + $_.daysAway + ' days)' } else { '' }) } else { '' }) }) -join '; ') + '.') }
+            $lg = @($ld.learning.goals); if ($lg.Count -gt 0) { $ll += ('Learning goals: ' + ((@($lg) | ForEach-Object { $_.title + ' (' + $_.progress + '%' + $(if ($_.nextStep) { ', next: ' + $_.nextStep } else { '' }) + $(if ($_.targetDate) { ', target ' + $_.targetDate } else { '' }) + ')' }) -join '; ') + '.') }
+            $li = @($ld.learning.items); if ($li.Count -gt 0) { $ll += ('Learning in progress: ' + ((@($li) | ForEach-Object { $_.title + $(if ($_.resource) { ' (' + $_.resource + ')' } else { '' }) + $(if ($_.nextStep) { ' - next: ' + $_.nextStep } else { '' }) }) -join '; ') + '.') }
+        }
         if ($ll.Count -gt 0) {
             $lines += ''
             $lines += 'LIFE CONTEXT (Jake''s own data; use only what is relevant, never invent):'
             $lines += $ll
+            $lines += 'If Jake asks what he is working on in a domain (health, financial, learning) or what family is coming up, answer from these facts only; if a domain has nothing here, say he has not set any yet. Never invent a goal, number, date, or advice, and give no medical, legal, tax, or investment advice.'
         }
     }
     # WORKFORCE: Tony delegated to specialist analysts and merged their reports.

@@ -68,6 +68,26 @@ assembles the situation, then hands a finished model to the card. The card is pu
   observations row is retired here (its one important item now lives in the letter), keeping the
   screen calm.
 
+## Your Life - the calm life-aware line (V1 Completion, Tier 1)
+
+Tier 1 added one optional section, **Your Life**, that appears only when the Life OS actually has
+something worth surfacing today. `Get-BriefingLifeFocus` reads the context's `lifeDigest` (see the
+Executive Context Engine) and picks **at most two** calm observations, ranked so **family comes
+first** (Family before Financial):
+
+1. a family commitment within the next 7 days ("worth protecting"),
+2. a financial obligation due within 14 days,
+3. a health goal with a clear next step *when the day is already meeting-heavy* (protect a little
+   time for it),
+4. a learning goal that hasn't moved in ~2 weeks (one small next step keeps momentum).
+
+Selection is deliberately selective: the top-ranked item always shows; a second line, if any, is
+rotated by day-of-year so the same unchanged fact doesn't repeat every morning. **If nothing is
+relevant, the whole section is omitted** - the letter stays calm. It surfaces only what is already
+in the Life OS: no invented urgency, no fabricated numbers or dates, and **no medical, legal, tax,
+or investment advice**. This is the read-back half of the Life OS feedback loop - what Jake enters
+is now understood and gently reflected, never write-only.
+
 ## Why it holds Single Source of Truth
 
 The briefing **creates no state**. It consumes the one Executive Context object (which itself only
