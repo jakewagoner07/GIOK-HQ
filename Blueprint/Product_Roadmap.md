@@ -59,6 +59,13 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   type routing across all 10 V1 types; high→propose, moderate→one clarifying question, low→nothing;
   content-based idempotent dedup. Tony never writes directly; reuses the existing inbox + routing (no new
   store/tab/provider). See `Blueprint/Conversational_Capture.md`.
+- ✅ **V1 Completion Tier 1 - Close the Life OS feedback loop** - the Life OS was write-only; Health,
+  Financial, Learning, and broader Family data was invisible to Tony. A pure `Get-LifeContextDigest` over
+  data the one Executive Context already loads gives Tony a concise, capped, source-tagged `lifeDigest`; he
+  now answers domain questions ("what health goals am I working on?", "what family is coming up?") from it
+  and the briefing surfaces one calm, selective life line (family first, omitted when nothing matters).
+  Read-only, no invention, no advice; **no new store/tab/provider/agent**. See
+  `Blueprint/V1_Completion_Plan.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

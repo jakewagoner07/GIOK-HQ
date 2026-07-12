@@ -68,6 +68,27 @@ Provider (claude-provider.ps1)
    alignment and conflicts (Family before Financial included).
 6. The user notices better judgment - the machinery stays invisible.
 
+## The Life Context Digest (V1 Completion, Tier 1)
+
+Tier 1 closed the Life OS feedback loop **inside** the engine - no new store, tab, provider, or
+agent. `Get-LifeContextDigest` (pure function in the same file) folds the already-loaded Life OS
+domains and active Goals into one concise, capped digest that rides along on the context object as
+`lifeDigest`:
+
+- **family.upcoming** - commitments/events/dates within the next 30 days, soonest first (max 3),
+  each with `daysAway`; undated or past items are excluded.
+- **health / financial / learning** - active Goals for that domain (status `active` only; paused
+  excluded) plus the domain's Life OS items, each capped at 4. Financial obligations/targets carry
+  `amount`, `dueDate`, and computed `daysAway`.
+- Every entry preserves its **source** (`goal` or `life:<domain>`) and **id**, so nothing is
+  duplicated and everything is traceable back to its single source of truth.
+
+The digest **writes nothing** and is assembled on demand like the rest of the context. It is what
+lets Tony answer "what health goals am I working on?", "what family is coming up?", and the like
+from live truth - and lets the briefing surface one calm, relevant life line when it matters. If a
+domain is empty, the digest is empty for that domain and Tony says plainly that nothing is set yet
+(no fabricated goals, numbers, dates, or advice).
+
 ## Why context is different from memory
 
 **Memory is what Tony knows. Context is what's true right now.** Memory is durable and stored -

@@ -131,6 +131,29 @@ Priority Engine (references goals + non-negotiables) · Executive Briefing (surf
 
 All three are **derived** from the single Executive Context — no new integration, no fabrication.
 
+## Closing the feedback loop (V1 Completion, Tier 1)
+
+The workspaces made the Life OS **writable**; Tier 1 makes it **understood** so it no longer feels
+write-only. No new store, tab, provider, or agent was added - only the read-back half of the loop,
+built entirely on the existing Executive Context:
+
+- **`Get-LifeContextDigest`** (in `executive-context.ps1`) folds the already-loaded domains and
+  active goals into a concise, capped `lifeDigest` on the one context object - family commitments
+  in the next 30 days, plus active health/financial/learning goals and items (each capped, paused
+  goals excluded, source + id preserved). It writes nothing.
+- **Tony now answers** "what health goals am I working on?", "what financial obligations do I
+  have?", "what am I trying to learn?", and "what family is coming up?" from that digest - and when
+  a domain is empty he says so plainly and offers to capture it, never inventing a goal, number,
+  date, or advice.
+- **The briefing** surfaces at most one or two calm, relevant life lines (family first), and omits
+  the section entirely when nothing is worth raising - so read-back never becomes noise.
+
+This is the same Single-Source-of-Truth discipline as everything above: the digest references the
+stores, is assembled on demand, and is thrown away after the answer. See
+[Executive_Context_Engine.md](Executive_Context_Engine.md) and
+[Executive_Briefing.md](Executive_Briefing.md) for the mechanics, and
+[V1_Completion_Plan.md](V1_Completion_Plan.md) for the tiered plan.
+
 ## Stages (each committed separately)
 
 1. **Goals** — enrich the one goal store; first-class Goals workspace (CRUD); Priority sees active goals.
