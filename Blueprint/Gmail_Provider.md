@@ -1,6 +1,13 @@
 # The Gmail Provider (Read-Only) - Executive Email Intelligence
 
-> **Multi-account (D17):** this one provider now reads *all* connected Google accounts and merges them
+> **Provider-neutral communications (Epic 8):** Gmail is now one **backend** among many behind Sam's
+> single `email` signal. It exposes `Get-Email` / `Get-GmailStatus` and tags every normalized message
+> `provider='gmail'`; the provider-neutral aggregator (`core/communications.ps1`) merges Gmail with
+> **Yahoo** (and future backends) and runs the **one** Executive Email Summary. The `email` live-signal
+> registration moved from here to the aggregator (one registrant). Gmail's own mechanics are unchanged.
+> See [Yahoo_Provider.md](Yahoo_Provider.md).
+>
+> **Multi-account (D17):** this one provider reads *all* connected Google accounts and merges them
 > into one Executive Email Summary (dedupe by Message-ID). See
 > [Multi_Account_Google.md](Multi_Account_Google.md). The description below covers the per-account
 > mechanics; multi-account is layered on top without a second provider.

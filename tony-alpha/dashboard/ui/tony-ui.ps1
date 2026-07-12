@@ -1001,10 +1001,13 @@ function New-HomeView {
     if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
         try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $script:TonyNow } } catch { $briefCal = $null }
     }
-    # Likewise the briefing may request an email signal - but ONLY when Gmail is
-    # already connected (no fetch, no network when disconnected).
+    # Likewise the briefing may request the COMBINED communications signal (Gmail +
+    # Yahoo) - but ONLY when at least one inbox is connected (no network otherwise).
     $briefEmail = $null
-    if ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
+    if ((Get-Command Get-CommunicationsStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Communications -ErrorAction SilentlyContinue)) {
+        try { if ((Get-CommunicationsStatus).state -eq 'connected') { $briefEmail = Get-Communications -Now $script:TonyNow } } catch { $briefEmail = $null }
+    }
+    elseif ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
         try { if ((Get-GmailStatus).state -eq 'connected') { $briefEmail = Get-Email -When 'today' -Now $script:TonyNow } } catch { $briefEmail = $null }
     }
     $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName -Calendar $briefCal -Email $briefEmail } else { $null }

@@ -60,8 +60,9 @@ of Day Audit ([Continuous_Improvement.md](Continuous_Improvement.md)).
 | — | [Tony Memory, With Permission](Tony_Memory_With_Permission.md) | Tony never remembers without asking — the permission model, Memory Review, and user control |
 | — | [Weather Provider](Weather_Provider.md) | Tony's first live provider — the permanent architecture every future live service follows |
 | — | [Google Calendar Provider](Google_Calendar_Provider.md) | Read-only Google Calendar via OAuth — Tony understands your schedule; the pattern for Gmail |
-| — | [Gmail Provider](Gmail_Provider.md) | Read-only Gmail — Executive Email Summary; shared OAuth + provider-neutral email intelligence (Outlook/M365/Yahoo plug in) |
+| — | [Gmail Provider](Gmail_Provider.md) | Read-only Gmail — now a **backend** behind the provider-neutral communications signal (Yahoo is a peer, Epic 8); shared OAuth + one Executive Email Summary |
 | — | [Multi-Account Google](Multi_Account_Google.md) | One Calendar + one Gmail provider reading MANY Google accounts (business + personal); per-account tokens, merged at the intelligence layer |
+| — | [Yahoo Provider](Yahoo_Provider.md) | **Epic 8** — Yahoo Mail as a second read-only backend (IMAP + app password) behind Sam's one provider-neutral communications signal; Gmail + Yahoo merge into the single Executive Email Summary; Sam is Head of Communications (she); daily + explicit historical search; no writes |
 | — | [Executive Timeline](Executive_Timeline.md) | Tony understands time — what's new/aging/overdue/ignored/expiring, derived only from existing timestamps; no new storage |
 | — | [The GIOK Workforce](Workforce.md) | **Constitutional** — the permanent org chart and bylaws of Tony's team (Tony, Sam, Ava, Emma, Riley, Mason, Randy + future hires); the Executive Awareness Principle and Rule of Progressive Delegation |
 | — | [Workforce Engine](Workforce_Engine.md) | Tony's management layer — delegate to specialist analysts, merge reports, present one recommendation; Tony stays the only decision maker (D20) |

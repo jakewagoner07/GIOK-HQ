@@ -82,7 +82,12 @@ Tony understands the real world through read-only providers, all on one reusable
 - ✅ **Multi-account Google (D17)** — one Calendar + one Gmail provider read MANY accounts (business +
   personal); per-account tokens; merge/dedupe at the intelligence layer; Calendar migrated onto the
   shared OAuth module; live-validated across two real accounts
-- ⬜ Outlook / Microsoft 365 / Yahoo mail — plug into the same `email` architecture (join the merge)
+- ✅ **Yahoo Mail (Epic 8)** — Yahoo joins as a second read-only backend (IMAP + app password) behind
+  Sam's one provider-neutral communications signal; Gmail + Yahoo merge into the single Executive Email
+  Summary (no second engine); Sam is Head of Communications (she); daily + explicit historical search;
+  read-only, no writes. See `Blueprint/Yahoo_Provider.md`.
+- ⬜ Outlook / Microsoft 365 / SMS / voicemail / Slack / Teams / social — plug into the same `email`
+  (communications) architecture as additional backends (join the merge; named, not yet built)
 - ⬜ Maps provider (travel time; pairs with Calendar)
 - ⬜ News / Stocks providers (read-only signals)
 

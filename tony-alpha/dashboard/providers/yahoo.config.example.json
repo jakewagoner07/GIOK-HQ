@@ -1,0 +1,8 @@
+{
+  "_comment": "Yahoo Mail read-only IMAP config. COPY this to yahoo.config.json (gitignored) and fill in your values. GIOK reads Yahoo Mail READ-ONLY over IMAP (imap.mail.yahoo.com:993, SSL). Yahoo requires a THIRD-PARTY APP PASSWORD, not your normal password: create one at Yahoo Account Security -> 'Generate app password' / 'Create app password' (under External connections), then paste it below. The app password is stored ONLY in your local gitignored yahoo.config.json and is never logged or committed.",
+  "email": "your-address@yahoo.com",
+  "appPassword": "PASTE-YOUR-16-CHARACTER-YAHOO-APP-PASSWORD-HERE",
+  "importantContacts": [],
+  "clientDomains": [],
+  "carrierDomains": []
+}

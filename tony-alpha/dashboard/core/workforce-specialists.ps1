@@ -7,7 +7,7 @@
 # Context (or the existing provider function when the context doesn't carry
 # its data), analyzes, and returns the STANDARD report. Tony merges them.
 #
-#   Sam    - Head of Communications; reads Get-Email / the email signal
+#   Sam    - Head of Communications; reads ONE combined signal (Gmail + Yahoo)
 #   Ava    - Calendar Manager; reads Get-Calendar / the calendar signal
 #   Mason  - Document Analyst; reads Document Intelligence (when a doc is queued)
 #   Emma   - Priority Analyst; wraps the Executive Priority Engine (D18)
@@ -27,6 +27,11 @@ $ErrorActionPreference = 'Stop'
 function Get-WorkforceEmail {
     param($Context)
     if ($Context -and $Context.email -and $Context.email.ok) { return $Context.email }
+    # Prefer the provider-neutral COMBINED signal (Gmail + Yahoo) so Sam's one
+    # report spans every inbox. Fall back to Gmail-only if the aggregator is absent.
+    if (Get-Command Get-Communications -ErrorAction SilentlyContinue) {
+        try { $c = Get-Communications; if ($c -and $c.ok) { return $c } } catch { }
+    }
     if ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
         try { if ((Get-GmailStatus).state -eq 'connected') { return (Get-Email -When 'today') } } catch { }
     }
@@ -54,25 +59,27 @@ function Get-WorkforceCRM {
 
 if (Get-Command Register-Specialist -ErrorAction SilentlyContinue) {
 
-    # ---- Sam - Head of Communications (reads the email signal) ---------
+    # ---- Sam - Head of Communications (provider-neutral) ---------------
     # Sam (she) makes sure no important communication is missed, regardless of
-    # source. Today her sources are the connected Gmail account(s); other
-    # mailboxes (e.g. Yahoo) normalize to the same shape and feed her later.
+    # WHERE it originated. She reads ONE combined signal across every backend
+    # (Gmail + Yahoo today; Outlook/SMS/voicemail/Slack later) and never learns
+    # the vendor. Each surfaced item keeps its source account + provider.
     Register-Specialist -Specialist ([pscustomobject]@{
             name         = 'Sam'
-            purpose      = 'Head of Communications - ensures no important communication is missed, regardless of source.'
-            capabilities = @('inbox summary', 'who is waiting on you', 'carrier/underwriting updates')
-            relevant     = { param($t) [bool]($t -match '(?i)\b(e-?mail|inbox|mail|message|reply|wrote|waiting|overnight|what happened|catch me up|attention|status|new)\b') }
-            status       = { $c = (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue); if ($c) { $st = Get-GmailStatus; [pscustomobject]@{ available = ($st.state -eq 'connected'); detail = $st.detail } } else { [pscustomobject]@{ available = $false; detail = 'Gmail provider not loaded.' } } }
+            purpose      = 'Head of Communications - ensures no important communication is missed, regardless of where it originated.'
+            capabilities = @('combined inbox summary (Gmail + Yahoo)', 'who is waiting on you', 'carrier/underwriting updates')
+            relevant     = { param($t) [bool]($t -match '(?i)\b(e-?mail|inbox|mail|mailbox|yahoo|message|reply|wrote|waiting|communication|overnight|what happened|catch me up|attention|status|new)\b') }
+            status       = { if (Get-Command Get-CommunicationsStatus -ErrorAction SilentlyContinue) { $st = Get-CommunicationsStatus; [pscustomobject]@{ available = ($st.state -eq 'connected'); detail = $st.detail } } elseif (Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) { $st = Get-GmailStatus; [pscustomobject]@{ available = ($st.state -eq 'connected'); detail = $st.detail } } else { [pscustomobject]@{ available = $false; detail = 'Communication providers not loaded.' } } }
             analyze      = {
                 param($req)
                 $email = Get-WorkforceEmail -Context $req.context
-                if (-not $email -or -not $email.ok) { return (New-SpecialistReport -Specialist 'Sam' -Purpose 'Reviews the inbox.' -Input 'today''s inbox' -Output 'Gmail is not connected, so I could not review the inbox.' -Confidence 0.2 -Status 'no-data' -Scope 'inbox') }
+                if (-not $email -or -not $email.ok) { return (New-SpecialistReport -Specialist 'Sam' -Purpose 'Reviews communications.' -Input 'the inboxes' -Output 'No communication account is connected, so I could not review the inboxes.' -Confidence 0.2 -Status 'no-data' -Scope 'inbox') }
                 $s = $email.summary
-                $out = ('{0} received today; {1} need attention, {2} awaiting a reply, {3} invitation(s).' -f $s.total, $s.needsAttention, $s.waitingForReply, $s.invitations)
-                $ev = @($s.attentionItems | Select-Object -First 5 | ForEach-Object { [pscustomobject]@{ source = 'email'; sourceId = [string]$_.messageId; detail = ('{0}: {1}' -f $_.from, $_.subject) } })
+                $inboxN = [int]$email.accountCount
+                $out = ('Reviewed {0} inbox(es): {1} received today; {2} need attention, {3} awaiting a reply, {4} invitation(s).' -f $inboxN, $s.total, $s.needsAttention, $s.waitingForReply, $s.invitations)
+                $ev = @($s.attentionItems | Select-Object -First 5 | ForEach-Object { [pscustomobject]@{ source = 'email'; sourceId = [string]$_.messageId; detail = ('{0}: {1}{2}' -f $_.from, $_.subject, $(if (@($_.accounts).Count -gt 0) { ' [' + ((@($_.accounts)) -join ', ') + ']' } else { '' })) } })
                 $acts = @($s.attentionItems | Where-Object { $_.category -in @('needs-reply', 'important-contact', 'urgent') } | Select-Object -First 3 | ForEach-Object { ('Reply to {0} ({1})' -f $_.from, $_.subject) })
-                New-SpecialistReport -Specialist 'Sam' -Purpose 'Reviews the inbox and flags what needs a response.' -Input ('inbox across {0} account(s)' -f $email.accountCount) -Output $out `
+                New-SpecialistReport -Specialist 'Sam' -Purpose 'Head of Communications - reviews every inbox and flags what needs a response.' -Input ('{0} inbox(es) across {1}' -f $inboxN, $(if ($email.providers) { (@($email.providers) -join ' + ') } else { 'email' })) -Output $out `
                     -Confidence $(if ($s.total -gt 0) { 0.85 } else { 0.7 }) -Evidence $ev -Status 'ok' -RecommendedActions $acts `
                     -Assessment $(if ($s.needsAttention -gt 0) { 'needs-attention' } else { 'clear' }) -Scope 'inbox'
             }

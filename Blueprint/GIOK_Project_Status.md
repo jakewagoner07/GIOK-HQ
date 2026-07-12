@@ -3,9 +3,29 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 7 — Conversational Capture** (on `feature/conversational-capture`, branched from
-`main` @ `64f607c`; RC2, the Life Operating System, the Executive Inbox, the multi-account calendar fix,
-and Workforce Activation already merged to `main`).
+Last updated: **Epic 8 — Sam + Yahoo Mail** (on `feature/sam-yahoo-communications`, branched from
+`main` @ `b1ee6df`; RC2, the Life Operating System, the Executive Inbox, the multi-account calendar fix,
+Workforce Activation, and Conversational Capture already merged to `main`).
+
+> **Epic 8 status (Sam + Yahoo):** Sam is formally **Head of Communications** (she) and provider-neutral —
+> she reads **one combined signal** across Business Gmail, Personal Gmail, and **Yahoo Mail** and gives
+> Tony one report that still preserves each message's source account + provider. Yahoo joins as a second
+> **vendor backend** (new `providers/yahoo-provider.ps1`): a minimal **read-only IMAP** client (pure
+> .NET, `imap.mail.yahoo.com:993`, SSL, **Yahoo app password** — confirmed the official method) that
+> `EXAMINE`s the inbox and fetches **headers only** via `BODY.PEEK` (never marks seen, no bodies) and
+> normalizes to the **same** model as Gmail (`provider='yahoo'`). A new provider-neutral aggregator
+> (`core/communications.ps1`) merges backends and runs the **existing** `Get-ExecutiveEmailSummary`
+> **once** — no second engine, no second summary — and registers the one `email` live signal (moved off
+> the Gmail provider). Daily mode feeds the combined summary; **Historical Search** runs only on explicit
+> request (read-only, evidence shown, approval required, never auto-scans). Sam's Epic 6 proposals flow
+> unchanged. Credentials in gitignored `yahoo.config.json` (only `yahoo.config.example.json` tracked);
+> nothing sensitive logged (states/counts/timing/provider/error-class only). No new tab, no writes.
+> Verified: not-configured/auth-failure/empty states, normalization (person/newsletter/bulk/invite),
+> combined 3-inbox summary with cross-provider dedup + source preserved, Sam proposals + idempotency,
+> historical-search evidence, read-only IMAP audit (no STORE/APPEND/EXPUNGE/DELETE/COPY/MOVE, EXAMINE +
+> BODY.PEEK only, no body fetch), one `email` registrant, every subsystem loads, full app launch, secret
+> scan + git integrity clean. **Real Yahoo-account read pending Jake's app password** (example config +
+> gitignore rule shipped). Local-only, not pushed. No release blockers currently identified.
 
 > **Epic 7 status (Conversational Capture):** Jake can now **tell Tony** something in normal
 > conversation and Tony prepares the right **Executive Inbox proposal** — he never writes to the OS.
