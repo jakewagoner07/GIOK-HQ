@@ -177,6 +177,7 @@ function Convert-GmailMessage {
     $fromRaw = Get-GmailHeaderValue -Headers $headers -Name 'From'
     $from = Split-EmailFrom -Value $fromRaw
     $subject = Get-GmailHeaderValue -Headers $headers -Name 'Subject'
+    if (Get-Command ConvertFrom-MimeSubject -ErrorAction SilentlyContinue) { $subject = ConvertFrom-MimeSubject $subject }   # decode RFC 2047 (provider-neutral)
     $to = Get-GmailHeaderValue -Headers $headers -Name 'To'
     $cc = Get-GmailHeaderValue -Headers $headers -Name 'Cc'
     $deliveredTo = Get-GmailHeaderValue -Headers $headers -Name 'Delivered-To'

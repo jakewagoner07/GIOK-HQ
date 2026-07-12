@@ -7,6 +7,11 @@
 > registration moved from here to the aggregator (one registrant). Gmail's own mechanics are unchanged.
 > See [Yahoo_Provider.md](Yahoo_Provider.md).
 >
+> **Communications Polish:** subjects are **RFC 2047 decoded** (shared `ConvertFrom-MimeSubject`), and
+> carrier/underwriting detection (`Test-EmailCarrier`) now strips benign footer boilerplate ("Privacy
+> Policy" and siblings) before matching the `policy` hint — fixing a false positive (a OneDrive "memories"
+> notice) without weakening real insurance-policy/underwriting recognition.
+>
 > **Multi-account (D17):** this one provider reads *all* connected Google accounts and merges them
 > into one Executive Email Summary (dedupe by Message-ID). See
 > [Multi_Account_Google.md](Multi_Account_Google.md). The description below covers the per-account

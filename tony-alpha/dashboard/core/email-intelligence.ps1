@@ -36,6 +36,46 @@ $script:EmailCarrierHints = @(
     'application', 'licensing', 'producer', 'appointment paperwork', 'e&o'
 )
 
+# Decode an RFC 2047 MIME-encoded header (subjects like "=?UTF-8?Q?...?=" or
+# "=?UTF-8?B?...?="). PROVIDER-NEUTRAL: Gmail, Yahoo, and any future backend
+# reuse this. Handles multiple encoded words (whitespace between adjacent ones
+# is dropped per RFC 2047 6.2), Q (quoted-printable) and B (base64), any charset.
+# Fails SAFELY: a plain subject is returned unchanged, and any decode error
+# returns the original text. Never fetches a body - operates on the header only.
+function ConvertFrom-MimeSubject {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    if ($Text -notmatch '=\?[^?]+\?[BbQq]\?[^?]*\?=') { return [string]$Text }   # nothing encoded -> unchanged
+    try {
+        $s = [regex]::Replace([string]$Text, '(\?=)[ \t]+(=\?)', '$1$2')   # join adjacent encoded words
+        $rx = [regex]'=\?([^?]+)\?([BbQq])\?([^?]*)\?='
+        $out = New-Object System.Text.StringBuilder
+        $pos = 0
+        foreach ($m in $rx.Matches($s)) {
+            [void]$out.Append($s.Substring($pos, $m.Index - $pos))
+            $charset = $m.Groups[1].Value; $enc = $m.Groups[2].Value.ToUpperInvariant(); $data = $m.Groups[3].Value
+            $encoding = [System.Text.Encoding]::UTF8
+            try { $encoding = [System.Text.Encoding]::GetEncoding($charset) } catch { $encoding = [System.Text.Encoding]::UTF8 }
+            if ($enc -eq 'B') {
+                $bytes = [System.Convert]::FromBase64String($data)
+            } else {
+                $data = $data -replace '_', ' '
+                $list = New-Object System.Collections.Generic.List[byte]
+                $i = 0
+                while ($i -lt $data.Length) {
+                    if ($data[$i] -eq '=' -and ($i + 2) -lt $data.Length) { $list.Add([Convert]::ToByte($data.Substring($i + 1, 2), 16)); $i += 3 }
+                    else { $list.Add([byte][int][char]$data[$i]); $i++ }
+                }
+                $bytes = $list.ToArray()
+            }
+            [void]$out.Append($encoding.GetString($bytes))
+            $pos = $m.Index + $m.Length
+        }
+        [void]$out.Append($s.Substring($pos))
+        return $out.ToString()
+    } catch { return [string]$Text }
+}
+
 function Get-EmailCountWord {
     param([int]$N, [switch]$Capital)
     $words = @('zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve')
@@ -54,6 +94,12 @@ function Get-EmailSenderKind {
 function Test-EmailCarrier {
     param([string]$Subject, [string]$Snippet, [string]$From, $Hints, $CarrierDomains = @())
     $hay = (("{0} {1}" -f $Subject, $Snippet)).ToLower()
+    # Neutralize benign footer boilerplate so a hint isn't tripped by it. The
+    # narrowest real-world false positive: "Privacy Policy" (and its siblings) in
+    # a marketing/notification footer matched the "policy" hint. Stripping only
+    # these fixed phrases preserves genuine insurance signals ("insurance policy",
+    # "your policy", "policy renewal", "policy number", "policy documents").
+    $hay = $hay -replace '\b(privacy|cookie|cookies|return|refund|shipping|exchange|acceptable[- ]use)\s+polic(y|ies)\b', ' '
     foreach ($h in @($Hints)) { if ($h -and $hay -match [regex]::Escape(([string]$h).ToLower())) { return $true } }
     $dom = ''
     if ($From -match '@(.+)$') { $dom = $Matches[1].ToLower() }
@@ -175,12 +221,16 @@ function Get-ExecutiveEmailSummary {
         $mid = if (($m.PSObject.Properties.Name -contains 'messageId') -and $m.messageId) { [string]$m.messageId } else { '' }
         $key = if ($mid) { 'mid:' + $mid.ToLower() } else { 'id:' + [string]$m.id }
         $sa = if (($m.PSObject.Properties.Name -contains 'sourceAccount') -and $m.sourceAccount) { [string]$m.sourceAccount } else { '' }
+        $pv = if (($m.PSObject.Properties.Name -contains 'provider') -and $m.provider) { [string]$m.provider } else { '' }
         if ($seen.ContainsKey($key)) {
             $existing = $seen[$key]
             if ($sa -and ($existing.sourceAccounts -notcontains $sa)) { $existing.sourceAccounts = @($existing.sourceAccounts + $sa) }
+            # keep a provider+account pair per source (so provenance survives a cross-provider dedupe)
+            if (($sa -or $pv) -and -not (@($existing.sources) | Where-Object { $_.account -eq $sa -and $_.provider -eq $pv })) { $existing.sources = @($existing.sources + [pscustomobject]@{ provider = $pv; account = $sa }) }
             continue
         }
         $m | Add-Member -NotePropertyName sourceAccounts -NotePropertyValue @($(if ($sa) { $sa } else { $null }) | Where-Object { $_ }) -Force
+        $m | Add-Member -NotePropertyName sources -NotePropertyValue @($(if ($sa -or $pv) { [pscustomobject]@{ provider = $pv; account = $sa } } else { $null }) | Where-Object { $_ }) -Force
         $seen[$key] = $m
         $deduped += $m
     }
@@ -251,6 +301,7 @@ function Get-ExecutiveEmailSummary {
                 unread   = [bool]$_.msg.unread
                 messageId = $(if (($_.msg.PSObject.Properties.Name -contains 'messageId') -and $_.msg.messageId) { [string]$_.msg.messageId } else { [string]$_.msg.id })
                 accounts = @($(if (($_.msg.PSObject.Properties.Name -contains 'sourceAccounts') -and $_.msg.sourceAccounts) { $_.msg.sourceAccounts } else { @() }))
+                sources  = @($(if (($_.msg.PSObject.Properties.Name -contains 'sources') -and $_.msg.sources) { $_.msg.sources } else { @() }))
             }
         })
 

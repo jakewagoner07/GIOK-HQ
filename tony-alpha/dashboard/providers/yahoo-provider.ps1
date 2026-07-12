@@ -208,6 +208,7 @@ function Convert-YahooMessage {
     $h = ConvertFrom-RfcHeaders -Block $HeaderBlock
     $from = Split-YahooAddress -Value (Get-RfcHeader $h 'From')
     $subject = Get-RfcHeader $h 'Subject'
+    if (Get-Command ConvertFrom-MimeSubject -ErrorAction SilentlyContinue) { $subject = ConvertFrom-MimeSubject $subject }   # decode RFC 2047 (provider-neutral)
     $to = Get-RfcHeader $h 'To'; $cc = Get-RfcHeader $h 'Cc'
     $messageId = (Get-RfcHeader $h 'Message-ID').Trim()
     $listUnsub = Get-RfcHeader $h 'List-Unsubscribe'
