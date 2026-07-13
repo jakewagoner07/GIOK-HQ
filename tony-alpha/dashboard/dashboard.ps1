@@ -105,6 +105,26 @@ if ($Screenshot) {
     return
 }
 
+# ---- native Windows app identity (interactive launches only; -Screenshot returned above) ----
+# A stable AppUserModelID makes Windows group the taskbar / Alt+Tab entry under GIOK
+# instead of the PowerShell host process. Hiding the host console keeps direct / .bat
+# launches from flashing a terminal (the silent .vbs launcher already prevents this on
+# the normal path). Best-effort: if the P/Invoke is unavailable the app still runs.
+try {
+    Add-Type -Namespace GIOK -Name Shell -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("shell32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode, PreserveSig=false)]
+public static extern void SetCurrentProcessExplicitAppUserModelID(string AppID);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern System.IntPtr GetConsoleWindow();
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+'@
+    [GIOK.Shell]::SetCurrentProcessExplicitAppUserModelID('GIOK.ExecutiveOS')
+    $consoleWnd = [GIOK.Shell]::GetConsoleWindow()
+    if ($consoleWnd -ne [System.IntPtr]::Zero) { [void][GIOK.Shell]::ShowWindow($consoleWnd, 0) }  # 0 = SW_HIDE
+}
+catch { }
+
 # ---- interactive desktop window ----
 $window = New-Object Windows.Window
 $window.Title = $theme.companyName        # taskbar/title bar shows the brand (e.g. "GIOK")
@@ -112,6 +132,10 @@ $window.Width = $Width; $window.Height = $Height
 $window.MinWidth = 980; $window.MinHeight = 680
 $window.WindowStartupLocation = 'CenterScreen'
 $window.Background = (New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($theme.colors.background)))
+# Window icon (title bar + taskbar window icon): the 256px brand PNG, which WPF
+# down-samples sharply to whatever size each surface needs. (The multi-size .ico
+# serves the Desktop / Start Menu shortcut; a WPF BitmapImage would pick only the
+# smallest .ico frame here, so the PNG stays the better window-icon source.)
 if ($theme.logoPath -and (Test-Path $theme.logoPath)) {
     $ico = New-Object Windows.Media.Imaging.BitmapImage
     $ico.BeginInit(); $ico.CacheOption = 'OnLoad'; $ico.UriSource = New-Object Uri($theme.logoPath); $ico.EndInit()
