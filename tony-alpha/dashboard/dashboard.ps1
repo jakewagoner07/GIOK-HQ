@@ -139,8 +139,12 @@ $window.Add_PreviewKeyDown({
     }
 })
 
-# Tear down background runspaces on close so no orphan runspaces or file locks leak.
-$window.Add_Closed({ if (Get-Command Stop-AsyncWorkers -ErrorAction SilentlyContinue) { Stop-AsyncWorkers } })
+# Tear down background runspaces on close so no orphan runspaces or file locks leak;
+# clear the scan-local reject-suppression set (in-memory only) on close.
+$window.Add_Closed({
+    if (Get-Command Stop-AsyncWorkers -ErrorAction SilentlyContinue) { Stop-AsyncWorkers }
+    if (Get-Command Reset-InboxScanRejected -ErrorAction SilentlyContinue) { Reset-InboxScanRejected }
+})
 
 $null = $window.ShowDialog()
 
