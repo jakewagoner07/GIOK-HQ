@@ -3,9 +3,30 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **V1 Completion - Tier 1: Close the Life OS Feedback Loop** (on
-`feature/v1-life-feedback-loop`, branched from `main` @ `2b41f56`; Communications Polish, Epic 8, and all
-prior epics merged to `main`).
+Last updated: **Epic 9 - Performance & Responsiveness** (on `feature/performance-responsiveness`,
+branched from `main` @ `fc738e3`; V1 Tier 1, the onboarding fix, and all prior epics merged to `main`).
+
+> **Epic 9 status (Performance & Responsiveness):** measure-first optimization; **no new user-facing
+> features**. A headless profiler (timings + component names only, no private content) proved the entire
+> perceived slowness was **live provider latency on the UI thread**, re-fetched by multiple actions -
+> Executive Inbox scan ~48s, Communications ~35s (Yahoo IMAP ~20s + Gmail ~10s), Home briefing end-to-end
+> ~39s; compute (context 739ms, priority 379ms, most tabs <300ms) was already fine. Fixes: (1) a
+> **bounded in-memory signal cache** (`core/executive-cache.ps1`; calendar/communications/CRM; TTLs 2m/2m/
+> 5m; single-flight; stale-on-failure; synchronized so a worker and the UI share ONE cache) - caches only
+> provider signals, never local data, never a second source; (2) a **background worker runspace**
+> (`core/async-run.ps1`) that builds the Home briefing model off the dispatcher and marshals only the card
+> build back, torn down on window close (no orphans); (3) a conservative **per-view cache** for
+> pure-presentation views only. Measured before -> after: warm signal read ~35,000 -> 22 ms; Inbox scan
+> ~48,000 -> 5,888 ms (8x); Home briefing ~39,000 -> 3,892 ms (10x); provider fetches per session 3+ -> 1
+> each; cached tab switch 252 -> 5 ms. Home first paint 78 ms warm / ~532 ms cold (first-render JIT floor).
+> Verified: off-thread execution, UI-thread marshaling, shared cache, nav responsive during refresh, close
+> during refresh, temporary-failure degraded state, no orphan runspaces, no duplicate fetches, view-cache
+> safety (editable views rebuild), full app launch, parse, secret scan, git integrity. All invariants
+> preserved (SSOT, owners-only writers, Executive Context architecture, approval gate, read-only
+> providers). Local-only, not pushed. Remaining bottlenecks: cold-paint JIT (~532ms), Inbox-scan compute
+> (~6s, now warm not 48s) still on the UI thread - documented as follow-ons.
+
+> **V1 Completion Tier 1 status (Close the Life OS feedback loop):** the Life OS was writable but
 
 > **V1 Completion Tier 1 status (Close the Life OS feedback loop):** the Life OS was writable but
 > **write-only** - Health, Financial, Learning, and broader Family data was invisible to Tony's reasoning,

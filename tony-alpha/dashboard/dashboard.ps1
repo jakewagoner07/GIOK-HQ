@@ -43,6 +43,8 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-observations.ps1')
 . (Join-Path $PSScriptRoot 'core\memory-manager.ps1')
+. (Join-Path $PSScriptRoot 'core\executive-cache.ps1')
+. (Join-Path $PSScriptRoot 'core\async-run.ps1')
 . (Join-Path $PSScriptRoot 'core\live-providers.ps1')
 . (Join-Path $PSScriptRoot 'core\google-oauth.ps1')
 . (Join-Path $PSScriptRoot 'core\email-intelligence.ps1')
@@ -72,6 +74,8 @@ $theme = Get-Theme
 # heavy work to a background tick (e.g. the Home Executive Briefing) must build
 # synchronously to render. Interactive launches defer for a responsive first paint.
 $script:HeadlessRender = [bool]$Screenshot
+# Where the background worker runspace loads its modules from (Epic 9).
+if (Get-Command Set-AsyncDashboardRoot -ErrorAction SilentlyContinue) { Set-AsyncDashboardRoot $PSScriptRoot }
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }
 # First Conversation replaces onboarding: until it's completed, it is the landing view.
 $startView = if ($PSBoundParameters.ContainsKey('View')) { $View }
@@ -134,6 +138,9 @@ $window.Add_PreviewKeyDown({
         $e.Handled = $true
     }
 })
+
+# Tear down background runspaces on close so no orphan runspaces or file locks leak.
+$window.Add_Closed({ if (Get-Command Stop-AsyncWorkers -ErrorAction SilentlyContinue) { Stop-AsyncWorkers } })
 
 $null = $window.ShowDialog()
 

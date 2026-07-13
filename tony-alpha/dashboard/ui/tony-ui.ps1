@@ -1027,15 +1027,13 @@ function New-HomeView {
     # scope, so $script:TonyNow would be $null there. Function CALLS are unaffected.
     $briefNow = $script:TonyNow
     $buildBrief = {
-        # calendar/email signals only when already connected (no network otherwise)
+        # calendar/email signals through the shared cache (Epic 9): a source is
+        # fetched at most once per TTL window and reused by the Inbox scan / Tony.
+        # Only when connected; providers are never hit off-connection.
         $briefCal = $null
-        if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
-            try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $briefNow } } catch { $briefCal = $null }
-        }
+        if (Get-Command Get-CalendarSignal -ErrorAction SilentlyContinue) { try { $briefCal = Get-CalendarSignal -Now $briefNow } catch { $briefCal = $null } }
         $briefEmail = $null
-        if ((Get-Command Get-CommunicationsStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Communications -ErrorAction SilentlyContinue)) {
-            try { if ((Get-CommunicationsStatus).state -eq 'connected') { $briefEmail = Get-Communications -Now $briefNow } } catch { $briefEmail = $null }
-        }
+        if (Get-Command Get-CommunicationsSignal -ErrorAction SilentlyContinue) { try { $briefEmail = Get-CommunicationsSignal -Now $briefNow } catch { $briefEmail = $null } }
         elseif ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
             try { if ((Get-GmailStatus).state -eq 'connected') { $briefEmail = Get-Email -When 'today' -Now $briefNow } } catch { $briefEmail = $null }
         }
@@ -1047,10 +1045,27 @@ function New-HomeView {
             $briefHost.Child = (New-MorningBriefing -Model (Get-MorningBrief -Now $briefNow))
         }
     }.GetNewClosure()
-    # Headless screenshot mode has no message loop, so build synchronously there;
-    # interactive launches defer to a background dispatcher tick (Home paints first).
-    if ($script:HeadlessRender) { & $buildBrief }
-    else { $null = $briefHost.Dispatcher.BeginInvoke([Action]$buildBrief, [Windows.Threading.DispatcherPriority]::Background) }
+    # Headless screenshot mode has no message loop -> build synchronously.
+    # Interactive: build the briefing MODEL on a BACKGROUND RUNSPACE (fetch +
+    # context, ~35s cold) so the UI thread never blocks; only the card build
+    # returns to the dispatcher. The async KICKOFF (which may lazily open the
+    # worker runspace) is itself deferred to a post-paint dispatcher tick, so
+    # New-HomeView returns immediately with just the placeholder. Falls back to
+    # the synchronous path when async is unavailable.
+    if ($script:HeadlessRender -or -not (Get-Command Start-AsyncWork -ErrorAction SilentlyContinue) -or -not (Test-AsyncAvailable)) {
+        & $buildBrief
+    }
+    else {
+        $dashRoot = $script:AsyncDashRoot
+        $briefWork = Get-AsyncBriefingWork
+        $onDone = {
+            param($model)
+            if ($model) { $briefHost.Child = (New-ExecutiveBriefingCard -Model $model) }
+            else { $briefHost.Child = (New-MorningBriefing -Model (Get-MorningBrief -Now $briefNow)) }
+        }.GetNewClosure()
+        $kick = { Start-AsyncWork -Work $briefWork -ArgList @($dashRoot, $briefNow.Ticks, $briefName) -OnComplete $onDone | Out-Null }.GetNewClosure()
+        $null = $briefHost.Dispatcher.BeginInvoke([Action]$kick, [System.Windows.Threading.DispatcherPriority]::Background)
+    }
 
     # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
     $cap = Get-CaptureStats
@@ -2744,6 +2759,17 @@ function New-FirstConversationView {
 # =====================  NAV + SHELL  =====================
 function New-Emoji { param([int[]]$Cp) return (-join ($Cp | ForEach-Object { [char]::ConvertFromUtf32($_) })) }
 
+# Per-view cache (Epic 9, Phase 3). Deliberately CONSERVATIVE: only pure-
+# presentation, session-static views are cached (no editable input, data does
+# not change from within the app during a session). Every editable / data-driven
+# view (Home, Action Items, Capture, Identity, Goals, Audit, Inbox, Life domains,
+# Memory, Settings, Mission Control) is intentionally REBUILT each time so it can
+# never show stale data or a mis-cached input box. The cache holds rendered
+# visuals only - never authoritative records, never a second data source.
+$script:ViewCache = @{}
+$script:ViewCacheable = @{ 'Agents' = $true; 'Issues' = $true; 'Roadmap' = $true; 'Weekly Review' = $true }
+function Clear-ViewCache { param([string]$Name) if ($Name) { [void]$script:ViewCache.Remove($Name) } else { $script:ViewCache.Clear() } }
+
 function Set-ActiveView {
     param([Parameter(Mandatory)][string]$Name)
     $script:TonyActiveView = $Name
@@ -2753,6 +2779,11 @@ function Set-ActiveView {
     }
     # immersive views (onboarding, the morning welcome) hide the utility toolbar for focus
     if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
+    # cached pure-presentation view -> reuse the rendered visual (effectively instant)
+    if ($script:ViewCacheable[$Name] -and $script:ViewCache.ContainsKey($Name)) {
+        $script:TonyBody.Child = $script:ViewCache[$Name]
+        return
+    }
     $body = switch ($Name) {
         'Morning Experience' { New-MorningExperience -Model (Get-MorningExperience -Now $script:TonyNow) }
         'Home'         { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
@@ -2781,6 +2812,7 @@ function Set-ActiveView {
         'Learning'       { New-LifeDomainView -Key 'Learning' }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
+    if ($script:ViewCacheable[$Name]) { $script:ViewCache[$Name] = $body }
     $script:TonyBody.Child = $body
 }
 
