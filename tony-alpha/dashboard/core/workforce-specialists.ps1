@@ -28,8 +28,12 @@ function Get-WorkforceEmail {
     param($Context)
     if ($Context -and $Context.email -and $Context.email.ok) { return $Context.email }
     # Prefer the provider-neutral COMBINED signal (Gmail + Yahoo) so Sam's one
-    # report spans every inbox. Fall back to Gmail-only if the aggregator is absent.
-    if (Get-Command Get-Communications -ErrorAction SilentlyContinue) {
+    # report spans every inbox. Read through the shared cache (Epic 9) so the
+    # Inbox scan reuses whatever Home already fetched - no independent re-fetch.
+    if (Get-Command Get-CommunicationsSignal -ErrorAction SilentlyContinue) {
+        try { $c = Get-CommunicationsSignal; if ($c -and $c.ok) { return $c } } catch { }
+    }
+    elseif (Get-Command Get-Communications -ErrorAction SilentlyContinue) {
         try { $c = Get-Communications; if ($c -and $c.ok) { return $c } } catch { }
     }
     if ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
@@ -40,18 +44,24 @@ function Get-WorkforceEmail {
 function Get-WorkforceCalendar {
     param($Context)
     if ($Context -and $Context.calendar -and $Context.calendar.ok) { return $Context.calendar }
-    if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
+    if (Get-Command Get-CalendarSignal -ErrorAction SilentlyContinue) {
+        try { $c = Get-CalendarSignal; if ($c) { return $c } } catch { }
+    }
+    elseif ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
         try { if ((Get-GCalStatus).state -eq 'connected') { return (Get-Calendar -When 'today') } } catch { }
     }
     return $null
 }
 # Randy reads the normalized 'crm' signal - prefer what the Executive Context
-# already carries; otherwise call the CRM provider ONCE (only when connected).
+# already carries; otherwise the shared cache (Epic 9) fetches ONCE per window.
 # She never touches a CRM API or a vendor - only the normalized model.
 function Get-WorkforceCRM {
     param($Context)
     if ($Context -and ($Context.PSObject.Properties.Name -contains 'crm') -and $Context.crm -and $Context.crm.ok) { return $Context.crm }
-    if ((Get-Command Get-CRMStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-CRM -ErrorAction SilentlyContinue)) {
+    if (Get-Command Get-CrmSignal -ErrorAction SilentlyContinue) {
+        try { $c = Get-CrmSignal; if ($c) { return $c } } catch { }
+    }
+    elseif ((Get-Command Get-CRMStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-CRM -ErrorAction SilentlyContinue)) {
         try { if ((Get-CRMStatus).state -in @('configured', 'connected', 'degraded')) { return (Get-CRM) } } catch { }
     }
     return $null

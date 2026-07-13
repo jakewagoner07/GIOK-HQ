@@ -43,6 +43,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\tony-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-observations.ps1')
 . (Join-Path $PSScriptRoot 'core\memory-manager.ps1')
+. (Join-Path $PSScriptRoot 'core\executive-cache.ps1')
 . (Join-Path $PSScriptRoot 'core\live-providers.ps1')
 . (Join-Path $PSScriptRoot 'core\google-oauth.ps1')
 . (Join-Path $PSScriptRoot 'core\email-intelligence.ps1')

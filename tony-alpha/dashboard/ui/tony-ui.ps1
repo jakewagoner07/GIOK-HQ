@@ -1027,15 +1027,13 @@ function New-HomeView {
     # scope, so $script:TonyNow would be $null there. Function CALLS are unaffected.
     $briefNow = $script:TonyNow
     $buildBrief = {
-        # calendar/email signals only when already connected (no network otherwise)
+        # calendar/email signals through the shared cache (Epic 9): a source is
+        # fetched at most once per TTL window and reused by the Inbox scan / Tony.
+        # Only when connected; providers are never hit off-connection.
         $briefCal = $null
-        if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
-            try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $briefNow } } catch { $briefCal = $null }
-        }
+        if (Get-Command Get-CalendarSignal -ErrorAction SilentlyContinue) { try { $briefCal = Get-CalendarSignal -Now $briefNow } catch { $briefCal = $null } }
         $briefEmail = $null
-        if ((Get-Command Get-CommunicationsStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Communications -ErrorAction SilentlyContinue)) {
-            try { if ((Get-CommunicationsStatus).state -eq 'connected') { $briefEmail = Get-Communications -Now $briefNow } } catch { $briefEmail = $null }
-        }
+        if (Get-Command Get-CommunicationsSignal -ErrorAction SilentlyContinue) { try { $briefEmail = Get-CommunicationsSignal -Now $briefNow } catch { $briefEmail = $null } }
         elseif ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
             try { if ((Get-GmailStatus).state -eq 'connected') { $briefEmail = Get-Email -When 'today' -Now $briefNow } } catch { $briefEmail = $null }
         }
