@@ -373,6 +373,11 @@ $script:InboxScanning = $false
 function Get-InboxScanning { return [bool]$script:InboxScanning }
 function Set-InboxScanning { param([bool]$V) $script:InboxScanning = $V }
 function Set-InboxMsg { param($T) $script:InboxMsg = $T }
+# Inbox card/editor button handlers run inside GetNewClosure, where a direct
+# $script: assignment lands in the closure's isolated scope and never reaches the
+# real state (so confirmation messages / edit mode would silently not render).
+# Setters (functions) bind $script: to the module scope, so state updates stick.
+function Set-InboxEditId { param($V) $script:InboxEditId = $V }
 function Test-InboxViewActive { return ($script:TonyActiveView -eq 'Executive Inbox') }
 function Refresh-ExecutiveInbox { if (Get-Command Show-LifeView -ErrorAction SilentlyContinue) { Show-LifeView { New-ExecutiveInboxView } } }
 
@@ -511,16 +516,19 @@ function New-InboxCard {
     $iid = $Item.id; $ititle = $Item.title; $itype = $Item.type; $isource = $Item.sourceId
     $actions = New-Object Windows.Controls.StackPanel; $actions.Orientation = 'Horizontal'; $actions.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
     $actions.Children.Add((New-MiniButton -Text 'Approve' -Bg '#DEF7EC' -Fg '#03543F' -OnClick {
-                param($s, $e); $r = Approve-InboxItem -Id $iid
-                $script:InboxMsg = if ($r.ok) { ("Approved: '{0}' -> {1}{2}." -f $ititle, $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve '{0}': {1}" -f $ititle, $r.message) }
+                param($s, $e)
+                $r = $null; try { $r = Approve-InboxItem -Id $iid } catch { $r = [pscustomobject]@{ ok = $false; message = 'the inbox could not be updated just now - please try again in a moment' } }
+                Set-InboxMsg $(if ($r.ok) { ("Approved: '{0}' -> {1}{2}." -f $ititle, $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve '{0}': {1}" -f $ititle, $r.message) })
                 Show-LifeView { New-ExecutiveInboxView }
             }.GetNewClosure())) | Out-Null
-    $actions.Children.Add((New-MiniButton -Text 'Edit then Approve' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); $script:InboxEditId = $iid; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
+    $actions.Children.Add((New-MiniButton -Text 'Edit then Approve' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Set-InboxEditId $iid; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
     $actions.Children.Add((New-MiniButton -Text 'Reject' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick {
                 param($s, $e)
                 # if a scan is mid-flight, remember this key so the scan can't re-add it
                 Note-InboxRejectKey -Type $itype -Title $ititle -SourceId $isource
-                [void](Reject-InboxItem -Id $iid); $script:InboxMsg = ("Rejected and removed: '{0}'." -f $ititle); Show-LifeView { New-ExecutiveInboxView }
+                $rr = $null; try { $rr = Reject-InboxItem -Id $iid } catch { $rr = [pscustomobject]@{ ok = $false; message = 'the inbox could not be updated just now - please try again in a moment' } }
+                Set-InboxMsg $(if ($rr.ok) { ("Rejected and removed: '{0}'." -f $ititle) } else { ("Could not reject '{0}': {1}" -f $ititle, $rr.message) })
+                Show-LifeView { New-ExecutiveInboxView }
             }.GetNewClosure())) | Out-Null
     $body.Children.Add($actions) | Out-Null
     return (New-Card -Title $Item.title -Body $body)
@@ -547,12 +555,13 @@ function New-InboxEditor {
     $row = New-Object Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'; $row.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
     $row.Children.Add((New-MiniButton -Text 'Save & Approve' -Bg '#DEF7EC' -Fg '#03543F' -OnClick {
                 param($s, $e); if (-not (& $save)) { return }
-                $r = Approve-InboxItem -Id $iid; $script:InboxEditId = $null
-                $script:InboxMsg = if ($r.ok) { ("Approved: -> {0}{1}." -f $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve: {0}" -f $r.message) }
+                $r = $null; try { $r = Approve-InboxItem -Id $iid } catch { $r = [pscustomobject]@{ ok = $false; message = 'the inbox could not be updated just now - please try again in a moment' } }
+                Set-InboxEditId $null
+                Set-InboxMsg $(if ($r.ok) { ("Approved: -> {0}{1}." -f $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve: {0}" -f $r.message) })
                 Show-LifeView { New-ExecutiveInboxView }
             }.GetNewClosure())) | Out-Null
-    $row.Children.Add((New-MiniButton -Text 'Save (keep pending)' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); if (& $save) { $script:InboxEditId = $null; Show-LifeView { New-ExecutiveInboxView } } }.GetNewClosure())) | Out-Null
-    $row.Children.Add((New-MiniButton -Text 'Cancel' -Bg '#E5E7EB' -Fg '#374151' -OnClick { param($s, $e); $script:InboxEditId = $null; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
+    $row.Children.Add((New-MiniButton -Text 'Save (keep pending)' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); if (& $save) { Set-InboxEditId $null; Show-LifeView { New-ExecutiveInboxView } } }.GetNewClosure())) | Out-Null
+    $row.Children.Add((New-MiniButton -Text 'Cancel' -Bg '#E5E7EB' -Fg '#374151' -OnClick { param($s, $e); Set-InboxEditId $null; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
     $body.Children.Add($row) | Out-Null
     return (New-Card -Title ('Editing proposal: ' + $Item.title) -Body $body)
 }
