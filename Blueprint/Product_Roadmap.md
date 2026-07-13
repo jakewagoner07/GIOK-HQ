@@ -66,6 +66,14 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   and the briefing surfaces one calm, selective life line (family first, omitted when nothing matters).
   Read-only, no invention, no advice; **no new store/tab/provider/agent**. See
   `Blueprint/V1_Completion_Plan.md`.
+- ✅ **Performance & Responsiveness (Epic 9)** - measure-first; **no new features**. Profiling proved the
+  slowness was live provider latency on the UI thread (Inbox scan ~48s, Communications ~35s, Home briefing
+  ~39s), not compute. A bounded in-memory signal cache (`core/executive-cache.ps1`; TTL, single-flight,
+  stale-on-failure, shared across a worker+UI via a synchronized hashtable) + a background worker runspace
+  (`core/async-run.ps1`) that builds the briefing model off the dispatcher + a conservative per-view cache.
+  Measured 8-10x on the worst operations; provider fetches deduped to 1/source/window; cached tab switch
+  252->5 ms. Read-only, SSOT and Executive Context ownership preserved. See
+  `Blueprint/Performance_Responsiveness.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

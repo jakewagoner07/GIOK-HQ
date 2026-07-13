@@ -176,6 +176,26 @@ These are settled and should not be re-litigated without a blueprint change:
    diagnostics carry only provider, state, counts, timing, and a safe error class. Future backends
    (Outlook/M365, SMS, voicemail, Slack/Teams, social) plug in here identically — no new engine, no new tab.
 
+17. **Heavy read-only work runs off the UI thread, behind a bounded in-memory signal cache (Epic 9,
+   `Performance_Responsiveness.md`).** Measurement proved GIOK's entire perceived slowness was **live
+   provider latency** (Yahoo IMAP ~20s, Gmail ~10s, Calendar ~5s), executed on the WPF dispatcher and
+   re-fetched independently by more than one action - **not** compute. Two permanent additions, and only
+   because the numbers demanded them: (a) `core/executive-cache.ps1` - ONE **bounded, in-memory,
+   non-persisted** cache of read-only provider signals (calendar/communications/CRM) with per-entry
+   `fetchedAt`+TTL (calendar 2m, communications 2m, CRM 5m), **single-flight**, **stale-on-failure**
+   (returns last good marked stale), and a **synchronized hashtable** so a worker runspace and the UI
+   thread share ONE cache. It stores only what providers return - **never local-domain data** (Life OS/
+   Goals/Memory stay invalidate-on-write by simply not being cached) and **never becomes a second source
+   of truth**; the Executive Context is still rebuilt on demand from cached signals, so SSOT and
+   provider/context ownership are unchanged. (b) `core/async-run.ps1` - ONE **persistent background
+   worker runspace** builds the Home briefing **model** (fetch + context, pure data) off-thread; a
+   `DispatcherTimer` marshals only the finished model back, and **only the WPF card build touches the
+   dispatcher**. Worker errors degrade to a null model (calm fallback); `Stop-AsyncWorkers` disposes on
+   window close (no orphan runspaces/locks). Providers stay pure for explicit-refresh paths. A
+   conservative **per-view cache** reuses rendered visuals for pure-presentation, session-static views
+   only (Agents + markdown docs); every editable/data-driven view is always rebuilt. All read-only,
+   provider-neutral, mailbox/calendar/CRM behavior unchanged; no new user-facing feature.
+
 ## Security / privacy rules
 
 - **Never commit secrets.** API keys, OAuth client secrets, access/refresh tokens, authorization
