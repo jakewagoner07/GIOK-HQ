@@ -975,6 +975,20 @@ function New-ExecutiveBriefingCard {
     return $card
 }
 
+# Light stand-in shown the instant Home opens, while the real Executive Briefing
+# is built on a background dispatcher tick. No providers, no context - just calm text.
+function New-BriefingPlaceholder {
+    $card = New-Object Windows.Controls.Border
+    $card.Background = New-Brush $script:Col.CardBg; $card.BorderBrush = New-Brush $script:Col.Line; $card.BorderThickness = New-Object Windows.Thickness 1
+    $card.CornerRadius = New-Object Windows.CornerRadius 14; $card.Padding = New-Object Windows.Thickness (24, 22, 24, 22); $card.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text "TONY'S EXECUTIVE BRIEFING" -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $sp.Children.Add((New-Text -Text 'Preparing your briefing...' -Size 20 -Weight 'Bold' -Color $script:Col.Heading -Margin (New-Object Windows.Thickness (0, 8, 0, 0)))) | Out-Null
+    $sp.Children.Add((New-Text -Text 'One moment while Tony reviews your day.' -Size 13 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    $card.Child = $sp
+    return $card
+}
+
 function New-HomeView {
     param([Parameter(Mandatory)] $Model)
     $stack = New-Object Windows.Controls.StackPanel; $stack.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -1001,24 +1015,42 @@ function New-HomeView {
     # here to keep Home calm and letter-centered. Falls back to the Morning
     # Briefing if the engine isn't available.
     $briefName = if ($script:Theme -and $script:Theme.profileName) { $script:Theme.profileName } else { 'Jake' }
-    # The briefing may request a calendar signal - a sanctioned trigger - but ONLY
-    # when Calendar is already connected (no fetch, no network when disconnected).
-    $briefCal = $null
-    if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
-        try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $script:TonyNow } } catch { $briefCal = $null }
-    }
-    # Likewise the briefing may request the COMBINED communications signal (Gmail +
-    # Yahoo) - but ONLY when at least one inbox is connected (no network otherwise).
-    $briefEmail = $null
-    if ((Get-Command Get-CommunicationsStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Communications -ErrorAction SilentlyContinue)) {
-        try { if ((Get-CommunicationsStatus).state -eq 'connected') { $briefEmail = Get-Communications -Now $script:TonyNow } } catch { $briefEmail = $null }
-    }
-    elseif ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
-        try { if ((Get-GmailStatus).state -eq 'connected') { $briefEmail = Get-Email -When 'today' -Now $script:TonyNow } } catch { $briefEmail = $null }
-    }
-    $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $script:TonyNow -Name $briefName -Calendar $briefCal -Email $briefEmail } else { $null }
-    if ($briefing) { $stack.Children.Add((New-ExecutiveBriefingCard -Model $briefing)) | Out-Null }
-    else { $stack.Children.Add((New-MorningBriefing -Model (Get-MorningBrief -Now $script:TonyNow))) | Out-Null }
+    # Executive Briefing - DEFERRED so Home paints immediately and the heavy work
+    # (full Executive Context assembly + live calendar/email fetch) runs only AFTER
+    # Home is on screen. This removes the completion/startup freeze and keeps the UI
+    # responsive. A light placeholder holds the spot until the real card is built.
+    $briefHost = New-Object Windows.Controls.Border
+    $briefHost.Child = (New-BriefingPlaceholder)
+    $stack.Children.Add($briefHost) | Out-Null
+    # Snapshot the render time into a LOCAL so GetNewClosure captures it: inside a
+    # GetNewClosure body $script:* resolves to the closure's own (empty) module
+    # scope, so $script:TonyNow would be $null there. Function CALLS are unaffected.
+    $briefNow = $script:TonyNow
+    $buildBrief = {
+        # calendar/email signals only when already connected (no network otherwise)
+        $briefCal = $null
+        if ((Get-Command Get-GCalStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Calendar -ErrorAction SilentlyContinue)) {
+            try { if ((Get-GCalStatus).state -eq 'connected') { $briefCal = Get-Calendar -When 'today' -Now $briefNow } } catch { $briefCal = $null }
+        }
+        $briefEmail = $null
+        if ((Get-Command Get-CommunicationsStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Communications -ErrorAction SilentlyContinue)) {
+            try { if ((Get-CommunicationsStatus).state -eq 'connected') { $briefEmail = Get-Communications -Now $briefNow } } catch { $briefEmail = $null }
+        }
+        elseif ((Get-Command Get-GmailStatus -ErrorAction SilentlyContinue) -and (Get-Command Get-Email -ErrorAction SilentlyContinue)) {
+            try { if ((Get-GmailStatus).state -eq 'connected') { $briefEmail = Get-Email -When 'today' -Now $briefNow } } catch { $briefEmail = $null }
+        }
+        try {
+            $briefing = if (Get-Command Get-TonyExecutiveBriefing -ErrorAction SilentlyContinue) { Get-TonyExecutiveBriefing -CurrentWorkspace 'Home' -Now $briefNow -Name $briefName -Calendar $briefCal -Email $briefEmail } else { $null }
+            if ($briefing) { $briefHost.Child = (New-ExecutiveBriefingCard -Model $briefing) }
+            else { $briefHost.Child = (New-MorningBriefing -Model (Get-MorningBrief -Now $briefNow)) }
+        } catch {
+            $briefHost.Child = (New-MorningBriefing -Model (Get-MorningBrief -Now $briefNow))
+        }
+    }.GetNewClosure()
+    # Headless screenshot mode has no message loop, so build synchronously there;
+    # interactive launches defer to a background dispatcher tick (Home paints first).
+    if ($script:HeadlessRender) { & $buildBrief }
+    else { $null = $briefHost.Dispatcher.BeginInvoke([Action]$buildBrief, [Windows.Threading.DispatcherPriority]::Background) }
 
     # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
     $cap = Get-CaptureStats
@@ -2569,7 +2601,12 @@ $script:ConvInputBox = $null
 $script:ConvStepId = $null
 
 function Refresh-Conversation { $script:TonyBody.Child = New-FirstConversationView }
-function Save-ConvCurrentInput { if ($script:ConvInputBox -and $script:ConvStepId) { Set-ConversationAnswer -StepId $script:ConvStepId -Text $script:ConvInputBox.Text } }
+# Returns $true on success, $false if the save failed (contended file), so the
+# caller can surface a calm message instead of advancing blindly.
+function Save-ConvCurrentInput {
+    if ($script:ConvInputBox -and $script:ConvStepId) { return (Set-ConversationAnswer -StepId $script:ConvStepId -Text $script:ConvInputBox.Text) }
+    return $true
+}
 
 function New-TonyBubble {
     param([string]$Text, [bool]$Soft = $false, [double]$Size = 17, [bool]$ShowLabel = $true)
@@ -2585,31 +2622,68 @@ function New-TonyBubble {
     return $b
 }
 
+# A double-click on Next/Finish/Back enqueues two handlers on the single UI
+# dispatcher; the second used to run after the view refreshed and advance a
+# SECOND time, skipping a question. Guard: a monotonic navigation generation
+# ($script:ConvNav). Each render stamps the CURRENT generation onto every
+# advancing button's .Tag; the handler proceeds only if the sender's stamp still
+# equals the live generation, then bumps it - so the stale twin from a
+# double-click sees a changed generation and no-ops. The handlers are plain
+# script-scope scriptblocks (NOT closures) so $script:ConvNav resolves to the
+# real shared counter; the per-render snapshot travels on the button, not a
+# closure variable.
 function New-FirstConversationView {
+    if ($null -eq $script:ConvNav) { $script:ConvNav = 0 }
     $steps = Get-ConversationSteps
     $state = Get-ConversationState
     $total = $steps.Count
+    $qCount = @($steps | Where-Object { $_.type -eq 'question' }).Count
     $idx = [int]$state.currentStep
+    $gen = $script:ConvNav   # this render's generation stamp
 
     $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 720; $col.HorizontalAlignment = 'Center'; $col.Margin = New-Object Windows.Thickness (0, 24, 0, 24)
     $col.Children.Add((New-Text -Text "TONY'S FIRST CONVERSATION" -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+
+    # a calm one-line notice (e.g. a save that could not complete) - shown once
+    if ($script:ConvNotice) {
+        $col.Children.Add((New-Text -Text $script:ConvNotice -Size 12 -Weight 'SemiBold' -Color '#9B1C1C' -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 2)))) | Out-Null
+        $script:ConvNotice = $null
+    }
 
     if ($idx -ge $total) {
         # ---- closing ----
         $col.Children.Add((New-Text -Text 'Complete' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null
         $col.Children.Add((New-ProgressBar -Pct 100)) | Out-Null
         $col.Children.Add((New-TonyBubble -Text (Get-ConversationClosing) -Size 20 -Margin (New-Object Windows.Thickness (0, 14, 0, 14)))) | Out-Null
-        $begin = New-PrimaryButton -Text "Let's build your operating system" -Size 15 -OnClick { param($s, $e); Complete-Conversation; Set-ActiveView 'Home' }
+        # Completion writes Identity + marks complete, THEN navigates to Home.
+        # Home paints immediately and defers the heavy briefing (see New-HomeView),
+        # so this transition is instant and never freezes the Thank You screen.
+        $begin = New-PrimaryButton -Text "Let's build your operating system" -Size 15 -OnClick {
+            param($s, $e)
+            if ([int]$s.Tag -ne $script:ConvNav) { return }
+            $script:ConvNav++
+            if (Complete-Conversation) { Set-ActiveView 'Home' }
+            else { $script:ConvNotice = "I could not save just now - please try again in a moment."; Refresh-Conversation }
+        }
+        $begin.Tag = $gen
         $begin.HorizontalAlignment = 'Center'; $begin.Padding = New-Object Windows.Thickness (28, 13, 28, 13)
         $col.Children.Add($begin) | Out-Null
-        $back = New-MiniButton -Text '< Back' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Set-ConversationStep ((Get-ConversationState).currentStep - 1); Refresh-Conversation }
+        $back = New-MiniButton -Text '< Back' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+            param($s, $e)
+            if ([int]$s.Tag -ne $script:ConvNav) { return }
+            $script:ConvNav++
+            Set-ConversationStep ((Get-ConversationState).currentStep - 1) | Out-Null; Refresh-Conversation
+        }
+        $back.Tag = $gen
         $back.HorizontalAlignment = 'Center'; $back.Margin = New-Object Windows.Thickness (0, 10, 0, 0); $col.Children.Add($back) | Out-Null
     } else {
         $step = $steps[$idx]
         $script:ConvStepId = $step.id
-        $label = if ($step.type -eq 'welcome') { 'Welcome' } else { ("Question {0} of {1}" -f ($idx + 1), $total) }
+        # welcome is not counted; questions are steps 1..N so the question number IS $idx
+        $label = if ($step.type -eq 'welcome') { 'Welcome' } else { ("Question {0} of {1}" -f $idx, $qCount) }
         $col.Children.Add((New-Text -Text $label -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 2, 0, 2)))) | Out-Null
-        $col.Children.Add((New-ProgressBar -Pct ([int](($idx + 1) / $total * 100)))) | Out-Null
+        $pct = if ($step.type -eq 'welcome') { 0 } else { [int]($idx / $qCount * 100) }
+        $col.Children.Add((New-ProgressBar -Pct $pct)) | Out-Null
 
         # Tony's acknowledgment of the previous answer (natural "responds, then moves forward")
         if ($idx -gt 0) {
@@ -2626,23 +2700,40 @@ function New-FirstConversationView {
             $script:ConvInputBox = $tb; $col.Children.Add($tb) | Out-Null
         } else { $script:ConvInputBox = $null }
 
-        # Back / Next
+        # Back / Next  (both guarded against double-submit via the .Tag generation
+        # stamp; a failed save shows a calm notice and does NOT advance, so nothing
+        # is lost or duplicated)
         $nav = New-Object Windows.Controls.DockPanel; $nav.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
         $nextText = if ($step.type -eq 'welcome') { 'Begin ->' } elseif ($idx -eq $total - 1) { 'Finish ->' } else { 'Next ->' }
-        $next = New-PrimaryButton -Text $nextText -Size 14 -OnClick { param($s, $e); Save-ConvCurrentInput; Set-ConversationStep ((Get-ConversationState).currentStep + 1); Refresh-Conversation }
+        $next = New-PrimaryButton -Text $nextText -Size 14 -OnClick {
+            param($s, $e)
+            if ([int]$s.Tag -ne $script:ConvNav) { return }
+            if (-not (Save-ConvCurrentInput)) { $script:ConvNotice = "I could not save your answer just now - please try again in a moment."; Refresh-Conversation; return }
+            $script:ConvNav++
+            Set-ConversationStep ((Get-ConversationState).currentStep + 1) | Out-Null; Refresh-Conversation
+        }
+        $next.Tag = $gen
         $next.HorizontalAlignment = 'Right'; [Windows.Controls.DockPanel]::SetDock($next, 'Right'); $nav.Children.Add($next) | Out-Null
         if ($idx -gt 0) {
-            $back = New-MiniButton -Text '< Back' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Save-ConvCurrentInput; Set-ConversationStep ((Get-ConversationState).currentStep - 1); Refresh-Conversation }
+            $back = New-MiniButton -Text '< Back' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+                param($s, $e)
+                if ([int]$s.Tag -ne $script:ConvNav) { return }
+                $script:ConvNav++
+                Save-ConvCurrentInput | Out-Null   # best-effort; going back never loses more than the current unsaved text
+                Set-ConversationStep ((Get-ConversationState).currentStep - 1) | Out-Null; Refresh-Conversation
+            }
+            $back.Tag = $gen
             $back.Padding = New-Object Windows.Thickness (16, 10, 16, 10); $back.Margin = New-Object Windows.Thickness 0; [Windows.Controls.DockPanel]::SetDock($back, 'Left'); $nav.Children.Add($back) | Out-Null
         }
         $col.Children.Add($nav) | Out-Null
 
-        # Save & Exit / Resume Later
+        # Save & Exit / Resume Later (best-effort save, then leave to Home)
         $exit = New-Object Windows.Controls.StackPanel; $exit.Orientation = 'Horizontal'; $exit.HorizontalAlignment = 'Center'; $exit.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+        $exitClick = { param($s, $e); Save-ConvCurrentInput | Out-Null; Set-ActiveView 'Home' }
         $se = New-Text -Text 'Save & Exit' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Muted; $se.Cursor = 'Hand'; $se.Margin = New-Object Windows.Thickness (0, 0, 18, 0)
-        $se.Add_MouseLeftButtonUp({ param($s, $e); Save-ConvCurrentInput; Set-ActiveView 'Home' }) | Out-Null; $exit.Children.Add($se) | Out-Null
+        $se.Add_MouseLeftButtonUp($exitClick) | Out-Null; $exit.Children.Add($se) | Out-Null
         $rl = New-Text -Text 'Resume Later' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Muted; $rl.Cursor = 'Hand'
-        $rl.Add_MouseLeftButtonUp({ param($s, $e); Save-ConvCurrentInput; Set-ActiveView 'Home' }) | Out-Null; $exit.Children.Add($rl) | Out-Null
+        $rl.Add_MouseLeftButtonUp($exitClick) | Out-Null; $exit.Children.Add($rl) | Out-Null
         $col.Children.Add($exit) | Out-Null
     }
 

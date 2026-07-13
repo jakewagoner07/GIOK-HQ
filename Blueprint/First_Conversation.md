@@ -23,25 +23,28 @@ Tony behaves like an executive coach and a trusted mentor:
   move forward.
 - **Natural, never robotic.** After each answer Tony acknowledges warmly, then continues.
 - **Unhurried.** "No wrong answers. Take all the time you need." Progress is shown (Question N of
-  18, a progress bar), and the user can go **Back**, **Save & Exit**, or **Resume Later** at any
+  7, a progress bar), and the user can go **Back**, **Save & Exit**, or **Resume Later** at any
   time — nothing is lost.
 
 ## What it asks (the shape, not the script)
-Welcome, then seventeen questions moving from the concrete to the profound: who you are, who you
-hope to become, what matters most, what success looks like, your goals and challenges, your family
-and work, what you're improving, how you define financial freedom and good health, the perfect
-year, five years out, the view from age 85, what you'll be proud of, the promises you want to
-keep, and anything else Tony should know.
+Welcome, then **seven essential questions**: what to call you; the three most important areas of
+your life; your biggest goal for the next 6-12 months; the biggest challenge in your way; the
+commitments/non-negotiables Tony should protect; what a successful week looks like; and what Tony
+should never assume or do without asking. Deeper discovery (five-years-out, the view from age 85,
+how you define financial freedom, and the like) moves into future normal conversations - the first
+run stays short and calm. See [Onboarding_Stability.md](Onboarding_Stability.md).
 
 ## What it produces
 The conversation is not a survey that goes nowhere. Tony **distills the answers into Identity** —
-the foundation of GIOK:
-- **Vision** ← who you hope to become / your perfect year / five years out.
-- **Goals** ← your biggest goals (parsed into goal entries).
-- **Mission** ← what success looks like to you.
-- **Core Values** ← what matters most.
-- **Annual Theme** (placeholder) ← what you're trying to improve.
-- **Identity Overview** ← a reflection Tony composes *from your own words*.
+the foundation of GIOK — reusing only existing Identity setters, never fabricating:
+- **Core Values** ← the three most important areas of your life.
+- **Goals** ← your biggest goal for the next 6-12 months (parsed into goal entries).
+- **Mission** ← what a successful week looks like to you.
+- **Identity Overview** ← a reflection Tony composes *from your own words* (your name, the challenge
+  in your way, what to protect, and what never to assume without asking).
+
+Deeper Identity fields (Vision, Legacy, Annual Theme) are left for future normal conversations, so
+the first run stays short. The raw answers always remain in the conversation's own state file.
 
 Crucially, this is **not duplication.** The conversation's working answers live in its own state
 file; the *meaning* is written into `identity/*.json`, which Identity owns. The app reads Identity,
