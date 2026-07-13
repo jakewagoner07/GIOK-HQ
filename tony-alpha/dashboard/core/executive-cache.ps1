@@ -24,8 +24,14 @@
 
 $ErrorActionPreference = 'Stop'
 
-$script:GiokCache = @{}
-$script:GiokCacheLock = New-Object object
+# A SYNCHRONIZED hashtable so the UI thread and a background worker runspace can
+# safely share ONE cache in the same process (the worker warms it; the UI reads
+# it). async-run injects the UI thread's instance into the worker via
+# $global:GiokSharedCache before the worker loads this module, so both sides end
+# up pointing at the same object. The hashtable's SyncRoot is the shared lock.
+if (-not $script:GiokCache) {
+    $script:GiokCache = if ($global:GiokSharedCache) { $global:GiokSharedCache } else { [System.Collections.Hashtable]::Synchronized(@{}) }
+}
 $script:GiokCacheCap = 64
 
 # Default TTLs (seconds). Justified by the baseline; revisit against re-measured numbers.
@@ -36,7 +42,7 @@ $script:GiokCacheTtl = @{
 }
 function Get-CacheTtl { param([string]$Key) if ($script:GiokCacheTtl.ContainsKey($Key)) { return [int]$script:GiokCacheTtl[$Key] } return 120 }
 
-function Clear-ExecutiveCache { param([string]$Key) if ($Key) { [void]$script:GiokCache.Remove($Key) } else { $script:GiokCache = @{} } }
+function Clear-ExecutiveCache { param([string]$Key) if ($Key) { [void]$script:GiokCache.Remove($Key) } else { $script:GiokCache.Clear() } }
 
 function Get-ExecutiveCacheStats {
     $now = Get-Date
@@ -58,7 +64,7 @@ function Test-CacheFresh {
 function Set-CachedSignal {
     param([Parameter(Mandatory)][string]$Key, $Value, [int]$TtlSec = -1)
     if ($TtlSec -lt 0) { $TtlSec = Get-CacheTtl $Key }
-    [System.Threading.Monitor]::Enter($script:GiokCacheLock)
+    [System.Threading.Monitor]::Enter($script:GiokCache.SyncRoot)
     try {
         $script:GiokCache[$Key] = @{ value = $Value; fetchedAt = (Get-Date); ttlSec = $TtlSec; refreshing = $false; lastError = $null }
         # bounded: evict oldest if over cap
@@ -66,27 +72,27 @@ function Set-CachedSignal {
             $oldest = $script:GiokCache.GetEnumerator() | Sort-Object { $_.Value.fetchedAt } | Select-Object -First 1
             if ($oldest) { [void]$script:GiokCache.Remove($oldest.Key) }
         }
-    } finally { [System.Threading.Monitor]::Exit($script:GiokCacheLock) }
+    } finally { [System.Threading.Monitor]::Exit($script:GiokCache.SyncRoot) }
 }
 
 # Mark a key as being refreshed (single-flight gate). Returns $true if THIS caller
 # claimed the refresh, $false if another refresh is already in flight.
 function Enter-CacheRefresh {
     param([Parameter(Mandatory)][string]$Key)
-    [System.Threading.Monitor]::Enter($script:GiokCacheLock)
+    [System.Threading.Monitor]::Enter($script:GiokCache.SyncRoot)
     try {
         $e = $script:GiokCache[$Key]
         if ($e -and $e.refreshing) { return $false }
         if (-not $e) { $e = @{ value = $null; fetchedAt = [datetime]::MinValue; ttlSec = (Get-CacheTtl $Key); refreshing = $false; lastError = $null }; $script:GiokCache[$Key] = $e }
         $e.refreshing = $true
         return $true
-    } finally { [System.Threading.Monitor]::Exit($script:GiokCacheLock) }
+    } finally { [System.Threading.Monitor]::Exit($script:GiokCache.SyncRoot) }
 }
 function Exit-CacheRefresh {
     param([Parameter(Mandatory)][string]$Key, [string]$Error = $null)
-    [System.Threading.Monitor]::Enter($script:GiokCacheLock)
+    [System.Threading.Monitor]::Enter($script:GiokCache.SyncRoot)
     try { $e = $script:GiokCache[$Key]; if ($e) { $e.refreshing = $false; if ($Error) { $e.lastError = $Error } } }
-    finally { [System.Threading.Monitor]::Exit($script:GiokCacheLock) }
+    finally { [System.Threading.Monitor]::Exit($script:GiokCache.SyncRoot) }
 }
 
 # Peek the cached value (may be stale). Returns { value; stale; present; refreshing }.

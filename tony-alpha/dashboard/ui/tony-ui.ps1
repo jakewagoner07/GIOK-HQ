@@ -1045,10 +1045,27 @@ function New-HomeView {
             $briefHost.Child = (New-MorningBriefing -Model (Get-MorningBrief -Now $briefNow))
         }
     }.GetNewClosure()
-    # Headless screenshot mode has no message loop, so build synchronously there;
-    # interactive launches defer to a background dispatcher tick (Home paints first).
-    if ($script:HeadlessRender) { & $buildBrief }
-    else { $null = $briefHost.Dispatcher.BeginInvoke([Action]$buildBrief, [Windows.Threading.DispatcherPriority]::Background) }
+    # Headless screenshot mode has no message loop -> build synchronously.
+    # Interactive: build the briefing MODEL on a BACKGROUND RUNSPACE (fetch +
+    # context, ~35s cold) so the UI thread never blocks; only the card build
+    # returns to the dispatcher. The async KICKOFF (which may lazily open the
+    # worker runspace) is itself deferred to a post-paint dispatcher tick, so
+    # New-HomeView returns immediately with just the placeholder. Falls back to
+    # the synchronous path when async is unavailable.
+    if ($script:HeadlessRender -or -not (Get-Command Start-AsyncWork -ErrorAction SilentlyContinue) -or -not (Test-AsyncAvailable)) {
+        & $buildBrief
+    }
+    else {
+        $dashRoot = $script:AsyncDashRoot
+        $briefWork = Get-AsyncBriefingWork
+        $onDone = {
+            param($model)
+            if ($model) { $briefHost.Child = (New-ExecutiveBriefingCard -Model $model) }
+            else { $briefHost.Child = (New-MorningBriefing -Model (Get-MorningBrief -Now $briefNow)) }
+        }.GetNewClosure()
+        $kick = { Start-AsyncWork -Work $briefWork -ArgList @($dashRoot, $briefNow.Ticks, $briefName) -OnComplete $onDone | Out-Null }.GetNewClosure()
+        $null = $briefHost.Dispatcher.BeginInvoke([Action]$kick, [System.Windows.Threading.DispatcherPriority]::Background)
+    }
 
     # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
     $cap = Get-CaptureStats
