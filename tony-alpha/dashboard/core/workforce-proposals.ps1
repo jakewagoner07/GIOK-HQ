@@ -284,11 +284,12 @@ function Get-MasonProposals {
 # THE SCAN - run producers, gate the candidates, add survivors. On demand only.
 # ------------------------------------------------------------------ #
 
-# Run the Workforce producers, de-duplicate, and add survivors to the Executive
-# Inbox. Returns { added; suppressed; byType; addedItems; ran }.
+# PHASE 1 (READ-ONLY) - build the context and run the specialist producers, returning
+# the raw candidate list. Writes NOTHING, so it is safe to run off the UI thread on the
+# Epic-9 background worker. Same producers, same order as before.
 #   -Only <string[]>   run just these producers by name (Sam/Ava/Riley/Emma/Randy/Mason)
 #   -Document <path>   give Mason a document to analyze (he is silent otherwise)
-function Invoke-WorkforceProposals {
+function Get-WorkforceProposalCandidates {
     param(
         $Context = $null,
         [datetime]$Now = (Get-Date),
@@ -309,13 +310,24 @@ function Invoke-WorkforceProposals {
     if (& $wants 'Emma')  { $candidates += @(Get-EmmaProposals  -Context $Context -Now $Now) }
     if (& $wants 'Randy') { $candidates += @(Get-RandyProposals -Context $Context) }
     if ((& $wants 'Mason') -and $Document) { $candidates += @(Get-MasonProposals -Document $Document) }
+    return @($candidates)
+}
 
+# PHASE 2 (WRITES) - the EXACT existing de-dup/quality gate followed by Add-InboxProposal
+# for survivors. Runs ONLY on the UI/owner thread, sequentially. The gate reads the CURRENT
+# pending inbox + owner records at commit time, so idempotency holds even if state changed
+# while candidates were being generated. Returns { added; suppressed; byType; addedItems; ran }.
+function Add-WorkforceProposalCandidates {
+    param(
+        $Candidates = @(),
+        [datetime]$Now = (Get-Date)
+    )
     $pendingKeys = if (Get-Command Get-InboxProposalKeys -ErrorAction SilentlyContinue) { Get-InboxProposalKeys } else { @{} }
     $seen = @{}
     $added = 0; $suppressed = 0; $byType = @{}; $addedItems = @()
 
-    foreach ($c in @($candidates)) {
-        if ([string]::IsNullOrWhiteSpace($c.title)) { continue }
+    foreach ($c in @($Candidates)) {
+        if (-not $c -or [string]::IsNullOrWhiteSpace($c.title)) { continue }
         $key = Get-ProposalKey -Type $c.type -Title $c.title -SourceId $c.sourceId
 
         # Diagnostics record type + who + reason only - NEVER the title/key, which
@@ -338,4 +350,18 @@ function Invoke-WorkforceProposals {
 
     if ($added -gt 0 -or $suppressed -gt 0) { _WPDiag ("scan complete: {0} added, {1} suppressed" -f $added, $suppressed) }
     return [pscustomobject]@{ added = $added; suppressed = $suppressed; byType = $byType; addedItems = @($addedItems); ran = $true }
+}
+
+# The scan, unchanged for every caller: analyze (read-only) then commit (writes). The async
+# UI path calls the two phases separately (analysis off-thread, commit on the owner thread);
+# every other caller and the synchronous/headless path get identical behavior here.
+function Invoke-WorkforceProposals {
+    param(
+        $Context = $null,
+        [datetime]$Now = (Get-Date),
+        [string[]]$Only = @(),
+        [string]$Document = ''
+    )
+    $cands = Get-WorkforceProposalCandidates -Context $Context -Now $Now -Only $Only -Document $Document
+    return (Add-WorkforceProposalCandidates -Candidates $cands -Now $Now)
 }

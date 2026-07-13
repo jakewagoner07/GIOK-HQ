@@ -117,6 +117,31 @@ return `$null
     return [scriptblock]::Create($text)
 }
 
+# Build the worker scriptblock for the Executive Inbox scan's READ-ONLY phase:
+# load modules once, run the Workforce producers, and return the raw candidate
+# list (pure data - no writes). The UI thread commits survivors via the inbox
+# owner. Returns a scriptblock: param($DashRoot,$NowTicks).
+function Get-AsyncInboxScanWork {
+    $coreList = ($script:AsyncCoreMods | ForEach-Object { "'$_'" }) -join ','
+    $provList = ($script:AsyncProvMods | ForEach-Object { "'$_'" }) -join ','
+    $text = @"
+param(`$DashRoot, `$NowTicks)
+`$ErrorActionPreference = 'Stop'
+if (-not `$global:GiokWorkerLoaded) {
+    `$core = Join-Path `$DashRoot 'core'; `$prov = Join-Path `$DashRoot 'providers'
+    foreach (`$m in @($coreList)) { . (Join-Path `$core ("`$m.ps1")) }
+    foreach (`$p in @($provList)) { . (Join-Path `$prov ("`$p.ps1")) }
+    `$global:GiokWorkerLoaded = `$true
+}
+`$now = [datetime]`$NowTicks
+if (Get-Command Get-WorkforceProposalCandidates -ErrorAction SilentlyContinue) {
+    try { return ([pscustomobject]@{ candidates = @(Get-WorkforceProposalCandidates -Now `$now) }) } catch { return ([pscustomobject]@{ candidates = @() }) }
+}
+return ([pscustomobject]@{ candidates = @() })
+"@
+    return [scriptblock]::Create($text)
+}
+
 # Dispose every in-flight instance and the worker runspace. Call on window close.
 function Stop-AsyncWorkers {
     foreach ($e in @($script:AsyncInFlight)) {
