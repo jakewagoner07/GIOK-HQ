@@ -17,42 +17,96 @@
 
 $ErrorActionPreference = 'Stop'
 
-# The conversation: welcome + 17 questions. Each step maps (later) into Identity.
+# The conversation: welcome + 7 essential questions. Short, calm, and enough for
+# Tony to be useful immediately. Deeper discovery moves into future normal
+# conversations - not the first run. Each question maps (below) into Identity.
 function Get-ConversationSteps {
     return @(
-        [pscustomobject]@{ id = 'welcome';      type = 'welcome';  tony = "Hi Jake, I'm Tony - your Chief of Staff. Before we build anything, I want to understand you. This isn't setup; it's a conversation. One question at a time, no wrong answers. Take all the time you need." }
-        [pscustomobject]@{ id = 'q_who';        type = 'question'; tony = "Let's start simply. Who are you?" }
-        [pscustomobject]@{ id = 'q_become';     type = 'question'; tony = "What kind of person do you hope to become?" }
-        [pscustomobject]@{ id = 'q_matters';    type = 'question'; tony = "What matters most in your life?" }
-        [pscustomobject]@{ id = 'q_success';    type = 'question'; tony = "What does success look like to you?" }
-        [pscustomobject]@{ id = 'q_goals';      type = 'question'; tony = "What are your biggest goals right now?" }
-        [pscustomobject]@{ id = 'q_challenges'; type = 'question'; tony = "What challenges are you facing?" }
-        [pscustomobject]@{ id = 'q_family';     type = 'question'; tony = "Tell me about your family." }
-        [pscustomobject]@{ id = 'q_work';       type = 'question'; tony = "Tell me about your work." }
-        [pscustomobject]@{ id = 'q_improve';    type = 'question'; tony = "What are you trying to improve?" }
-        [pscustomobject]@{ id = 'q_financial';  type = 'question'; tony = "How do you define financial freedom?" }
-        [pscustomobject]@{ id = 'q_health';     type = 'question'; tony = "What does good health mean to you?" }
-        [pscustomobject]@{ id = 'q_perfect';    type = 'question'; tony = "If everything went perfectly this year, what would your life look like?" }
-        [pscustomobject]@{ id = 'q_fiveyears';  type = 'question'; tony = "Where would you like to be in five years?" }
-        [pscustomobject]@{ id = 'q_85';         type = 'question'; tony = "When you're 85 and looking back on your life... what will have mattered?" }
-        [pscustomobject]@{ id = 'q_proud';      type = 'question'; tony = "What do you hope you'll be proud of?" }
-        [pscustomobject]@{ id = 'q_promises';   type = 'question'; tony = "What promises do you want to keep to yourself?" }
-        [pscustomobject]@{ id = 'q_anything';   type = 'question'; tony = "Last one. Anything else Tony should know?" }
+        [pscustomobject]@{ id = 'welcome';       type = 'welcome';  tony = "Hi Jake, I'm Tony - your Chief of Staff. Before we build anything, I want to understand you. This isn't setup; it's a short conversation. One question at a time, no wrong answers. Take all the time you need." }
+        [pscustomobject]@{ id = 'q_name';        type = 'question'; tony = "Let's start simply. What should I call you?" }
+        [pscustomobject]@{ id = 'q_areas';       type = 'question'; tony = "What are the three most important areas of your life right now?" }
+        [pscustomobject]@{ id = 'q_goal';        type = 'question'; tony = "What is your biggest goal for the next 6-12 months?" }
+        [pscustomobject]@{ id = 'q_challenge';   type = 'question'; tony = "What is the biggest challenge currently getting in your way?" }
+        [pscustomobject]@{ id = 'q_protect';     type = 'question'; tony = "What commitments or non-negotiables should I protect for you?" }
+        [pscustomobject]@{ id = 'q_week';        type = 'question'; tony = "What does a successful week look like for you?" }
+        [pscustomobject]@{ id = 'q_boundaries';  type = 'question'; tony = "Last one. What should I never assume or do without asking you first?" }
     )
 }
 
+# Number of actual questions (welcome is not counted) - drives "Question N of 7".
+function Get-ConversationQuestionCount { return @(Get-ConversationSteps | Where-Object { $_.type -eq 'question' }).Count }
+
 # ---- state (progress + working answers) ----
+# Persistence is deliberately defensive: onboarding must NEVER crash on a
+# contended file, and a transient read failure must NEVER look like a fresh
+# start (which would silently restart the interview). Saves are atomic with a
+# rolling .bak; loads retry and fall back to .bak; nothing here throws to the UI.
 function Get-FirstConversationPath { return (Join-Path $PSScriptRoot '..\..\first_conversation.json') }
 
-function Get-ConversationState {
-    $p = Get-FirstConversationPath
-    if (Test-Path $p) {
-        try { return (Get-Content -Path $p -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
-    }
-    return [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0' }; completed = $false; currentStep = 0; startedAt = $null; completedAt = $null; answers = [pscustomobject]@{} }
+function New-BlankConversationState {
+    return [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.1.0' }; completed = $false; currentStep = 0; startedAt = $null; completedAt = $null; answers = [pscustomobject]@{} }
 }
 
-function Save-ConversationState { param([Parameter(Mandatory)] $State) ($State | ConvertTo-Json -Depth 8) | Set-Content -Path (Get-FirstConversationPath) -Encoding UTF8 }
+# Read + parse one path with a few retries (rides out a brief external lock).
+function Read-ConversationFile {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $null }
+    for ($i = 0; $i -lt 3; $i++) {
+        try { return (Get-Content -Path $Path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json) }
+        catch { Start-Sleep -Milliseconds 80 }
+    }
+    return $null
+}
+
+# Load state safely. Only returns a blank state when there is genuinely NO prior
+# file - a transient read error falls back to the .bak, never a silent restart.
+# currentStep is clamped to a valid range so a corrupt index can't wedge the view.
+function Get-ConversationState {
+    $p = Get-FirstConversationPath
+    $s = Read-ConversationFile -Path $p
+    if (-not $s) { $s = Read-ConversationFile -Path ($p + '.bak') }
+    if (-not $s) {
+        # No readable primary AND no backup. If a file physically exists we could
+        # not parse, do NOT reset a real conversation to blank - surface a safe,
+        # not-completed state pinned at step 0 without wiping anything on disk.
+        if (Test-Path $p) { $b = New-BlankConversationState; $b | Add-Member -NotePropertyName loadError -NotePropertyValue $true -Force; return $b }
+        return (New-BlankConversationState)
+    }
+    if (-not ($s.PSObject.Properties.Name -contains 'answers') -or -not $s.answers) { $s | Add-Member -NotePropertyName answers -NotePropertyValue ([pscustomobject]@{}) -Force }
+    if (-not ($s.PSObject.Properties.Name -contains 'completed')) { $s | Add-Member -NotePropertyName completed -NotePropertyValue $false -Force }
+    $maxStep = @(Get-ConversationSteps).Count
+    $cur = 0; try { $cur = [int]$s.currentStep } catch { $cur = 0 }
+    $s.currentStep = [math]::Min([math]::Max(0, $cur), $maxStep)
+    return $s
+}
+
+# Atomic save with rolling .bak and retry. Returns $true on success, $false on
+# failure - callers surface a calm message instead of letting an exception crash
+# the interview. Never throws.
+function Save-ConversationState {
+    param([Parameter(Mandatory)] $State)
+    $target = Get-FirstConversationPath
+    $tmp = $target + '.tmp'
+    $bak = $target + '.bak'
+    $json = $State | ConvertTo-Json -Depth 8
+    for ($i = 0; $i -lt 3; $i++) {
+        try {
+            Set-Content -Path $tmp -Value $json -Encoding UTF8 -ErrorAction Stop
+            if (Test-Path $target) {
+                # atomic replace, keeping the prior good file as backup
+                [System.IO.File]::Replace($tmp, $target, $bak)
+            } else {
+                [System.IO.File]::Move($tmp, $target)
+            }
+            return $true
+        }
+        catch {
+            Start-Sleep -Milliseconds 100
+            if (Test-Path $tmp) { try { Remove-Item $tmp -Force -ErrorAction SilentlyContinue } catch { } }
+        }
+    }
+    return $false
+}
 
 function Get-ConversationAnswer {
     param($State, [string]$Id)
@@ -60,24 +114,27 @@ function Get-ConversationAnswer {
     return ''
 }
 
+# Save one answer. Returns $true/$false so the UI can react to a failed save.
 function Set-ConversationAnswer {
     param([string]$StepId, [string]$Text)
     $s = Get-ConversationState
     if (-not $s.startedAt) { $s.startedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') }
     if (-not $s.answers) { $s | Add-Member -NotePropertyName answers -NotePropertyValue ([pscustomobject]@{}) -Force }
     $s.answers | Add-Member -NotePropertyName $StepId -NotePropertyValue $Text -Force
-    Save-ConversationState $s
+    return (Save-ConversationState $s)
 }
 
+# Move to a step (clamped). Returns $true/$false.
 function Set-ConversationStep {
     param([int]$Index)
     $s = Get-ConversationState
-    $s.currentStep = [math]::Max(0, $Index)
-    Save-ConversationState $s
+    $maxStep = @(Get-ConversationSteps).Count
+    $s.currentStep = [math]::Min([math]::Max(0, $Index), $maxStep)
+    return (Save-ConversationState $s)
 }
 
 function Reset-Conversation {
-    Save-ConversationState ([pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0.0' }; completed = $false; currentStep = 0; startedAt = $null; completedAt = $null; answers = [pscustomobject]@{} })
+    return (Save-ConversationState (New-BlankConversationState))
 }
 
 # =====================  RESPONSE GENERATOR (swap this for AI later)  =====================
@@ -106,46 +163,48 @@ function Get-ConversationClosing {
 }
 
 # A reflection composed FROM the user's own answers (not hardcoded, not AI).
+# Carries the answers that don't map to a dedicated Identity field (name,
+# challenge, protect, boundaries) so Tony has them immediately - without
+# fabricating structured records.
 function Get-ComposedReflection {
     param($State)
-    $who = Get-ConversationAnswer $State 'q_who'
-    $become = Get-ConversationAnswer $State 'q_become'
-    $matters = Get-ConversationAnswer $State 'q_matters'
+    $name = Get-ConversationAnswer $State 'q_name'
+    $areas = Get-ConversationAnswer $State 'q_areas'
+    $goal = Get-ConversationAnswer $State 'q_goal'
+    $challenge = Get-ConversationAnswer $State 'q_challenge'
+    $protect = Get-ConversationAnswer $State 'q_protect'
+    $boundaries = Get-ConversationAnswer $State 'q_boundaries'
     $parts = @()
-    if ($who) { $parts += ("You told me: {0}" -f $who.TrimEnd('.')) + '.' }
-    if ($become) { $parts += ("You're working to become {0}" -f $become.TrimEnd('.')) + '.' }
-    if ($matters) { $parts += ("What matters most to you: {0}" -f $matters.TrimEnd('.')) + '.' }
-    $parts += "I'll keep that at the center of everything we build together."
+    if ($name) { $parts += ("You asked me to call you {0}" -f $name.TrimEnd('.')) + '.' }
+    if ($areas) { $parts += ("What matters most to you right now: {0}" -f $areas.TrimEnd('.')) + '.' }
+    if ($goal) { $parts += ("Your biggest goal for the next 6-12 months: {0}" -f $goal.TrimEnd('.')) + '.' }
+    if ($challenge) { $parts += ("The main challenge in your way: {0}" -f $challenge.TrimEnd('.')) + '.' }
+    if ($protect) { $parts += ("Commitments you want me to protect: {0}" -f $protect.TrimEnd('.')) + '.' }
+    if ($boundaries) { $parts += ("You asked me never to assume or act on {0} without checking with you first" -f $boundaries.TrimEnd('.')) + '.' }
+    $parts += "I'll keep these at the center of everything we build together."
     return ($parts -join ' ')
 }
 
 # ---- completion: distill answers INTO Identity, then mark complete ----
+# Conservative distillation over the 7 essential answers, reusing ONLY existing
+# Identity setters (never fabricating). Deeper fields (vision, legacy, annual
+# theme) are left for future normal conversations. Each write is wrapped so a
+# single contended file cannot crash completion; the raw answers always remain
+# in the conversation state file regardless.
 function Complete-Conversation {
     $s = Get-ConversationState
 
-    $vision = Get-ConversationAnswer $s 'q_become'
-    if (-not $vision) { $vision = Get-ConversationAnswer $s 'q_perfect' }
-    if (-not $vision) { $vision = Get-ConversationAnswer $s 'q_fiveyears' }
-    if ($vision -and (Get-Command Set-IdentityVision -ErrorAction SilentlyContinue)) { Set-IdentityVision -Statement $vision }
+    $areas = Get-ConversationAnswer $s 'q_areas'
+    if ($areas -and (Get-Command Set-IdentityValuesFromText -ErrorAction SilentlyContinue)) { try { Set-IdentityValuesFromText -Text $areas } catch { } }
 
-    $mission = Get-ConversationAnswer $s 'q_success'
-    if ($mission -and (Get-Command Set-IdentityMission -ErrorAction SilentlyContinue)) { Set-IdentityMission -Statement $mission }
+    $goal = Get-ConversationAnswer $s 'q_goal'
+    if ($goal -and (Get-Command Set-IdentityGoalsFromText -ErrorAction SilentlyContinue)) { try { Set-IdentityGoalsFromText -Text $goal } catch { } }
 
-    $values = Get-ConversationAnswer $s 'q_matters'
-    if ($values -and (Get-Command Set-IdentityValuesFromText -ErrorAction SilentlyContinue)) { Set-IdentityValuesFromText -Text $values }
+    $week = Get-ConversationAnswer $s 'q_week'
+    if ($week -and (Get-Command Set-IdentityMission -ErrorAction SilentlyContinue)) { try { Set-IdentityMission -Statement $week } catch { } }
 
-    $goals = Get-ConversationAnswer $s 'q_goals'
-    if ($goals -and (Get-Command Set-IdentityGoalsFromText -ErrorAction SilentlyContinue)) { Set-IdentityGoalsFromText -Text $goals }
-
-    $improve = Get-ConversationAnswer $s 'q_improve'
-    if ($improve -and (Get-Command Set-IdentityAnnualThemeFromText -ErrorAction SilentlyContinue)) { Set-IdentityAnnualThemeFromText -Text $improve }
-
-    $legacy = Get-ConversationAnswer $s 'q_85'
-    if (-not $legacy) { $legacy = Get-ConversationAnswer $s 'q_proud' }
-    if ($legacy -and (Get-Command Set-IdentityLegacy -ErrorAction SilentlyContinue)) { Set-IdentityLegacy -Statement $legacy }
-
-    if (Get-Command Set-IdentityOverviewReflection -ErrorAction SilentlyContinue) { Set-IdentityOverviewReflection -Text (Get-ComposedReflection -State $s) }
+    if (Get-Command Set-IdentityOverviewReflection -ErrorAction SilentlyContinue) { try { Set-IdentityOverviewReflection -Text (Get-ComposedReflection -State $s) } catch { } }
 
     $s.completed = $true; $s.completedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    Save-ConversationState $s
+    return (Save-ConversationState $s)
 }

@@ -68,6 +68,10 @@ try {
 . (Join-Path $PSScriptRoot 'ui\life-workspaces.ps1')
 
 $theme = Get-Theme
+# Headless screenshot mode has no dispatcher message loop, so views that defer
+# heavy work to a background tick (e.g. the Home Executive Briefing) must build
+# synchronously to render. Interactive launches defer for a responsive first paint.
+$script:HeadlessRender = [bool]$Screenshot
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }
 # First Conversation replaces onboarding: until it's completed, it is the landing view.
 $startView = if ($PSBoundParameters.ContainsKey('View')) { $View }
