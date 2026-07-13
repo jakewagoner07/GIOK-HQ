@@ -376,6 +376,31 @@ function Set-InboxMsg { param($T) $script:InboxMsg = $T }
 function Test-InboxViewActive { return ($script:TonyActiveView -eq 'Executive Inbox') }
 function Refresh-ExecutiveInbox { if (Get-Command Show-LifeView -ErrorAction SilentlyContinue) { Show-LifeView { New-ExecutiveInboxView } } }
 
+# ---- Scan-local reject suppression --------------------------------------
+# If Jake rejects a proposal WHILE an async scan is mid-flight, that proposal
+# must not reappear when the same scan commits. We hold a scan-local set of
+# rejected proposal keys, in-memory only (no persistence - a future manual scan
+# may re-propose the item). Created fresh at scan start, cleared at scan end/
+# fail/close. Accessed via functions so the completion closure is closure-safe.
+$script:InboxScanRejected = @{}
+function Get-InboxScanRejected { if ($null -eq $script:InboxScanRejected) { $script:InboxScanRejected = @{} }; return $script:InboxScanRejected }
+function Reset-InboxScanRejected { $script:InboxScanRejected = @{} }
+# Record a reject during a running scan (stable proposal key). No-op otherwise.
+function Note-InboxRejectKey {
+    param([string]$Type, [string]$Title, [string]$SourceId)
+    if (-not (Get-InboxScanning)) { return }
+    if (-not (Get-Command Get-ProposalKey -ErrorAction SilentlyContinue)) { return }
+    try { (Get-InboxScanRejected)[(Get-ProposalKey -Type $Type -Title $Title -SourceId $SourceId)] = $true } catch { }
+}
+# Drop any candidate whose key was rejected during THIS scan.
+function Remove-RejectedDuringScan {
+    param($Candidates = @())
+    $rej = Get-InboxScanRejected
+    if (-not $rej -or $rej.Count -eq 0) { return @($Candidates) }
+    if (-not (Get-Command Get-ProposalKey -ErrorAction SilentlyContinue)) { return @($Candidates) }
+    return @(@($Candidates) | Where-Object { $_ -and -not $rej.ContainsKey((Get-ProposalKey -Type $_.type -Title $_.title -SourceId $_.sourceId)) })
+}
+
 # Kick off a scan. Analysis (producers, ~6s) runs OFF the dispatcher on the Epic-9
 # worker; the surviving proposals are committed by the inbox owner ON the UI thread.
 # Single-flight: repeated opens/clicks while a scan runs are coalesced (ignored).
@@ -393,12 +418,15 @@ function Start-InboxScanAsync {
     # (which may lazily open the worker runspace) to a post-paint tick so opening
     # the inbox stays fast. State is reached via functions (closure-safe).
     Set-InboxScanning $true
+    Reset-InboxScanRejected   # fresh scan-local reject set for THIS scan
     $dashRoot = $script:AsyncDashRoot
     $work = Get-AsyncInboxScanWork
     $onDone = {
         param($payload)
         Set-InboxScanning $false
         $cands = @(); if ($payload -and ($payload.PSObject.Properties.Name -contains 'candidates')) { $cands = @($payload.candidates) }
+        # drop anything Jake rejected while this scan was running, then commit
+        $cands = @(Remove-RejectedDuringScan -Candidates $cands)
         try {
             if (Get-Command Add-WorkforceProposalCandidates -ErrorAction SilentlyContinue) {
                 $r = Add-WorkforceProposalCandidates -Candidates $cands -Now $now
@@ -407,6 +435,7 @@ function Start-InboxScanAsync {
             }
         }
         catch { Set-InboxMsg 'Could not update the inbox just now - please try again in a moment.' }
+        Reset-InboxScanRejected   # scan ended (success or empty) - clear the scan-local set
         # refresh ONLY if still on the Executive Inbox view (no stale UI otherwise)
         if (Test-InboxViewActive) { Refresh-ExecutiveInbox }
     }.GetNewClosure()
@@ -479,7 +508,7 @@ function New-InboxCard {
         if ($det) { $body.Children.Add((New-Text -Text ('- ' + $det) -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 2)))) | Out-Null }
     }
 
-    $iid = $Item.id; $ititle = $Item.title
+    $iid = $Item.id; $ititle = $Item.title; $itype = $Item.type; $isource = $Item.sourceId
     $actions = New-Object Windows.Controls.StackPanel; $actions.Orientation = 'Horizontal'; $actions.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
     $actions.Children.Add((New-MiniButton -Text 'Approve' -Bg '#DEF7EC' -Fg '#03543F' -OnClick {
                 param($s, $e); $r = Approve-InboxItem -Id $iid
@@ -488,7 +517,10 @@ function New-InboxCard {
             }.GetNewClosure())) | Out-Null
     $actions.Children.Add((New-MiniButton -Text 'Edit then Approve' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); $script:InboxEditId = $iid; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
     $actions.Children.Add((New-MiniButton -Text 'Reject' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick {
-                param($s, $e); [void](Reject-InboxItem -Id $iid); $script:InboxMsg = ("Rejected and removed: '{0}'." -f $ititle); Show-LifeView { New-ExecutiveInboxView }
+                param($s, $e)
+                # if a scan is mid-flight, remember this key so the scan can't re-add it
+                Note-InboxRejectKey -Type $itype -Title $ititle -SourceId $isource
+                [void](Reject-InboxItem -Id $iid); $script:InboxMsg = ("Rejected and removed: '{0}'." -f $ititle); Show-LifeView { New-ExecutiveInboxView }
             }.GetNewClosure())) | Out-Null
     $body.Children.Add($actions) | Out-Null
     return (New-Card -Title $Item.title -Body $body)
