@@ -352,8 +352,9 @@ $script:InboxMsg = $null
 # is never re-proposed mid-session. The button below scans on demand.
 $script:InboxAutoScan = $false
 
-# Run the Workforce proposal scan and turn the result into a calm banner line.
-# A proposal is not a write to the operating system - only Jake's approval writes.
+# Run the Workforce proposal scan SYNCHRONOUSLY (headless / async-unavailable
+# fallback) and turn the result into a calm banner line. A proposal is not a write
+# to the operating system - only Jake's approval writes.
 function Invoke-InboxScan {
     if (-not (Get-Command Invoke-WorkforceProposals -ErrorAction SilentlyContinue)) { return }
     try {
@@ -364,6 +365,56 @@ function Invoke-InboxScan {
     } catch { }
 }
 
+# ---- Async inbox scan (Performance Follow-Up) ----------------------------
+# Single-flight state + closure-safe accessors. Inside a GetNewClosure body
+# $script:* resolves to the closure's own empty scope, so the completion callback
+# reaches shared state ONLY through these functions (functions are unaffected).
+$script:InboxScanning = $false
+function Get-InboxScanning { return [bool]$script:InboxScanning }
+function Set-InboxScanning { param([bool]$V) $script:InboxScanning = $V }
+function Set-InboxMsg { param($T) $script:InboxMsg = $T }
+function Test-InboxViewActive { return ($script:TonyActiveView -eq 'Executive Inbox') }
+function Refresh-ExecutiveInbox { if (Get-Command Show-LifeView -ErrorAction SilentlyContinue) { Show-LifeView { New-ExecutiveInboxView } } }
+
+# Kick off a scan. Analysis (producers, ~6s) runs OFF the dispatcher on the Epic-9
+# worker; the surviving proposals are committed by the inbox owner ON the UI thread.
+# Single-flight: repeated opens/clicks while a scan runs are coalesced (ignored).
+function Start-InboxScanAsync {
+    if ($script:InboxScanning) { return }   # coalesce - only one scan at a time
+    $now = if (Test-Path variable:script:TonyNow) { $script:TonyNow } else { (Get-Date) }
+
+    $asyncOk = $false
+    if (-not $script:HeadlessRender -and (Get-Command Start-AsyncWork -ErrorAction SilentlyContinue) -and (Get-Command Get-AsyncInboxScanWork -ErrorAction SilentlyContinue) -and (Get-Command Test-AsyncAvailable -ErrorAction SilentlyContinue)) {
+        try { $asyncOk = [bool](Test-AsyncAvailable) } catch { $asyncOk = $false }
+    }
+    if (-not $asyncOk) { Invoke-InboxScan; return }   # synchronous fallback (headless)
+
+    # Flag now so "Checking..." shows on the immediate paint; DEFER the kickoff
+    # (which may lazily open the worker runspace) to a post-paint tick so opening
+    # the inbox stays fast. State is reached via functions (closure-safe).
+    Set-InboxScanning $true
+    $dashRoot = $script:AsyncDashRoot
+    $work = Get-AsyncInboxScanWork
+    $onDone = {
+        param($payload)
+        Set-InboxScanning $false
+        $cands = @(); if ($payload -and ($payload.PSObject.Properties.Name -contains 'candidates')) { $cands = @($payload.candidates) }
+        try {
+            if (Get-Command Add-WorkforceProposalCandidates -ErrorAction SilentlyContinue) {
+                $r = Add-WorkforceProposalCandidates -Candidates $cands -Now $now
+                if ($r.added -gt 0) { Set-InboxMsg ("The Workforce added {0} new proposal{1} for your review." -f $r.added, $(if ($r.added -eq 1) { '' } else { 's' })) }
+                else { Set-InboxMsg 'No new proposals - nothing else needs your attention right now.' }
+            }
+        }
+        catch { Set-InboxMsg 'Could not update the inbox just now - please try again in a moment.' }
+        # refresh ONLY if still on the Executive Inbox view (no stale UI otherwise)
+        if (Test-InboxViewActive) { Refresh-ExecutiveInbox }
+    }.GetNewClosure()
+    $kick = { Start-AsyncWork -Work $work -ArgList @($dashRoot, $now.Ticks) -OnComplete $onDone | Out-Null }.GetNewClosure()
+    if ($script:TonyBody) { $null = $script:TonyBody.Dispatcher.BeginInvoke([Action]$kick, [System.Windows.Threading.DispatcherPriority]::Background) }
+    else { & $kick }
+}
+
 function New-InboxConfidenceChip {
     param([double]$Conf)
     $c = if ($Conf -ge 0.75) { @('#DEF7EC', '#03543F') } elseif ($Conf -ge 0.5) { @('#FDF6B2', '#8E4B10') } else { @('#E5E7EB', '#4B5563') }
@@ -371,9 +422,11 @@ function New-InboxConfidenceChip {
 }
 
 function New-ExecutiveInboxView {
-    # On open (only), let the Workforce scan for new proposals. Idempotent: the
+    # On open (only), kick off a scan for new proposals - the heavy read-only
+    # analysis runs OFF the UI thread; existing pending proposals render below
+    # immediately and the view refreshes when the scan commits. Idempotent: the
     # producer gate suppresses anything already pending or already owned.
-    if ($script:InboxAutoScan) { $script:InboxAutoScan = $false; Invoke-InboxScan }
+    if ($script:InboxAutoScan) { $script:InboxAutoScan = $false; Start-InboxScanAsync }
 
     $outer = New-Object Windows.Controls.DockPanel
     $head = New-LifeHeader -Title 'Executive Inbox' -Source 'executive_inbox.json' -Intro 'What the Workforce discovered that could become part of your system - waiting for your decision. Nothing is ever added automatically: approve, edit then approve, or reject. Tony presents; you decide.'
@@ -382,9 +435,14 @@ function New-ExecutiveInboxView {
 
     $checkRow = New-Object Windows.Controls.StackPanel; $checkRow.Orientation = 'Horizontal'; $checkRow.Margin = New-Object Windows.Thickness (4, 0, 0, 8)
     $checkRow.Children.Add((New-MiniButton -Text 'Check for new proposals' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
-                param($s, $e); Invoke-InboxScan; Show-LifeView { New-ExecutiveInboxView }
+                param($s, $e); Start-InboxScanAsync; Show-LifeView { New-ExecutiveInboxView }
             })) | Out-Null
     $body.Children.Add($checkRow) | Out-Null
+
+    # non-blocking "checking" state while an off-thread scan is running
+    if (Get-InboxScanning) {
+        $body.Children.Add((New-Text -Text 'Checking for new proposals...' -Size 12 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (4, 0, 0, 8)))) | Out-Null
+    }
 
     if ($script:InboxMsg) {
         $banner = New-Object Windows.Controls.Border; $banner.Background = New-Brush $script:Col.AccentSoft; $banner.CornerRadius = New-Object Windows.CornerRadius 8; $banner.Padding = New-Object Windows.Thickness (12, 8, 12, 8); $banner.Margin = New-Object Windows.Thickness (4, 0, 4, 10)
