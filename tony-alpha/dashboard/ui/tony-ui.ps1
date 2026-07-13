@@ -2759,6 +2759,17 @@ function New-FirstConversationView {
 # =====================  NAV + SHELL  =====================
 function New-Emoji { param([int[]]$Cp) return (-join ($Cp | ForEach-Object { [char]::ConvertFromUtf32($_) })) }
 
+# Per-view cache (Epic 9, Phase 3). Deliberately CONSERVATIVE: only pure-
+# presentation, session-static views are cached (no editable input, data does
+# not change from within the app during a session). Every editable / data-driven
+# view (Home, Action Items, Capture, Identity, Goals, Audit, Inbox, Life domains,
+# Memory, Settings, Mission Control) is intentionally REBUILT each time so it can
+# never show stale data or a mis-cached input box. The cache holds rendered
+# visuals only - never authoritative records, never a second data source.
+$script:ViewCache = @{}
+$script:ViewCacheable = @{ 'Agents' = $true; 'Issues' = $true; 'Roadmap' = $true; 'Weekly Review' = $true }
+function Clear-ViewCache { param([string]$Name) if ($Name) { [void]$script:ViewCache.Remove($Name) } else { $script:ViewCache.Clear() } }
+
 function Set-ActiveView {
     param([Parameter(Mandatory)][string]$Name)
     $script:TonyActiveView = $Name
@@ -2768,6 +2779,11 @@ function Set-ActiveView {
     }
     # immersive views (onboarding, the morning welcome) hide the utility toolbar for focus
     if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
+    # cached pure-presentation view -> reuse the rendered visual (effectively instant)
+    if ($script:ViewCacheable[$Name] -and $script:ViewCache.ContainsKey($Name)) {
+        $script:TonyBody.Child = $script:ViewCache[$Name]
+        return
+    }
     $body = switch ($Name) {
         'Morning Experience' { New-MorningExperience -Model (Get-MorningExperience -Now $script:TonyNow) }
         'Home'         { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
@@ -2796,6 +2812,7 @@ function Set-ActiveView {
         'Learning'       { New-LifeDomainView -Key 'Learning' }
         default        { New-HomeView       -Model (Get-HomeModel -Now $script:TonyNow) }
     }
+    if ($script:ViewCacheable[$Name]) { $script:ViewCache[$Name] = $body }
     $script:TonyBody.Child = $body
 }
 
