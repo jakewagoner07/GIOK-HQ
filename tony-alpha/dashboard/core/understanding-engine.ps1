@@ -309,11 +309,12 @@ function New-UnderstandingModel {
 
     $model = [pscustomobject]@{
         meta = [pscustomobject]@{
-            version   = $script:UnderstandingVersion
-            builtAt   = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-            engine    = 'local'
-            threshold = $script:UnderstandingThreshold
-            approvedAt = ''
+            version            = $script:UnderstandingVersion
+            builtAt            = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+            engine             = 'local'
+            threshold          = $script:UnderstandingThreshold
+            approvedAt         = ''
+            answersFingerprint = (Get-UEAnswersFingerprint -State $State)
         }
         name             = (ConvertTo-UECleanClause (Get-ConversationAnswer $State 'q_name'))
         goals            = @(& $keep $goals)
@@ -380,12 +381,28 @@ function Clear-UnderstandingModel {
     return (Save-ConversationState $s)
 }
 
+# Fingerprint of the answers the model was derived from. Lets us rebuild when the
+# user goes back and CHANGES an answer, while preserving their review edits when
+# they merely navigate back and forth (a blind rebuild would discard those edits).
+function Get-UEAnswersFingerprint {
+    param($State)
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($step in @(Get-ConversationSteps | Where-Object { $_.type -eq 'question' })) {
+        [void]$sb.Append($step.id).Append('=').Append((Get-ConversationAnswer $State $step.id)).Append('|')
+    }
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    try { return ([BitConverter]::ToString($md5.ComputeHash([Text.Encoding]::UTF8.GetBytes($sb.ToString()))) -replace '-', '') }
+    finally { $md5.Dispose() }
+}
+
 # Build (or rebuild) and persist the model. Returns the model.
+# Rebuilds only when the answers actually changed (or -Force).
 function Initialize-UnderstandingModel {
     param([switch]$Force)
     $s = Get-ConversationState
+    $fp = Get-UEAnswersFingerprint -State $s
     $existing = Get-UnderstandingModelFromState -State $s
-    if ($existing -and -not $Force) { return $existing }
+    if ($existing -and -not $Force -and ($existing.meta.answersFingerprint -eq $fp)) { return $existing }
     $m = New-UnderstandingModel -State $s
     [void](Save-UnderstandingModel -Model $m)
     return $m
