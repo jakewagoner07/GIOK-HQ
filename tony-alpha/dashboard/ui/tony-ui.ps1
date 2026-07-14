@@ -2611,6 +2611,176 @@ function New-AuditView {
     return $outer
 }
 
+# =====================  UNDERSTANDING REVIEW (onboarding V2)  =====================
+# "Here's what I understood." Shown after the interview and BEFORE anything is
+# written to Identity. Each item shows Tony's interpretation next to the user's
+# ORIGINAL words and why he extracted it. Editing an item makes it the user's own
+# wording. Identity is written only by "Tony got it right" (one atomic
+# transaction). Confidence is deliberately internal - it drives what is shown, but
+# a score is not a useful thing to put in front of Jake.
+$script:UEEditSection = $null      # section currently being edited (one at a time)
+$script:UEEditId      = $null      # item id being edited
+$script:UEEditBox     = $null      # the live TextBox
+$script:UENotice      = $null
+
+function Refresh-Understanding { $script:TonyBody.Child = New-UnderstandingReviewView }
+
+$script:UESectionOrder = @(
+    @{ key = 'goals';      label = 'GOALS' }
+    @{ key = 'priorities'; label = 'PRIORITIES' }
+    @{ key = 'values';     label = 'VALUES' }
+    @{ key = 'challenges'; label = 'CHALLENGES' }
+    @{ key = 'strengths';  label = 'STRENGTHS' }
+    @{ key = 'boundaries'; label = 'BOUNDARIES' }
+)
+
+# One reviewable item: interpretation (or an edit box), the original answer, and why.
+function New-UEItemRow {
+    param([string]$Section, $Item)
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush $script:Col.CardBg
+    $b.BorderBrush = New-Brush $script:Col.Line; $b.BorderThickness = New-Object Windows.Thickness 1
+    $b.CornerRadius = New-Object Windows.CornerRadius 10
+    $b.Padding = New-Object Windows.Thickness (14, 12, 14, 12); $b.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $sp = New-Object Windows.Controls.StackPanel
+
+    $editing = ($script:UEEditId -eq $Item.id -and $script:UEEditSection -eq $Section)
+    if ($editing) {
+        $tb = New-AuditInput -Text $Item.text -Multi $true -Height 60
+        $script:UEEditBox = $tb
+        $sp.Children.Add($tb) | Out-Null
+        $row = New-Object Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'; $row.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+        $save = New-MiniButton -Text 'Save' -Bg $script:Col.Accent -Fg '#FFFFFF' -OnClick {
+            param($s, $e)
+            $txt = if ($script:UEEditBox) { $script:UEEditBox.Text } else { '' }
+            if ([string]::IsNullOrWhiteSpace($txt)) { $script:UENotice = 'An empty item would say nothing - remove it instead.'; Refresh-Understanding; return }
+            if (-not (Set-UnderstandingItemText -Section $s.Tag.section -ItemId $s.Tag.id -Text $txt)) {
+                $script:UENotice = 'I could not save that just now - please try again in a moment.'
+            }
+            $script:UEEditId = $null; $script:UEEditSection = $null; Refresh-Understanding
+        }
+        $save.Tag = @{ section = $Section; id = $Item.id }
+        $cancel = New-MiniButton -Text 'Cancel' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+            param($s, $e)
+            $script:UEEditId = $null; $script:UEEditSection = $null; Refresh-Understanding
+        }
+        $cancel.Margin = New-Object Windows.Thickness (8, 0, 0, 0)
+        $row.Children.Add($save) | Out-Null; $row.Children.Add($cancel) | Out-Null
+        $sp.Children.Add($row) | Out-Null
+    }
+    else {
+        $top = New-Object Windows.Controls.DockPanel
+        $btns = New-Object Windows.Controls.StackPanel; $btns.Orientation = 'Horizontal'
+        [Windows.Controls.DockPanel]::SetDock($btns, 'Right')
+        $edit = New-MiniButton -Text 'Edit' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+            param($s, $e)
+            $script:UEEditSection = $s.Tag.section; $script:UEEditId = $s.Tag.id; Refresh-Understanding
+        }
+        $edit.Tag = @{ section = $Section; id = $Item.id }
+        $rm = New-MiniButton -Text 'Remove' -Bg $script:Col.CardBg -Fg $script:Col.Muted -OnClick {
+            param($s, $e)
+            if (-not (Remove-UnderstandingItem -Section $s.Tag.section -ItemId $s.Tag.id)) {
+                $script:UENotice = 'I could not update that just now - please try again in a moment.'
+            }
+            Refresh-Understanding
+        }
+        $rm.Tag = @{ section = $Section; id = $Item.id }
+        $rm.Margin = New-Object Windows.Thickness (6, 0, 0, 0)
+        $btns.Children.Add($edit) | Out-Null; $btns.Children.Add($rm) | Out-Null
+        $top.Children.Add($btns) | Out-Null
+        $txt = New-Text -Text $Item.text -Size 14.5 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true
+        $top.Children.Add($txt) | Out-Null
+        $sp.Children.Add($top) | Out-Null
+    }
+
+    if ($Item.edited) {
+        $sp.Children.Add((New-Text -Text 'Your wording' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+    }
+    else {
+        $sp.Children.Add((New-Text -Text ('Why: {0}' -f $Item.reason) -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+    }
+    # the user's ORIGINAL words, always kept beside the interpretation
+    $sp.Children.Add((New-Text -Text ('You said: "{0}"' -f $Item.sourceAnswer) -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    $b.Child = $sp
+    return $b
+}
+
+function New-UnderstandingReviewView {
+    $model = $null
+    if (Get-Command Initialize-UnderstandingModel -ErrorAction SilentlyContinue) {
+        try { $model = Initialize-UnderstandingModel } catch { $model = $null }
+    }
+
+    $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 760; $col.HorizontalAlignment = 'Center'
+    $col.Margin = New-Object Windows.Thickness (0, 24, 0, 24)
+    $col.Children.Add((New-Text -Text 'TONY UNDERSTANDS' -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+
+    if ($script:UENotice) {
+        $col.Children.Add((New-Text -Text $script:UENotice -Size 12 -Weight 'SemiBold' -Color '#9B1C1C' -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 2)))) | Out-Null
+        $script:UENotice = $null
+    }
+
+    if (-not $model) {
+        $col.Children.Add((New-TonyBubble -Text "I could not put my understanding together just now. Your answers are safe - please try again in a moment." -Size 16)) | Out-Null
+        $sv0 = New-Object Windows.Controls.ScrollViewer; $sv0.VerticalScrollBarVisibility = 'Auto'; $sv0.Content = $col
+        return $sv0
+    }
+
+    $col.Children.Add((New-TonyBubble -Text "Here's what I understood." -Size 20)) | Out-Null
+
+    if ($model.executiveSummary) {
+        $col.Children.Add((New-Text -Text 'IN SHORT' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 6, 0, 4)))) | Out-Null
+        $col.Children.Add((New-TonyBubble -Text $model.executiveSummary.text -Soft $true -Size 14 -ShowLabel $false)) | Out-Null
+    }
+
+    $any = $false
+    foreach ($sec in $script:UESectionOrder) {
+        $items = @($model.($sec.key))
+        if ($items.Count -eq 0) { continue }
+        $any = $true
+        $col.Children.Add((New-Text -Text $sec.label -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 12, 0, 6)))) | Out-Null
+        foreach ($it in $items) { $col.Children.Add((New-UEItemRow -Section $sec.key -Item $it)) | Out-Null }
+    }
+    if (-not $any) {
+        $col.Children.Add((New-Text -Text "I did not find anything I was confident enough to write down. I would rather ask you than guess." -Size 13 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 10, 0, 6)))) | Out-Null
+    }
+
+    # Conflicts: Tony asks, never assumes.
+    if (@($model.clarifications).Count -gt 0) {
+        $col.Children.Add((New-Text -Text "I NEED TO ASK" -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 14, 0, 6)))) | Out-Null
+        foreach ($c in @($model.clarifications)) {
+            $col.Children.Add((New-TonyBubble -Text $c.question -Soft $true -Size 13.5 -ShowLabel $false)) | Out-Null
+        }
+    }
+    # Below-threshold items are NOT presented as facts - just an honest note.
+    if (@($model.omitted).Count -gt 0) {
+        $n = @($model.omitted).Count
+        $col.Children.Add((New-Text -Text ("There {0} {1} thing{2} I was not sure enough about to write down. I'll ask you later rather than assume." -f $(if ($n -eq 1) { 'was' } else { 'were' }), $n, $(if ($n -eq 1) { '' } else { 's' })) -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 14, 0, 4)))) | Out-Null
+    }
+
+    # ---- approve: the ONLY path that writes Identity ----
+    $ok = New-PrimaryButton -Text 'Tony got it right' -Size 15 -OnClick {
+        param($s, $e)
+        if (Approve-ConversationUnderstanding) { Set-ActiveView 'Home' }
+        else { $script:UENotice = "I could not save that to your Identity just now - nothing was changed. Please try again in a moment."; Refresh-Understanding }
+    }
+    $ok.HorizontalAlignment = 'Center'; $ok.Padding = New-Object Windows.Thickness (28, 13, 28, 13)
+    $ok.Margin = New-Object Windows.Thickness (0, 18, 0, 0)
+    $col.Children.Add($ok) | Out-Null
+    $col.Children.Add((New-Text -Text 'Nothing is saved until you approve. Use Edit on anything I got wrong.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)))) | Out-Null
+
+    $back = New-MiniButton -Text '< Back to my answers' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+        param($s, $e)
+        Set-ConversationStep ((Get-ConversationSteps).Count - 1) | Out-Null
+        Set-ActiveView 'First Conversation'
+    }
+    $back.HorizontalAlignment = 'Center'; $back.Margin = New-Object Windows.Thickness (0, 12, 0, 0)
+    $col.Children.Add($back) | Out-Null
+
+    $sv = New-Object Windows.Controls.ScrollViewer; $sv.VerticalScrollBarVisibility = 'Auto'; $sv.Content = $col
+    return $sv
+}
+
 # =====================  FIRST CONVERSATION (onboarding)  =====================
 $script:ConvInputBox = $null
 $script:ConvStepId = $null
@@ -2670,15 +2840,14 @@ function New-FirstConversationView {
         $col.Children.Add((New-Text -Text 'Complete' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 4)))) | Out-Null
         $col.Children.Add((New-ProgressBar -Pct 100)) | Out-Null
         $col.Children.Add((New-TonyBubble -Text (Get-ConversationClosing) -Size 20 -Margin (New-Object Windows.Thickness (0, 14, 0, 14)))) | Out-Null
-        # Completion writes Identity + marks complete, THEN navigates to Home.
-        # Home paints immediately and defers the heavy briefing (see New-HomeView),
-        # so this transition is instant and never freezes the Thank You screen.
+        # This no longer writes Identity. It builds Tony's understanding and hands
+        # off to the review, where Jake approves before anything is saved (Epic 10).
         $begin = New-PrimaryButton -Text "Let's build your operating system" -Size 15 -OnClick {
             param($s, $e)
             if ([int]$s.Tag -ne $script:ConvNav) { return }
             $script:ConvNav++
-            if (Complete-Conversation) { Set-ActiveView 'Home' }
-            else { $script:ConvNotice = "I could not save just now - please try again in a moment."; Refresh-Conversation }
+            if (Complete-Conversation) { Set-ActiveView 'Understanding Review' }
+            else { $script:ConvNotice = "I could not put my understanding together just now - please try again in a moment."; Refresh-Conversation }
         }
         $begin.Tag = $gen
         $begin.HorizontalAlignment = 'Center'; $begin.Padding = New-Object Windows.Thickness (28, 13, 28, 13)
@@ -2778,7 +2947,7 @@ function Set-ActiveView {
         else { $n.Border.Background = New-Brush $script:Col.Primary; $n.Text.Foreground = New-Brush $(if ($n.Dim) { '#6B7A93' } else { $script:Col.OnPrimaryMuted }) }
     }
     # immersive views (onboarding, the morning welcome) hide the utility toolbar for focus
-    if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
+    if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Understanding Review', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
     # cached pure-presentation view -> reuse the rendered visual (effectively instant)
     if ($script:ViewCacheable[$Name] -and $script:ViewCache.ContainsKey($Name)) {
         $script:TonyBody.Child = $script:ViewCache[$Name]
@@ -2803,6 +2972,7 @@ function Set-ActiveView {
         'Goals'          { New-GoalsView }
         'Executive Inbox'{ $script:InboxAutoScan = $true; New-ExecutiveInboxView }
         'First Conversation' { New-FirstConversationView }
+        'Understanding Review' { New-UnderstandingReviewView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-LifeDomainView -Key 'Non-Negotiables' }
         'Family'         { New-LifeDomainView -Key 'Family' }

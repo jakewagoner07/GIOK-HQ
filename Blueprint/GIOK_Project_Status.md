@@ -3,8 +3,40 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Desktop App Identity Sprint** (on `feature/desktop-app-identity`, branched from `main`
-@ `8bb28aa`; Epic 9 + the async-inbox / reject-suppression / status-message follow-ups all merged).
+Last updated: **Epic 10 - Tony Understanding Engine (Onboarding V2)** (on
+`feature/tony-understanding-engine`, branched from `main` @ `7738ee4`; Desktop App Identity merged via
+PR #17, including its two post-review hardening fixes).
+
+> **Epic 10 status (Tony Understanding Engine / Onboarding V2):** replace raw onboarding storage with a
+> reviewable, consent-gated understanding. The 7-question interview is unchanged. **What was wrong:**
+> `Complete-Conversation` copied raw answer text straight into Identity the moment the interview ended -
+> `Set-IdentityValuesFromText`/`Set-IdentityGoalsFromText`/`Set-IdentityMission` - so (1) a sentence like
+> "grow the agency and get healthy" could only split on commas, never into two real goals; (2) Identity
+> was mutated before Jake saw anything - no review, no edit, no approval; (3) each write was try/caught
+> separately, so a failure on the third left Identity half-written with no rollback. **Now:** the
+> interview produces a **temporary Understanding Model** (held in the existing `first_conversation.json`,
+> which already owns the original responses - no new store), Jake reviews it in a new **"Here's what I
+> understood"** view where every item shows Tony's interpretation, *why* he extracted it, and the user's
+> **original words** beside it, each editable; only **"Tony got it right"** writes Identity, in **one
+> atomic transaction** (`Invoke-IdentityTransaction`: serialize all, snapshot all, write, restore every
+> snapshot on any failure). Extraction is **local + deterministic** so onboarding never needs a key or a
+> network (the Claude provider needs a gitignored key and has **no HTTP timeout**, which this epic
+> forbids adding - it enriches only when configured, advisory, always falling back). Confidence reuses
+> the existing convention (`conversational-capture.ps1:178`): high >=0.7 include; **conflict -> ask one
+> question and extract nothing**; low -> omit and record so Tony can ask later. Never invents: **Strengths
+> stays empty** unless volunteered, because none of the 7 questions asks about strengths. Destinations
+> (no new stores): Goals -> `goals.json` (existing enriched schema, **no provenance fields** - a goal
+> record's extra fields are stripped by `ConvertTo-NormalizedGoal` and then persisted stripped by
+> `Update-Goal`, so provenance would be silently deleted by the first Life OS edit); Values ->
+> `values.json`; Executive Summary -> `overview.json.tonyReflection`; Priorities/Challenges/Strengths/
+> Boundaries -> a new `understanding` block **inside** `overview.json`, back-filled on read. Verified
+> against redirected temp copies so no real runtime data was touched: one sentence -> 2 goals; raw
+> answers never stored verbatim; conflicts produce a clarification not an assumption; hedged statements
+> omitted; nothing written before approval; atomic write on approval and **full rollback proven** by
+> forcing a mid-transaction failure; resume keeps review edits while a changed answer re-derives the
+> model; 9/9 views render; app launches and exits with no orphans. Preserved: providers, agents,
+> Workforce, Executive Context, storage layout, the async worker, and the 11 local runtime files.
+> Local-only, not pushed.
 
 > **Desktop App Identity status:** make Windows recognize GIOK as its own app instead of PowerShell -
 > no app redesign, no business-logic change, no migration off PowerShell/WPF. Root cause: GIOK runs as

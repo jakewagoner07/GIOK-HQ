@@ -3,16 +3,21 @@
 # ---------------------------------------------------------------------
 # GIOK starts with a conversation, not configuration. Tony asks ONE
 # question at a time, listens, responds naturally, and moves forward.
-# The answers are distilled INTO Identity (never duplicated) so the user
-# feels understood before they ever see the dashboard.
+#
+# The answers are NOT written into Identity here. They feed the Understanding
+# Engine (core/understanding-engine.ps1), which organises them into a temporary,
+# reviewable model. Jake reviews it ("Here's what I understood"), edits anything
+# wrong, and only his approval commits it to Identity - atomically. See
+# Blueprint/Tony_Understanding_Engine.md.
 #
 # This is a REUSABLE engine: the conversation steps, state, and the
 # swappable RESPONSE GENERATOR (Get-TonyResponse) are all here. A future
 # AI replaces ONLY Get-TonyResponse - nothing else changes. No hardcoded
-# answers, no AI, no cloud, no APIs.
+# answers, no cloud, no APIs on this path.
 #
-# State (progress + working answers): first_conversation.json.
-# Distilled meaning: identity/*.json (owned by Identity).
+# State (progress + working answers, plus the pending understanding):
+#   first_conversation.json  - also keeps the ORIGINAL responses, always.
+# Approved meaning: identity/*.json (owned by Identity).
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -162,49 +167,37 @@ function Get-ConversationClosing {
     return "Thank you.`nI know enough to begin helping.`nLet's build your operating system."
 }
 
-# A reflection composed FROM the user's own answers (not hardcoded, not AI).
-# Carries the answers that don't map to a dedicated Identity field (name,
-# challenge, protect, boundaries) so Tony has them immediately - without
-# fabricating structured records.
-function Get-ComposedReflection {
-    param($State)
-    $name = Get-ConversationAnswer $State 'q_name'
-    $areas = Get-ConversationAnswer $State 'q_areas'
-    $goal = Get-ConversationAnswer $State 'q_goal'
-    $challenge = Get-ConversationAnswer $State 'q_challenge'
-    $protect = Get-ConversationAnswer $State 'q_protect'
-    $boundaries = Get-ConversationAnswer $State 'q_boundaries'
-    $parts = @()
-    if ($name) { $parts += ("You asked me to call you {0}" -f $name.TrimEnd('.')) + '.' }
-    if ($areas) { $parts += ("What matters most to you right now: {0}" -f $areas.TrimEnd('.')) + '.' }
-    if ($goal) { $parts += ("Your biggest goal for the next 6-12 months: {0}" -f $goal.TrimEnd('.')) + '.' }
-    if ($challenge) { $parts += ("The main challenge in your way: {0}" -f $challenge.TrimEnd('.')) + '.' }
-    if ($protect) { $parts += ("Commitments you want me to protect: {0}" -f $protect.TrimEnd('.')) + '.' }
-    if ($boundaries) { $parts += ("You asked me never to assume or act on {0} without checking with you first" -f $boundaries.TrimEnd('.')) + '.' }
-    $parts += "I'll keep these at the center of everything we build together."
-    return ($parts -join ' ')
+# (Get-ComposedReflection was removed in Epic 10. It pasted each RAW answer into
+# one prose reflection; the Understanding Engine now composes the executive summary
+# from the structured, reviewed model instead - see New-UEExecutiveSummary.)
+
+# ---- completion: a TWO-STEP, consent-gated flow (Epic 10) ----
+# This USED to copy raw answers straight into Identity the moment the interview
+# ended - no understanding, no review, and no atomicity (each write was try/caught
+# separately, so a failure midway left Identity half-written). Now the interview
+# only produces a temporary Understanding Model, which Jake reviews and approves.
+# Nothing reaches Identity until Approve-ConversationUnderstanding.
+# See Blueprint/Tony_Understanding_Engine.md.
+
+# Step 1 - end of the interview. Builds/refreshes the Understanding Model and
+# writes NOTHING to Identity. The raw answers stay in the conversation state.
+function Complete-Conversation {
+    if (-not (Get-Command Initialize-UnderstandingModel -ErrorAction SilentlyContinue)) { return $false }
+    try { $m = Initialize-UnderstandingModel; return ($null -ne $m) } catch { return $false }
 }
 
-# ---- completion: distill answers INTO Identity, then mark complete ----
-# Conservative distillation over the 7 essential answers, reusing ONLY existing
-# Identity setters (never fabricating). Deeper fields (vision, legacy, annual
-# theme) are left for future normal conversations. Each write is wrapped so a
-# single contended file cannot crash completion; the raw answers always remain
-# in the conversation state file regardless.
-function Complete-Conversation {
+# Step 2 - ONLY after Jake approves the review. Writes Identity atomically (all or
+# nothing) and marks the conversation complete only if that write fully succeeded.
+# If it fails, Identity is untouched and the conversation stays open to retry.
+function Approve-ConversationUnderstanding {
+    if (-not (Get-Command Approve-UnderstandingModel -ErrorAction SilentlyContinue)) { return $false }
+    $ok = $false
+    try { $ok = Approve-UnderstandingModel } catch { $ok = $false }
+    if (-not $ok) { return $false }
     $s = Get-ConversationState
-
-    $areas = Get-ConversationAnswer $s 'q_areas'
-    if ($areas -and (Get-Command Set-IdentityValuesFromText -ErrorAction SilentlyContinue)) { try { Set-IdentityValuesFromText -Text $areas } catch { } }
-
-    $goal = Get-ConversationAnswer $s 'q_goal'
-    if ($goal -and (Get-Command Set-IdentityGoalsFromText -ErrorAction SilentlyContinue)) { try { Set-IdentityGoalsFromText -Text $goal } catch { } }
-
-    $week = Get-ConversationAnswer $s 'q_week'
-    if ($week -and (Get-Command Set-IdentityMission -ErrorAction SilentlyContinue)) { try { Set-IdentityMission -Statement $week } catch { } }
-
-    if (Get-Command Set-IdentityOverviewReflection -ErrorAction SilentlyContinue) { try { Set-IdentityOverviewReflection -Text (Get-ComposedReflection -State $s) } catch { } }
-
     $s.completed = $true; $s.completedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    if ($s.PSObject.Properties.Name -contains 'understanding' -and $s.understanding) {
+        $s.understanding.meta.approvedAt = $s.completedAt
+    }
     return (Save-ConversationState $s)
 }
