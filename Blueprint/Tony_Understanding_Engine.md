@@ -52,14 +52,18 @@ The codebase already has a uniform confidence pattern, and `core/conversational-
 already implements exactly the behaviour this epic asks for. We reuse it verbatim:
 
 ```
-band = if ($clarify) { 'moderate' } elseif ($conf -ge 0.7) { 'high' } else { 'low' }
+band = if ($conf -ge 0.7) { 'high' } else { 'low' }     # clarify is a FLAG, not a band
 ```
 
 | Band | Meaning here | Behaviour |
 |---|---|---|
 | `high` (>= 0.7) | clearly supported by the answer | include in the model, shown for approval |
-| `moderate` | ambiguous **or conflicting** | **ask one clarifying question; extract nothing** |
-| `low` (< 0.7) | below threshold | **omit**; record in `omitted[]` so Tony can ask later |
+| `high` + clarify flag | supported but collides with a stated boundary | **keep the item AND ask** - a conflict never deletes what the user said |
+| `low` (< 0.7) | below threshold (hedged/uncertain) | **omit**; record in `omitted[]` so Tony can ask later |
+
+*(Revised after the final CTO review: the original design gave conflicted items a `moderate` band that
+excluded them from the model, so a false-positive conflict silently deleted the user's goal. A false
+positive must only ever cost a redundant question.)*
 
 Confidence is `[double]` 0.0-1.0, clamped and `[math]::Round(...,2)` - matching
 `tony-provider-contract.ps1:82` and `workforce-engine.ps1:63`.
@@ -114,9 +118,11 @@ understanding: {
 
 ### 5. Conflict -> clarification, never assumption
 
-When two answers pull in opposite directions (e.g. a boundary forbids what a goal requires, or the same
-topic appears with opposing sentiment), the engine emits a **clarification** and extracts nothing for
-that item - band `moderate`, exactly as `conversational-capture.ps1:227-229` already does.
+When a goal genuinely collides with a stated boundary (concept-classified, object-matched,
+intent-bearing answers only - never areas/challenges, which are descriptive), the engine emits a
+**clarification** while **keeping the extracted item**. Tony asks about the tension instead of either
+assuming or silently discarding what the user said. Precision-first: a borderline tension may be
+missed (invisible), but a wrong accusation is never shown.
 
 ### 6. Where approved understanding is written  *(decision: extend overview.json)*
 
