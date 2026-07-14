@@ -3,8 +3,32 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 9 - Performance & Responsiveness** (on `feature/performance-responsiveness`,
-branched from `main` @ `fc738e3`; V1 Tier 1, the onboarding fix, and all prior epics merged to `main`).
+Last updated: **Desktop App Identity Sprint** (on `feature/desktop-app-identity`, branched from `main`
+@ `8bb28aa`; Epic 9 + the async-inbox / reject-suppression / status-message follow-ups all merged).
+
+> **Desktop App Identity status:** make Windows recognize GIOK as its own app instead of PowerShell -
+> no app redesign, no business-logic change, no migration off PowerShell/WPF. Root cause: GIOK runs as
+> `powershell.exe -File dashboard.ps1` and never set an explicit AppUserModelID, so Windows derived the
+> taskbar/Alt+Tab identity from the host process (PowerShell). Fix (smallest safe, no compiled binary):
+> (1) set a stable AUMID `GIOK.ExecutiveOS` in-process via a shell32 P/Invoke in `dashboard.ps1` before
+> the window is created (interactive path only; best-effort try/catch) + defensive console-hide; (2)
+> regenerate `theme/assets/giok.ico` as a proper multi-size icon (16-256px) from the same official
+> `giok-logo.png`; (3) new `Install-GiokShortcuts.ps1` creates GIOK Desktop + Start Menu shortcuts on
+> the existing silent `launch-tony.vbs` (hidden PowerShell, no console) with the GIOK icon, working
+> dir, and a best-effort matching AUMID on the `.lnk`. A compiled launcher `.exe` was assessed and
+> rejected (unnecessary + AV-risky). Verified: in-process AUMID sets+reads back as GIOK.ExecutiveOS;
+> the app launches via the `.vbs` with a window titled "GIOK" (not PowerShell) and exits with no orphan
+> process; two launches run two independent instances; identity block adds ~293 ms (immaterial vs the
+> ~2.9s module load); shortcut carries the right target/icon/working dir; `.ico` is a valid 7-size
+> icon; Home renders; parse + secret scan + git integrity clean. Antivirus note (honest): C# `Add-Type`
+> compilation used for the shortcut-AUMID helper was transiently AV-blocked in testing; the app and
+> installer are resilient (the shortcut is still created and the in-process AUMID drives runtime
+> identity). **Requires a human on an interactive desktop to visually confirm the taskbar/Alt+Tab/Start
+> Menu icons and no console flash.** Preserved: Life OS, Executive Context, Workforce, providers,
+> storage, background worker, startup performance, and the 11 local runtime files. Local-only, not
+> pushed.
+
+> **Epic 9 status (Performance & Responsiveness):** measure-first optimization; **no new user-facing
 
 > **Epic 9 status (Performance & Responsiveness):** measure-first optimization; **no new user-facing
 > features**. A headless profiler (timings + component names only, no private content) proved the entire

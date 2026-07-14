@@ -74,6 +74,12 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   Measured 8-10x on the worst operations; provider fetches deduped to 1/source/window; cached tab switch
   252->5 ms. Read-only, SSOT and Executive Context ownership preserved. See
   `Blueprint/Performance_Responsiveness.md`.
+- ✅ **Desktop App Identity** - Windows recognizes GIOK as its own app, not PowerShell. Root cause: no
+  explicit AppUserModelID, so the taskbar/Alt+Tab identity defaulted to the host process. Fix (no
+  compiled binary): a stable in-process AUMID (`GIOK.ExecutiveOS`) + console-hide in `dashboard.ps1`, a
+  multi-size `giok.ico` from the official logo, and `Install-GiokShortcuts.ps1` for branded Desktop +
+  Start Menu shortcuts on the existing silent `.vbs` launcher. Window titled "GIOK", clean shutdown, no
+  business-logic change. See `Blueprint/Desktop_App_Identity.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
