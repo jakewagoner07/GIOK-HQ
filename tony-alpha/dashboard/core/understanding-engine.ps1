@@ -16,8 +16,14 @@
 # (the conversation already owns the original responses) - no new store.
 #
 # Extraction is LOCAL and deterministic so onboarding never depends on a network
-# call or an API key. When the Claude provider is configured it may ENRICH the
-# result (advisory only, never on the UI thread, always falls back to local).
+# call or an API key. There is NO Claude involvement in this file today -
+# meta.engine is always 'local' and always true. (An earlier enrichment stub was
+# removed because it misreported provenance; see the note above the transaction.)
+#
+# Conflicts: a clause that collides with a stated boundary is STILL extracted -
+# it carries a clarification flag and Tony asks about the tension. A detected
+# conflict never deletes what the user said; a false positive must only ever
+# cost a redundant question, never the user's goal.
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -57,10 +63,15 @@ $script:UEHedge = @(
 # must never survive into a value, goal, priority, boundary or summary. Stripped from
 # anywhere in a clause; a clause that is nothing but markers is dropped entirely.
 # (This is what let "honestly" and "which I've been ignoring" become core values.)
+# NOTE: 'right', 'well', 'look' and 'listen' were removed from this list after the
+# CTO review caught them CORRUPTING phrases mid-clause: \bright\b turned "important
+# right now" into "important now", and \bwell\b would eat the 'well' in "as well".
+# Mid-clause stripping is only safe for words that never carry meaning; sentence
+# lead-ins like "Well," are handled by the ^well filler pattern instead.
 $script:UEDiscourse = @(
     'to be honest','at the end of the day','you know','i mean','you see','kind of','sort of',
     'honestly','actually','basically','really','literally','obviously','frankly','seriously',
-    'anyway','right','well','look','listen','okay','ok','um','uh','yeah','like i said','i suppose'
+    'anyway','okay','ok','um','uh','yeah','like i said','i suppose','oh gosh','gosh','lol','lmao','haha'
 )
 # Fragments that carry no standalone meaning - relative/trailing clauses a sentence
 # splitter can strand ("...my health, which I've been ignoring").
@@ -75,7 +86,11 @@ $script:UEQualifierOnly = @(
     'period','non-negotiable','nonnegotiable','non negotiable','no exceptions','full stop',
     'not sure','not sure really','no idea','idk','i do not know','i dont know',"i don't know",
     'none','nothing','n/a','na','tbd','no','yes','maybe','dunno','not really','who knows',
-    'mostly','in that order','i know','that is','of course','for sure','stuff','things','etc'
+    'mostly','in that order','i know','that is','of course','for sure','stuff','things','etc',
+    'every day','everyday','every single day','oh','oh gosh','oh boy','oh man','lol','lmao','haha',
+    "that's my time",'thats my time',"that's it",'thats it','nothing comes to mind',
+    'nothing really','nothing i can think of','cant think of anything',"can't think of anything",
+    'you tell me','whatever','same as always','the usual'
 )
 # Concept map for SEMANTIC conflict detection. Word overlap alone only caught
 # near-identical wording; mapping surface words onto concepts lets "Never schedule
@@ -140,8 +155,9 @@ function ConvertTo-UECleanClause {
     $t = ($t -replace '\s{2,}', ' ').Trim().Trim(',', ';', '-', ' ')
 
     $fillers = @(
-        "^i'd really like to\s+", "^i'd like to\s+", '^i would like to\s+', '^i want to\s+', '^i wanna\s+',
+        "^i'd really like to\s+", "^i'd like to\s+", '^i would like to\s+', '^i would love to\s+', '^i want to\s+', '^i wanna\s+',
         '^my biggest goal is to\s+', '^my biggest goal is\s+', '^my goal is to\s+', '^my goal is\s+',
+        '^the real goal is to\s+', '^the real goal is\s+', '^the goal is to\s+', '^the goal is\s+',
         '^i need to\s+', "^i'm trying to\s+", '^i am trying to\s+', '^i hope to\s+', '^i plan to\s+',
         '^i have to\s+', '^i must\s+', '^trying to\s+', '^hoping to\s+', '^probably\s+',
         '^just\s+', '^to\s+', '^and\s+', '^but\s+', '^also\s+', '^then\s+', '^so\s+', '^well\s+'
@@ -187,6 +203,26 @@ function Split-UnderstandingSentences {
     return @($parts | ForEach-Object { $_.Replace('<UEDOT>', '.') })
 }
 
+# A user who changes their mind mid-answer means the FINAL statement, not the
+# retracted one. "I was going to say double sales but actually the real goal is to
+# stop missing bedtime" must never produce a "double sales" goal - extracting a
+# rescinded intent is fabricated understanding. Applied to the whole answer BEFORE
+# any splitting, so every consumer sees only what the user still means.
+function Remove-UERetractions {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $Text }
+    $t = $Text
+    # "I was going to say X but (actually) Y" -> Y
+    $t = [regex]::Replace($t, "(?i)\bi was going to say\b[^.!?]*?\b(?:but|however)\b\s*(?:actually\s*)?", '')
+    # "I thought X but now (it's) Y" / "I used to think X, now Y" -> Y
+    $t = [regex]::Replace($t, "(?i)\bi (?:thought|used to think)\b[^.!?]*?\b(?:but now|now)\b\s*(?:it'?s\s*)?", '')
+    # "X. (Actually) scratch that, Y" -> Y   (drops the retracted clause AND the phrase)
+    $t = [regex]::Replace($t, "(?i)[^.!?]*\bscratch that\b[,.]?\s*", '')
+    # "X, I mean Y" -> Y   (a short head corrected on the spot: "Work, I mean family")
+    $t = [regex]::Replace($t, "(?i)(^|[.!?]\s+)[^.!?,]{1,40},\s*i mean,?\s+", '$1')
+    return $t
+}
+
 # Split on " and " recursively so a run-on list yields every item, not just the
 # first two ("get to 500 policies and hire an assistant and take a vacation").
 # -Always is for noun lists (life areas): "family and business and health" is three
@@ -212,13 +248,19 @@ function Split-UEAnd {
 function Split-UnderstandingClauses {
     param([string]$Text, [switch]$SplitAnd)
     if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $Text = Remove-UERetractions $Text
+    # The comma in "$50,000" is a thousands separator, not a clause boundary.
+    # Unmasked, "Save $50,000 for a house" split into the goal "Save $50" plus the
+    # orphan "000 for a house" - corrupted financial data. Masked before the comma
+    # split, restored on each clause.
+    $Text = [regex]::Replace($Text, '(\d),(\d)', '$1<UECOMMA>$2')
     # a spaced dash is punctuation ("the agency - I've got 300 policies"), but a
     # hyphen inside a word is not ("non-negotiable"), hence the required spaces.
     $sep = '(?:\r?\n|,|\s+[-–—]\s+|\bthen\b|\balso\b|\bplus\b|\bas well as\b|\bbut\b|\bhowever\b|\balthough\b|\bthough\b|\bexcept\b|\bwhereas\b|\byet\b|\bwhile\b)'
     $out = @()
     foreach ($sentence in (Split-UnderstandingSentences $Text)) {
         foreach ($p in @($sentence -split $sep | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
-            foreach ($a in (Split-UEAnd -Text $p -Always ([bool]$SplitAnd))) { $out += $a.Trim() }
+            foreach ($a in (Split-UEAnd -Text $p -Always ([bool]$SplitAnd))) { $out += $a.Trim().Replace('<UECOMMA>', ',') }
         }
     }
     $res = @()
@@ -257,7 +299,11 @@ function New-UnderstandingItem {
         [string]$Reason, [double]$Confidence, [string]$Clarify = ''
     )
     $conf = [math]::Max(0.0, [math]::Min(1.0, $Confidence))
-    $band = if ($Clarify) { 'moderate' } elseif ($conf -ge $script:UnderstandingThreshold) { 'high' } else { 'low' }
+    # A clarification no longer changes the band: a conflicted item is KEPT and
+    # flagged, so a conflict costs a question, never the user's goal. (Previously
+    # clarify forced band 'moderate', which excluded the item from the model - a
+    # false-positive conflict silently deleted what the user actually said.)
+    $band = if ($conf -ge $script:UnderstandingThreshold) { 'high' } else { 'low' }
     return [pscustomobject]@{
         id               = ('U-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
         text             = $Text
@@ -306,14 +352,25 @@ function Get-UEProhibitions {
     return @($out)
 }
 
-# Conflict when EITHER:
-#   A. a negated boundary shares a concept with a clause that asserts doing it, or
-#   B. a positive commitment shares a TIME concept with a clause that wants to spend
-#      effort in that same time ("Sunday dinner" vs "work Sundays").
-# Rule B deliberately requires an effort verb: "protect Sunday dinner with family"
-# must NOT collide with "spend more time with family" - those AGREE. Sharing a
-# concept is not the same as contradicting it.
-$script:UETimeConcepts = @('WEEKEND', 'EVENING', 'MORNING', 'VACATION')
+# Precision-first conflict rules. The first version fired on ANY shared concept
+# with a negated boundary, which produced false positives that looked mechanical
+# ("Call my parents" vs "Never contact my clients" - parents are not clients) and
+# in one case cruel ("My son has autism" vs "Never share anything about my son").
+# Concepts are therefore CLASSIFIED, and the prohibited OBJECT must match too:
+#   ACTION  (CONTACT)                    - what the boundary forbids doing
+#   OBJECT  (CLIENT)                     - who it forbids doing it to
+#   TIME    (WEEKEND/EVENING/MORNING/VACATION) - when it protects
+#   context (FAMILY/GYM/...)             - NEVER sufficient to fire on their own
+# Rule A (negated boundary): the clause must share the boundary's ACTION, and if
+#   the boundary names an OBJECT, the clause must share that object as well.
+#   A boundary with neither action nor time ("Never share anything about my son")
+#   never fires - we cannot establish the clause performs the prohibited act.
+# Rule B (positive commitment / time-only boundary): shared TIME concept AND an
+#   effort verb - "Sunday dinner" vs "work weekends" collides; "protect Sunday
+#   dinner with family" vs "spend more time with family" AGREES and must not.
+$script:UETimeConcepts   = @('WEEKEND', 'EVENING', 'MORNING', 'VACATION')
+$script:UEActionConcepts = @('CONTACT')
+$script:UEObjectConcepts = @('CLIENT')
 function Test-UEClauseConflict {
     param([string]$Clause, $Prohibitions)
     $cc = Get-UEConceptSet $Clause
@@ -321,8 +378,18 @@ function Test-UEClauseConflict {
     foreach ($p in @($Prohibitions)) {
         $shared = @($cc | Where-Object { $p.concepts -contains $_ })
         if ($shared.Count -eq 0) { continue }
-        if ($p.negated) { return $p }                                   # rule A
         $timeShared = @($shared | Where-Object { $script:UETimeConcepts -contains $_ })
+        if ($p.negated) {
+            $bAction = @($p.concepts | Where-Object { $script:UEActionConcepts -contains $_ })
+            $bObject = @($p.concepts | Where-Object { $script:UEObjectConcepts -contains $_ })
+            if ($bAction.Count -gt 0) {
+                $actionShared = @($shared | Where-Object { $bAction -contains $_ }).Count -gt 0
+                $objectOk = ($bObject.Count -eq 0) -or (@($shared | Where-Object { $bObject -contains $_ }).Count -gt 0)
+                if ($actionShared -and $objectOk) { return $p }          # rule A
+            }
+            elseif ($timeShared.Count -gt 0 -and (Test-UEHasEffort $Clause)) { return $p }   # time-only boundary
+            continue
+        }
         if ($timeShared.Count -gt 0 -and (Test-UEHasEffort $Clause)) { return $p }   # rule B
     }
     return $null
@@ -334,7 +401,7 @@ function Test-UEClauseConflict {
 function Get-UEItemsFromAnswer {
     param(
         $State, [string]$QuestionId, [string]$ReasonTemplate, [double]$BaseConfidence,
-        $Prohibitions, [switch]$RequireVerb, [switch]$NounPhrase
+        $Prohibitions, [switch]$NounPhrase
     )
     $answer = Get-ConversationAnswer $State $QuestionId
     if ([string]::IsNullOrWhiteSpace($answer)) { return @() }
@@ -354,12 +421,7 @@ function Get-UEItemsFromAnswer {
             # hedging is judged on the RAW clause: several hedges ("kind of") are also
             # discourse markers and would be gone from the cleaned text.
             if (Test-UEHedged $c.raw) { $conf = $conf - 0.25 }
-            if ($RequireVerb -and -not (Test-UEHasVerb $clause)) { $conf = $conf - 0.2 }
             if ($clause -match '\d') { $conf = $conf + 0.05 }                        # a number = concrete
-            # A bare word is a weak GOAL ("health" is not a goal), but it is a
-            # perfectly complete AREA - "Family" is the whole answer. So this only
-            # demotes categories that require an intention.
-            if ($RequireVerb -and (Get-UEWords $clause).Count -le 1) { $conf = $conf - 0.15 }
             # An AREA is a noun phrase ("My family", "The agency"). A first-person
             # sentence in that answer is commentary ABOUT an area, not the area
             # itself - "I've got 300 policies and I want more" is not a life area.
@@ -424,7 +486,7 @@ function Get-UEValues {
     foreach ($step in @(Get-ConversationSteps | Where-Object { $_.type -eq 'question' })) {
         $ans = Get-ConversationAnswer $State $step.id
         if ([string]::IsNullOrWhiteSpace($ans)) { continue }
-        $sentences = @(Split-UnderstandingSentences $ans)
+        $sentences = @(Split-UnderstandingSentences (Remove-UERetractions $ans))
         for ($i = 0; $i -lt $sentences.Count; $i++) {
             $s = $sentences[$i]
             foreach ($m in $script:UEValueMarkers) {
@@ -489,10 +551,12 @@ function Get-UESlimItems {
 function Get-UEAnswerConflicts {
     param($State, $Prohibitions)
     $out = @()
-    foreach ($qid in @('q_goal', 'q_areas', 'q_week', 'q_challenge')) {
+    # intent-bearing answers ONLY - descriptive answers (areas/challenges) are
+    # never compared against boundaries (see the note in New-UnderstandingModel).
+    foreach ($qid in @('q_goal', 'q_week')) {
         $ans = Get-ConversationAnswer $State $qid
         if ([string]::IsNullOrWhiteSpace($ans)) { continue }
-        foreach ($s in (Split-UnderstandingSentences $ans)) {
+        foreach ($s in (Split-UnderstandingSentences (Remove-UERetractions $ans))) {
             $hit = Test-UEClauseConflict -Clause $s -Prohibitions $Prohibitions
             if (-not $hit) { continue }
             $said = ConvertTo-UECleanClause $s
@@ -515,11 +579,18 @@ function New-UnderstandingModel {
     if (-not $State) { $State = Get-ConversationState }
     $pro = Get-UEProhibitions -State $State
 
-    $goals      = Get-UEItemsFromAnswer -State $State -QuestionId 'q_goal'       -Prohibitions $pro -RequireVerb -BaseConfidence 0.8  -ReasonTemplate 'You named this as a goal for the next 6-12 months.'
-    $priorities = @(Get-UEItemsFromAnswer -State $State -QuestionId 'q_areas'    -Prohibitions $pro -NounPhrase -BaseConfidence 0.8  -ReasonTemplate 'You listed this among the most important areas of your life right now.')
+    # Conflict scanning applies ONLY to intent-bearing answers (q_goal, q_week).
+    # Areas and challenges are DESCRIPTIVE - "My son has autism" describes a life,
+    # it does not propose an action - so they are never compared against boundaries.
+    # q_goal does NOT use -RequireVerb: the user was explicitly asked for a goal, so
+    # the answer IS a goal unless there is strong evidence otherwise (hedging). Verb
+    # whitelists were dropping crisp goals like "Make partner" ('make' was even a
+    # stopword) and "Teach my daughter to ride a bike".
+    $goals      = Get-UEItemsFromAnswer -State $State -QuestionId 'q_goal'       -Prohibitions $pro -BaseConfidence 0.8  -ReasonTemplate 'You named this as a goal for the next 6-12 months.'
+    $priorities = @(Get-UEItemsFromAnswer -State $State -QuestionId 'q_areas'    -Prohibitions @() -NounPhrase -BaseConfidence 0.8  -ReasonTemplate 'You listed this among the most important areas of your life right now.')
     $priorities += @(Get-UEItemsFromAnswer -State $State -QuestionId 'q_week'    -Prohibitions $pro -BaseConfidence 0.72 -ReasonTemplate 'You described this as part of a successful week.')
     $values     = Get-UEValues -State $State
-    $challenges = Get-UEItemsFromAnswer -State $State -QuestionId 'q_challenge'  -Prohibitions $pro -BaseConfidence 0.8  -ReasonTemplate 'You named this as what is getting in your way.'
+    $challenges = Get-UEItemsFromAnswer -State $State -QuestionId 'q_challenge'  -Prohibitions @() -BaseConfidence 0.8  -ReasonTemplate 'You named this as what is getting in your way.'
     $boundaries = @(Get-UEItemsFromAnswer -State $State -QuestionId 'q_boundaries' -Prohibitions @() -BaseConfidence 0.85 -ReasonTemplate 'You asked me never to assume or act on this without checking first.')
     $boundaries += @(Get-UEItemsFromAnswer -State $State -QuestionId 'q_protect' -Prohibitions @() -BaseConfidence 0.8  -ReasonTemplate 'You asked me to protect this commitment.')
     $strengths  = Get-UEStrengths -State $State
@@ -538,7 +609,17 @@ function New-UnderstandingModel {
     }
 
     $all = @(@($goals) + @($values) + @($priorities) + @($challenges) + @($strengths) + @($boundaries))
-    $keep = { param($x) @($x | Where-Object { $_.band -eq 'high' }) }
+    # keep = high band only, deduplicated within the section ("Work, I mean family.
+    # Family first, then work." must not list Work twice). First occurrence wins -
+    # q_areas items precede q_week items, so the direct answer outranks the echo.
+    $keep = {
+        param($x)
+        $seen = @{}
+        @($x | Where-Object { $_.band -eq 'high' } | Where-Object {
+            $k = ($_.text.ToLower() -replace "[^a-z0-9\s']", ' ' -replace '\s+', ' ').Trim()
+            if ($seen.ContainsKey($k)) { $false } else { $seen[$k] = $true; $true }
+        })
+    }
 
     $model = [pscustomobject]@{
         meta = [pscustomobject]@{
@@ -561,13 +642,14 @@ function New-UnderstandingModel {
         omitted          = @(@($all | Where-Object { $_.band -eq 'low' }) | ForEach-Object {
                                 [pscustomobject]@{ text = $_.text; reason = 'Not clearly enough stated for me to assume it.'; confidence = $_.confidence; sourceQuestionId = $_.sourceQuestionId } })
     }
-    # Clarifications come from two passes: items we refused to assume (moderate band)
-    # and conflicts found in sentences that never became items. The two passes phrase
-    # the question differently, so they must be deduped by the CONFLICTING CLAUSE -
-    # keying on the question text let the same conflict be asked twice.
+    # Clarifications come from two passes: extracted items carrying a conflict flag
+    # (the item itself is KEPT - the flag only asks the question) and conflicts found
+    # in sentences that never became items. The two passes phrase the question
+    # differently, so they must be deduped by the CONFLICTING CLAUSE - keying on the
+    # question text let the same conflict be asked twice.
     $clar = @()
     $seenC = @{}
-    foreach ($c in @(@($all | Where-Object { $_.band -eq 'moderate' }) | ForEach-Object {
+    foreach ($c in @(@($all | Where-Object { $_.clarify }) | ForEach-Object {
                 [pscustomobject]@{ question = $_.clarify; sourceQuestionId = $_.sourceQuestionId; text = $_.text } })) {
         $k = ($c.text -as [string]).ToLower()
         if ($c.question -and -not $seenC.ContainsKey($k)) { $seenC[$k] = $true; $clar += $c }
