@@ -107,21 +107,46 @@ if ($Screenshot) {
 
 # ---- native Windows app identity (interactive launches only; -Screenshot returned above) ----
 # A stable AppUserModelID makes Windows group the taskbar / Alt+Tab entry under GIOK
-# instead of the PowerShell host process. Hiding the host console keeps direct / .bat
-# launches from flashing a terminal (the silent .vbs launcher already prevents this on
-# the normal path). Best-effort: if the P/Invoke is unavailable the app still runs.
+# instead of the PowerShell host process.
+#
+# Console handling: the production launcher (launch-tony.vbs) already starts PowerShell with
+# -WindowStyle Hidden, so no console is ever shown on the normal path. This is a defensive
+# backstop for launches that would otherwise strand a console on screen, and it must never
+# take away a console the user owns. A console belongs exclusively to GIOK only when BOTH:
+#   (a) this process is its sole client (GetConsoleProcessList == 1) - so no parent shell
+#       is sharing it, and
+#   (b) this process exists purely to run dashboard.ps1 (the script is on our own command
+#       line) - so it is not an interactive shell the user typed .\dashboard.ps1 into.
+# Which gives:
+#   * launch-tony.vbs -> sole owner + started for GIOK -> stays hidden (silent).
+#   * a stray "powershell -File dashboard.ps1" (fresh visible console) -> hidden, no flash.
+#   * launch-tony.bat -> console shared with cmd.exe (count >= 2) -> left VISIBLE for debugging.
+#   * .\dashboard.ps1 typed into an existing terminal -> dashboard.ps1 is not on that shell's
+#     command line -> left VISIBLE, so the user never loses their own terminal.
+# Best-effort: if the P/Invoke is unavailable the app still runs.
 try {
     Add-Type -Namespace GIOK -Name Shell -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode, PreserveSig=false)]
 public static extern void SetCurrentProcessExplicitAppUserModelID(string AppID);
 [System.Runtime.InteropServices.DllImport("kernel32.dll")]
 public static extern System.IntPtr GetConsoleWindow();
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError=true)]
+public static extern uint GetConsoleProcessList(uint[] lpdwProcessList, uint dwProcessCount);
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
 '@
     [GIOK.Shell]::SetCurrentProcessExplicitAppUserModelID('GIOK.ExecutiveOS')
+
     $consoleWnd = [GIOK.Shell]::GetConsoleWindow()
-    if ($consoleWnd -ne [System.IntPtr]::Zero) { [void][GIOK.Shell]::ShowWindow($consoleWnd, 0) }  # 0 = SW_HIDE
+    if ($consoleWnd -ne [System.IntPtr]::Zero) {
+        $attached = New-Object 'uint32[]' 4
+        $soleClient = ([GIOK.Shell]::GetConsoleProcessList($attached, 4) -eq 1)
+        $startedForGiok = @([Environment]::GetCommandLineArgs() |
+            Where-Object { $_ -like '*dashboard.ps1*' }).Count -gt 0
+        if ($soleClient -and $startedForGiok) {
+            [void][GIOK.Shell]::ShowWindow($consoleWnd, 0)  # 0 = SW_HIDE
+        }
+    }
 }
 catch { }
 
