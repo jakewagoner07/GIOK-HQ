@@ -17,7 +17,13 @@ $ErrorActionPreference = 'Stop'
 
 # module state (which goal is being edited inline, and the active filter)
 $script:GoalEditId = $null
-$script:GoalShowDone = $false
+$script:GoalShowDone = $false      # legacy; superseded by GoalFilterStatus (Epic 11)
+# Epic 11 - Goals workspace state. The add form is closed by default so the page
+# opens on the user's goals, not on a blank form.
+$script:GoalAdding = $false        # is the "+ Add Goal" form open?
+$script:GoalDeleteId = $null       # goal awaiting delete confirmation
+$script:GoalFilterDomain = 'all'   # 'all' | a Get-GoalDomains value
+$script:GoalFilterStatus = 'all'   # 'all' | a Get-GoalStatuses value
 
 # Re-render the active life view in place (mirrors Refresh-ActionItems).
 function Show-LifeView { param([scriptblock]$Builder) if ($script:TonyBody) { $script:TonyBody.Child = (& $Builder) } }
@@ -569,14 +575,79 @@ function New-InboxEditor {
 # ---- Goals workspace -------------------------------------------------
 # The ONE goal store (identity/goals.json), full CRUD. Domain-tagged goals
 # feed the Executive Context and the Priority Engine unchanged.
+# One filter chip row: "All" + each option. The selected chip is solid accent.
+# $Current is the live value, $Setter takes the clicked value and re-renders.
+function New-GoalFilterRow {
+    param([string]$Label, [string[]]$Options, [string]$Current, [scriptblock]$Setter)
+    $row = New-Object Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 4)
+    $row.Children.Add((New-Text -Text $Label -Size 11 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 5, 8, 0)))) | Out-Null
+    foreach ($o in (@('all') + $Options)) {
+        $on = ($Current -eq $o)
+        $b = New-MiniButton -Text $(if ($o -eq 'all') { 'All' } else { $o }) `
+            -Bg $(if ($on) { $script:Col.Accent } else { $script:Col.AccentSoft }) `
+            -Fg $(if ($on) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) `
+            -Tag $o -OnClick $Setter
+        $row.Children.Add($b) | Out-Null
+    }
+    return $row
+}
+
 function New-GoalsView {
     $outer = New-Object Windows.Controls.DockPanel
-    $head = New-LifeHeader -Title 'Goals' -Source 'identity/goals.json' -Intro 'The goals you are actually working toward. Each one carries why it matters, a next step, and progress - Tony and the Priority Engine see your active goals.'
-    [Windows.Controls.DockPanel]::SetDock($head, 'Top'); $outer.Children.Add($head) | Out-Null
+
+    # ---- header row: title + "+ Add Goal" (the form is NOT built until asked for) ----
+    $headDock = New-Object Windows.Controls.DockPanel; $headDock.Margin = New-Object Windows.Thickness (4, 0, 12, 0)
+    $addBtn = New-MiniButton -Text $(if ($script:GoalAdding) { 'Close' } else { '+ Add Goal' }) `
+        -Bg $(if ($script:GoalAdding) { $script:Col.AccentSoft } else { $script:Col.Accent }) `
+        -Fg $(if ($script:GoalAdding) { $script:Col.AccentInk } else { $script:Col.OnPrimary }) `
+        -OnClick { param($s, $e) $script:GoalAdding = -not $script:GoalAdding; Show-LifeView { New-GoalsView } }
+    $addBtn.VerticalAlignment = 'Top'; $addBtn.Margin = New-Object Windows.Thickness (12, 6, 0, 0)
+    [Windows.Controls.DockPanel]::SetDock($addBtn, 'Right'); $headDock.Children.Add($addBtn) | Out-Null
+    $headDock.Children.Add((New-LifeHeader -Title 'Goals' -Source 'identity/goals.json' -Intro 'The goals you are actually working toward. Each one carries why it matters, a next step, and progress - Tony and the Priority Engine see your active goals.')) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($headDock, 'Top'); $outer.Children.Add($headDock) | Out-Null
 
     $scrollBody = New-Object Windows.Controls.StackPanel; $scrollBody.Margin = New-Object Windows.Thickness (4, 0, 12, 8)
 
-    # --- add-a-goal card ---
+    # ---- add-a-goal form: only after "+ Add Goal". Cancel closes it and changes nothing. ----
+    if ($script:GoalAdding) { $scrollBody.Children.Add((New-GoalAddForm)) | Out-Null }
+
+    # ---- filters: domain + status (the old view had one binary active/done toggle) ----
+    $goals = @(Get-GoalsList)
+    if (-not $script:GoalFilterDomain) { $script:GoalFilterDomain = 'all' }
+    if (-not $script:GoalFilterStatus) { $script:GoalFilterStatus = 'all' }
+    $filters = New-Object Windows.Controls.StackPanel; $filters.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $filters.Children.Add((New-GoalFilterRow -Label 'DOMAIN' -Options (Get-GoalDomains) -Current $script:GoalFilterDomain `
+        -Setter { param($s, $e) $script:GoalFilterDomain = [string]$s.Tag; Show-LifeView { New-GoalsView } })) | Out-Null
+    $filters.Children.Add((New-GoalFilterRow -Label 'STATUS' -Options (Get-GoalStatuses) -Current $script:GoalFilterStatus `
+        -Setter { param($s, $e) $script:GoalFilterStatus = [string]$s.Tag; Show-LifeView { New-GoalsView } })) | Out-Null
+    $scrollBody.Children.Add($filters) | Out-Null
+
+    $shown = @($goals)
+    if ($script:GoalFilterDomain -ne 'all') { $shown = @($shown | Where-Object { $_.domain -eq $script:GoalFilterDomain }) }
+    if ($script:GoalFilterStatus -ne 'all') { $shown = @($shown | Where-Object { $_.status -eq $script:GoalFilterStatus }) }
+    # default (no status filter): active work first, finished/archived after - never hidden
+    else { $shown = @(@($shown | Where-Object { $_.status -in @('active', 'paused') }) + @($shown | Where-Object { $_.status -in @('done', 'archived') })) }
+
+    $scrollBody.Children.Add((New-Text -Text ("Showing {0} of {1} goal{2}" -f @($shown).Count, $goals.Count, $(if ($goals.Count -eq 1) { '' } else { 's' })) -Size 11.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
+
+    # ---- the user's goals: FIRST-CLASS content, above everything except the filters ----
+    if (@($shown).Count -eq 0) {
+        $empty = if ($goals.Count -eq 0) { 'No goals yet. Use "+ Add Goal" above - even one clear goal helps Tony focus your day.' }
+                 else { 'No goals match these filters. Try "All".' }
+        $scrollBody.Children.Add((New-Text -Text $empty -Size 13 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (6, 6, 0, 0)))) | Out-Null
+    }
+    else {
+        foreach ($g in $shown) { $scrollBody.Children.Add((New-GoalCard -Goal $g)) | Out-Null }
+    }
+
+    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $scrollBody
+    $outer.Children.Add($scroll) | Out-Null
+    return $outer
+}
+
+# The add form - built only when $script:GoalAdding. Cancel simply closes it:
+# nothing is written, so an abandoned form can never change data.
+function New-GoalAddForm {
     $addStack = New-Object Windows.Controls.StackPanel
     $titleBox = New-LifeInput
     $domainBox = New-LifeCombo -Options (Get-GoalDomains) -Selected 'personal' -Width 200
@@ -590,43 +661,22 @@ function New-GoalsView {
     $addStack.Children.Add((New-LifeFieldLabel 'Next step')) | Out-Null; $addStack.Children.Add($nextBox) | Out-Null
     $errText = New-Text -Text '' -Size 12 -Color '#9B1C1C' -Wrap $true
     $addStack.Children.Add($errText) | Out-Null
-    $saveBtn = New-MiniButton -Text '+ Add goal' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick {
+    $row = New-Object Windows.Controls.StackPanel; $row.Orientation = 'Horizontal'; $row.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
+    $row.Children.Add((New-MiniButton -Text 'Save goal' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick {
         param($s, $e)
         $t = $titleBox.Text
         if ([string]::IsNullOrWhiteSpace($t)) { $errText.Text = 'A goal needs a title.'; return }
         $d = [string]$dateBox.Text
         if ($d -and ($d -notmatch '^\d{4}-\d{2}-\d{2}$')) { $errText.Text = 'Target date must look like 2026-12-31 (or leave it blank).'; return }
         [void](Add-Goal -Title $t -Domain ([string]$domainBox.SelectedItem) -Reason ([string]$reasonBox.Text) -TargetDate $d -NextStep ([string]$nextBox.Text))
+        $script:GoalAdding = $false
         Show-LifeView { New-GoalsView }
-    }.GetNewClosure()
-    $saveBtn.HorizontalAlignment = 'Left'; $saveBtn.Margin = New-Object Windows.Thickness (0, 4, 0, 0)
-    $addStack.Children.Add($saveBtn) | Out-Null
-    $scrollBody.Children.Add((New-Card -Title 'Add a goal' -Body $addStack)) | Out-Null
-
-    # --- filter toggle (active vs. done/archived) ---
-    $goals = @(Get-GoalsList)
-    $activeGoals = @($goals | Where-Object { $_.status -in @('active', 'paused') })
-    $doneGoals = @($goals | Where-Object { $_.status -in @('done', 'archived') })
-    $toggle = New-Object Windows.Controls.StackPanel; $toggle.Orientation = 'Horizontal'; $toggle.Margin = New-Object Windows.Thickness (4, 4, 0, 6)
-    $showDone = [bool]$script:GoalShowDone
-    $tgA = New-MiniButton -Text ("Active ({0})" -f $activeGoals.Count) -Bg $(if (-not $showDone) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if (-not $showDone) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e) $script:GoalShowDone = $false; Show-LifeView { New-GoalsView } }
-    $tgA.Margin = New-Object Windows.Thickness (0, 0, 0, 0)
-    $tgD = New-MiniButton -Text ("Done / Archived ({0})" -f $doneGoals.Count) -Bg $(if ($showDone) { $script:Col.Accent } else { $script:Col.AccentSoft }) -Fg $(if ($showDone) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) -OnClick { param($s, $e) $script:GoalShowDone = $true; Show-LifeView { New-GoalsView } }
-    $toggle.Children.Add($tgA) | Out-Null; $toggle.Children.Add($tgD) | Out-Null
-    $scrollBody.Children.Add($toggle) | Out-Null
-
-    $shown = if ($showDone) { $doneGoals } else { $activeGoals }
-    if ($shown.Count -eq 0) {
-        $empty = if ($showDone) { 'Nothing here yet - completed and archived goals will collect here.' } else { 'No active goals yet. Add your first above - even one clear goal helps Tony focus your day.' }
-        $scrollBody.Children.Add((New-Text -Text $empty -Size 13 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (6, 6, 0, 0)))) | Out-Null
-    }
-    else {
-        foreach ($g in $shown) { $scrollBody.Children.Add((New-GoalCard -Goal $g)) | Out-Null }
-    }
-
-    $scroll = New-Object Windows.Controls.ScrollViewer; $scroll.VerticalScrollBarVisibility = 'Auto'; $scroll.HorizontalScrollBarVisibility = 'Disabled'; $scroll.Content = $scrollBody
-    $outer.Children.Add($scroll) | Out-Null
-    return $outer
+    }.GetNewClosure())) | Out-Null
+    $row.Children.Add((New-MiniButton -Text 'Cancel' -Bg '#E5E7EB' -Fg '#374151' -OnClick {
+        param($s, $e) $script:GoalAdding = $false; Show-LifeView { New-GoalsView }
+    })) | Out-Null
+    $addStack.Children.Add($row) | Out-Null
+    return (New-Card -Title 'Add a goal' -Body $addStack)
 }
 
 # One goal - either read view (with actions) or inline editor.
@@ -669,8 +719,27 @@ function New-GoalCard {
     elseif ($Goal.status -eq 'paused') { $actions.Children.Add((New-MiniButton -Text 'Resume' -Bg '#DEF7EC' -Fg '#03543F' -OnClick { param($s, $e) [void](Set-GoalStatus -Id $gid -Status 'active'); Show-LifeView { New-GoalsView } }.GetNewClosure())) | Out-Null }
     if ($Goal.status -ne 'archived') { $actions.Children.Add((New-MiniButton -Text 'Archive' -Bg '#E5E7EB' -Fg '#374151' -OnClick { param($s, $e) [void](Archive-Goal -Id $gid); Show-LifeView { New-GoalsView } }.GetNewClosure())) | Out-Null }
     else { $actions.Children.Add((New-MiniButton -Text 'Restore' -Bg '#DEF7EC' -Fg '#03543F' -OnClick { param($s, $e) [void](Restore-Goal -Id $gid); Show-LifeView { New-GoalsView } }.GetNewClosure())) | Out-Null }
-    $actions.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) [void](Remove-Goal -Id $gid); Show-LifeView { New-GoalsView } }.GetNewClosure())) | Out-Null
+    # Delete is irreversible, so it now asks first. Previously one click called
+    # Remove-Goal outright - a mis-click silently destroyed a goal.
+    $actions.Children.Add((New-MiniButton -Text 'Delete' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick { param($s, $e) $script:GoalDeleteId = $gid; Show-LifeView { New-GoalsView } }.GetNewClosure())) | Out-Null
     $body.Children.Add($actions) | Out-Null
+
+    if ($script:GoalDeleteId -eq $Goal.id) {
+        $confirm = New-Object Windows.Controls.Border
+        $confirm.Background = New-Brush '#FDE2E1'; $confirm.CornerRadius = New-Object Windows.CornerRadius 8
+        $confirm.Padding = New-Object Windows.Thickness (10, 8, 10, 8); $confirm.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+        $cs = New-Object Windows.Controls.StackPanel
+        $cs.Children.Add((New-Text -Text ('Delete "{0}"? This cannot be undone.' -f $Goal.title) -Size 12.5 -Weight 'SemiBold' -Color '#9B1C1C' -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
+        $crow = New-Object Windows.Controls.StackPanel; $crow.Orientation = 'Horizontal'
+        $crow.Children.Add((New-MiniButton -Text 'Yes, delete' -Bg '#9B1C1C' -Fg '#FFFFFF' -OnClick {
+            param($s, $e) [void](Remove-Goal -Id $gid); $script:GoalDeleteId = $null; Show-LifeView { New-GoalsView }
+        }.GetNewClosure())) | Out-Null
+        $crow.Children.Add((New-MiniButton -Text 'Cancel' -Bg '#E5E7EB' -Fg '#374151' -OnClick {
+            param($s, $e) $script:GoalDeleteId = $null; Show-LifeView { New-GoalsView }
+        })) | Out-Null
+        $cs.Children.Add($crow) | Out-Null; $confirm.Child = $cs
+        $body.Children.Add($confirm) | Out-Null
+    }
 
     return (New-Card -Title $Goal.title -Body $body)
 }
