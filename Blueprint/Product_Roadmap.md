@@ -80,6 +80,19 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   multi-size `giok.ico` from the official logo, and `Install-GiokShortcuts.ps1` for branded Desktop +
   Start Menu shortcuts on the existing silent `.vbs` launcher. Window titled "GIOK", clean shutdown, no
   business-logic change. See `Blueprint/Desktop_App_Identity.md`.
+- ✅ **Tony Understanding Engine / Onboarding V2 (Epic 10)** - onboarding stops copying raw answers into
+  Identity. The same 7 questions now feed an Understanding Engine
+  (`core/understanding-engine.ps1`) that organises them into Goals, Values, Priorities, Challenges,
+  Strengths, Boundaries and an Executive Summary - each item carrying its **source question, the user's
+  original words, Tony's reason, and an internal confidence score**. One sentence can become several
+  goals; hedged statements are omitted and asked about later; **conflicts produce a question, never an
+  assumption**; nothing unsupported is invented (Strengths stays empty unless volunteered). Jake reviews
+  everything in a new **"Here's what I understood"** view - interpretation beside his original words,
+  every item editable - and only **"Tony got it right"** commits it, in one **atomic transaction that
+  rolls back completely** if any write fails. Extraction is local/deterministic (no key, no network);
+  Claude only enriches when configured. **No new store** (the pending model lives in the existing
+  conversation file; Priorities/Challenges/Strengths/Boundaries in an `understanding` block inside
+  `overview.json`), no provider or agent changes. See `Blueprint/Tony_Understanding_Engine.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
