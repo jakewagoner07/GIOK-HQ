@@ -93,6 +93,17 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   Claude only enriches when configured. **No new store** (the pending model lives in the existing
   conversation file; Priorities/Challenges/Strengths/Boundaries in an `understanding` block inside
   `overview.json`), no provider or agent changes. See `Blueprint/Tony_Understanding_Engine.md`.
+- ✅ **Personalizable Workspace (Epic 11)** - the user's data comes first, and the layout is theirs.
+  **Goals** no longer opens on a blank form: goals render first, `+ Add Goal` sits on the header and the
+  form appears only on request (Cancel writes nothing), with **domain + status filters** and **Delete
+  behind a confirm** (it used to delete on one click). **Home** renders from a saved layout - **Customize
+  Home** lets you show/hide, reorder, resize (small/medium/large) and reset, across 16 cards. The
+  preferences file stores **only** `{id, visible, order, size}` (gitignored, user-specific): every card
+  reads its **existing owner** live and navigates to that owner's workspace, so **no business data is
+  duplicated** and deleting the file loses nothing. Provider cards **peek** the shared cache and never
+  fetch on paint; hiding everything keeps the briefing; a toggle never restarts the background briefing.
+  Single store for goals, no new tab, no new provider/agent. See
+  `Blueprint/Personalizable_Workspace.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
