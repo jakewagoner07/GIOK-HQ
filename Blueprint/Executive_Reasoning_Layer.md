@@ -93,18 +93,40 @@ Deliberately shaped to match the existing provider object (`name`, `description`
    available. There is no state of the world in which a reasoning task has no answer. Offline, no key,
    provider on fire - GIOK still reasons, exactly as it does today.
 3. **Nothing unvalidated escapes.** Every task declares a validator. A provider result that fails is
-   **discarded** and the floor's result is used (`reasonCode='invalid-output'`). Local results pass the
-   same gate - no privileged path. This is where the anti-hallucination rules live (e.g. for
-   `understanding.extract`: every item must quote the user's real answer verbatim, and every number in
-   the text must exist in the source).
+   **discarded whole** - never partially merged - and the router moves on (`invalid-output`). Local
+   results pass the same gate - no privileged path. The anti-hallucination rules live here; for
+   `understanding.extract` the shipped gate enforces: every item cites a real question and quotes the
+   user's answer **verbatim**; every **number** in an item's text (integers, comma amounts, decimals,
+   percentages, times) appears in the cited answer; the text shares at least one significant token
+   (4-char stem) with the cited answer, so a truthful citation cannot carry an unrelated invention;
+   user-edited items are exempt (their words ARE the ground truth); and a result larger than 200 items
+   is rejected outright - never silently truncated, because a trimmed result pretending to be complete
+   is a quiet lie. **Unmigrated tasks fail closed**: their validators reject unconditionally
+   (`'task not migrated'`), so a provider claiming broad support cannot smuggle junk through a task the
+   kernel cannot yet police - the floor's honest `no-provider` is the only possible answer there.
 4. **No ambient authority.** The layer **cannot write**. It returns proposals. Identity is still written
    only by `Approve-UnderstandingModel` inside `Invoke-IdentityTransaction`; the Inbox is still written
    only by its owner; the approval flow is still the only consent gate. A future model that decides to
    "helpfully" save something *cannot* - there is no path.
+   **The honest limit of this guarantee:** it constrains the *layer and its outputs*, not driver code
+   itself. Drivers are **trusted, in-process PowerShell** - they are not sandboxed, and nothing can stop
+   trusted code in the same process from performing arbitrary OS actions. The kernel prevents unsafe
+   *output* from escaping; it does not (and cannot) confine what a driver's code does while running.
+   Registering a driver is therefore a code-review event, not a configuration event.
+   **Payload isolation:** drivers also never see the caller's object or each other's copies. The kernel
+   snapshots the payload once at entry and hands every dispatch - each accelerator, the validator's
+   grounding source, and the floor - its own fresh clone, so a driver that mutates its copy and then
+   fails cannot poison the fallback, a later validation, another provider, or the caller.
 5. **Bounded.** `constraints.maxMs` is carried on every request and is the caller's contract with the
-   scheduler. This sprint implements the plumbing only (the floor is instant); the deadline is enforced
-   when a provider that can block is introduced - deliberately, because the one real provider we have
-   (`claude-provider.ps1`) has **no HTTP timeout**, so the bound must live on our side of the line.
+   scheduler. **It remains plumbing only - no deadline is enforced today**, and nothing in this design
+   claims otherwise. Enforcement lands in the first blocking-provider sprint (in the kernel's guarded
+   dispatch, not in drivers), deliberately: the one real provider we have (`claude-provider.ps1`) has
+   **no HTTP timeout**, so the bound must live on our side of the line, and the realistic model is
+   *abandonment* (route to the floor at deadline; discard the late result by requestId) rather than true
+   cancellation.
+   Re-entrancy IS bounded today: a driver may call back into the kernel a few levels deep (nested
+   reasoning is a legitimate future pattern), but at depth 8 the kernel answers `reentrancy-limit`
+   instead of overflowing the stack.
 
 ## Routing policy (the scheduler)
 

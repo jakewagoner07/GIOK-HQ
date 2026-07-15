@@ -21,6 +21,40 @@ $ErrorActionPreference = 'Stop'
 # The privilege boundary for each task. These run against EVERY provider's
 # output, including the floor's - no privileged path.
 
+# Numeric tokens in a string, normalized for comparison: integers, comma
+# amounts ($50,000), decimals (7.5), percentages (12.5%), times (7:30).
+# Commas are stripped so '50,000' and '50000' compare equal; currency/percent
+# symbols are not part of the token. Times keep their colon.
+function Get-UEGroundingNumbers {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $out = @()
+    foreach ($m in [regex]::Matches($Text, '\d[\d,]*(?::\d+)?(?:\.\d+)?')) {
+        $out += ($m.Value -replace ',', '')
+    }
+    return @($out | Select-Object -Unique)
+}
+
+# Significant tokens of a clause: words of 3+ chars, minus glue words. Used for
+# the conservative "is this text about the cited answer AT ALL" check - stems are
+# compared by 4-char prefix so 'policies'/'policy' and 'running'/'run' agree.
+$script:UEGroundStop = @('the','and','for','with','that','this','from','into','your','you','are','was','were',
+    'will','would','can','could','have','has','had','not','never','ever','without','about','all','any',
+    'more','most','than','then','them','they','their','our','out','get','got','make','made','want','need')
+function Get-UEGroundingTokens {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $t = ($Text.ToLower() -replace "[^a-z0-9']", ' ')
+    return @($t -split '\s+' | Where-Object { $_.Length -ge 3 -and ($script:UEGroundStop -notcontains $_) } | Select-Object -Unique)
+}
+
+# Cap on total items across all sections of one understanding.extract result.
+# Real interviews yield well under 50; a provider returning more than this is
+# malfunctioning, and the result is REJECTED outright (never silently truncated -
+# a trimmed result pretending to be complete would be a quiet lie).
+$script:UEMaxExtractItems = 200
+function Get-UEMaxExtractItems { return $script:UEMaxExtractItems }
+
 # understanding.extract: the anti-hallucination gate. These are exactly the rules
 # the Claude migration plan requires, and they exist BEFORE any model does, so the
 # gate is not something we bolt on in a hurry the day a provider arrives.
@@ -48,29 +82,69 @@ Register-ReasoningValidator -TaskId 'understanding.extract' -Validator {
         if (-not $state) { return [pscustomobject]@{ valid = $false; reason = 'cannot verify grounding: no source state on the request' } }
         if (-not (Get-Command Get-ConversationAnswer -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ valid = $false; reason = 'cannot verify grounding: no answer reader' } }
     }
+    # size sanity: a provider returning thousands of items is malfunctioning.
+    # Reject the whole result - never truncate-and-pretend.
+    if ($items.Count -gt $script:UEMaxExtractItems) {
+        return [pscustomobject]@{ valid = $false; reason = ("result too large: {0} items (cap {1})" -f $items.Count, $script:UEMaxExtractItems) }
+    }
     foreach ($it in $items) {
         if ([string]::IsNullOrWhiteSpace([string]$it.text)) { return [pscustomobject]@{ valid = $false; reason = 'item with no text' } }
         if ([string]::IsNullOrWhiteSpace([string]$it.sourceQuestionId)) { return [pscustomobject]@{ valid = $false; reason = ("ungrounded item (no source question): {0}" -f $it.text) } }
         if (-not $grounding) { continue }
+        # a user EDIT is their own words by definition - it is not held to the
+        # source (this mirrors Epic 10: an edit bypasses confidence entirely)
+        if (($it.PSObject.Properties.Name -contains 'edited') -and [bool]$it.edited) { continue }
         $real = $null
         try { $real = [string](Get-ConversationAnswer $state ([string]$it.sourceQuestionId)) } catch { $real = $null }
         if ($null -eq $real) { return [pscustomobject]@{ valid = $false; reason = ("cannot verify source for: {0}" -f $it.text) } }
         if (([string]$it.sourceAnswer) -ne $real) {
             return [pscustomobject]@{ valid = $false; reason = ("item cites words the user never said: {0}" -f $it.text) }
         }
+        # TEXT grounding (the subtle-liar gate): a truthful citation does not
+        # license an invented interpretation.
+        # 1. every number in the text must exist in the cited answer - an invented
+        #    "$999,999" cannot ride on a real quote.
+        $srcNums = @(Get-UEGroundingNumbers $real)
+        foreach ($n in @(Get-UEGroundingNumbers ([string]$it.text))) {
+            if ($srcNums -notcontains $n) {
+                return [pscustomobject]@{ valid = $false; reason = ("number '{0}' does not appear in the cited answer: {1}" -f $n, $it.text) }
+            }
+        }
+        # 2. conservative token overlap: at least one significant word of the text
+        #    must appear in the cited answer (4-char stem match, so paraphrase and
+        #    inflection survive). Fails closed only when the interpretation shares
+        #    NOTHING with the answer it claims to come from.
+        $toks = @(Get-UEGroundingTokens ([string]$it.text))
+        if ($toks.Count -gt 0) {
+            $srcLow = $real.ToLower()
+            $anchored = $false
+            foreach ($tok in $toks) {
+                $stem = if ($tok.Length -ge 4) { $tok.Substring(0, 4) } else { $tok }
+                if ($srcLow.Contains($stem)) { $anchored = $true; break }
+            }
+            if (-not $anchored) {
+                return [pscustomobject]@{ valid = $false; reason = ("text shares nothing with the cited answer: {0}" -f $it.text) }
+            }
+        }
     }
     return [pscustomobject]@{ valid = $true; reason = '' }
 }
 
 # The remaining tasks have no engine behind the layer yet (they are still called
-# directly by their owners). A validator that only checks "there is an output"
-# would be theatre, so each fails closed until its task is genuinely migrated -
-# the kernel refuses to route a task it cannot police.
+# directly by their owners), so their validators FAIL CLOSED unconditionally: no
+# result for an unmigrated task is acceptable, from ANY provider, because the
+# kernel has no way to police one. A provider claiming broad support therefore
+# cannot smuggle junk through an unmigrated task - the gate rejects it and the
+# router falls to the floor, whose honest answer for these tasks is 'no-provider'.
+# (The CTO review caught the first version of this failing OPEN - it accepted any
+# non-null output while this very comment claimed otherwise. Code and comment now
+# agree, which is the entire point.)
+# When a task is genuinely migrated, REPLACE its validator with a real one in the
+# same commit that gives the floor its engine - never before.
 foreach ($t in @('goals.refine', 'briefing.compose', 'capture.classify', 'inbox.propose', 'lifeos.reason', 'coaching.advise')) {
     Register-ReasoningValidator -TaskId $t -Validator {
         param($Output, $Request)
-        if (-not $Output) { return [pscustomobject]@{ valid = $false; reason = 'no output' } }
-        return [pscustomobject]@{ valid = $true; reason = '' }
+        return [pscustomobject]@{ valid = $false; reason = 'task not migrated' }
     }
 }
 

@@ -76,7 +76,8 @@ function New-ReasoningRequest {
     }
 }
 
-# reasonCode: ok | no-provider | unavailable | timeout | invalid-output | provider-error | unknown-task
+# reasonCode: ok | no-provider | unavailable | timeout | invalid-output |
+#             provider-error | unknown-task | reentrancy-limit
 function New-ReasoningResult {
     param(
         [Parameter(Mandatory)][string]$TaskId,
@@ -176,6 +177,35 @@ function Resolve-ReasoningProviders {
     return @($c | Sort-Object @{ Expression = { if ($_.PSObject.Properties.Name -contains 'priority') { [int]$_.priority } else { 100 } } }, @{ Expression = 'name' })
 }
 
+# ---- payload isolation ---------------------------------------------------
+# Drivers never see the caller's object, and never see EACH OTHER'S copies.
+# The kernel takes ONE canonical snapshot of the payload at entry, and every
+# dispatch (accelerator, floor, and the validator's grounding source) works from
+# its own fresh clone of that snapshot. A driver that mutates its copy - then
+# fails, throws, or lies - cannot poison the fallback, another provider, a later
+# validation, or the caller. JSON round-trip cloning is deliberate: the payloads
+# this kernel carries are the same JSON-shaped objects GIOK already persists and
+# reloads, so the round trip is shape-preserving by construction.
+function Copy-ReasoningPayload {
+    param($Payload)
+    if ($null -eq $Payload) { return $null }
+    try { return ($Payload | ConvertTo-Json -Depth 24 | ConvertFrom-Json) }
+    catch { return $null }   # an uncloneable payload yields null; validators fail closed on it
+}
+# A per-dispatch request: same envelope, private payload clone.
+function New-IsolatedRequest {
+    param($Request, $CanonicalPayload)
+    return [pscustomobject]@{
+        version     = $Request.version
+        requestId   = $Request.requestId
+        taskId      = $Request.taskId
+        input       = (Copy-ReasoningPayload $CanonicalPayload)
+        context     = $Request.context
+        constraints = $Request.constraints
+        createdAt   = $Request.createdAt
+    }
+}
+
 # ---- guarded dispatch --------------------------------------------------
 # The kernel may not panic. Every driver call goes through here.
 function Invoke-ReasoningProviderGuarded {
@@ -191,6 +221,11 @@ function Invoke-ReasoningProviderGuarded {
 # ---- the router (the scheduler) ----------------------------------------
 # THE entry point. Never throws. Always returns a ReasoningResult whose engine
 # tells the truth about who actually served it.
+# Re-entrancy is bounded: a driver that calls back into the kernel is allowed a
+# few levels (nested reasoning is a legitimate future pattern), but unbounded
+# recursion is cut off with a truthful reasonCode instead of a stack overflow.
+$script:ReasoningDepth = 0
+$script:ReasoningMaxDepth = 8
 function Invoke-Reasoning {
     param([Parameter(Mandatory)] $Request)
     $taskId = [string]$Request.taskId
@@ -198,52 +233,69 @@ function Invoke-Reasoning {
         return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
                 -Engine 'none' -ProviderName 'none' -ReasonCode 'unknown-task')
     }
+    if ($script:ReasoningDepth -ge $script:ReasoningMaxDepth) {
+        return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
+                -Engine 'none' -ProviderName 'none' -ReasonCode 'reentrancy-limit')
+    }
+    $script:ReasoningDepth++
+    try {
 
-    $tried = @(Resolve-ReasoningProviders -TaskId $taskId)
-    foreach ($p in $tried) {
-        $g = Invoke-ReasoningProviderGuarded -Provider $p -Request $Request
-        if (-not $g.result) { continue }
-        $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request $Request
-        if (-not $v.valid) { continue }   # invalid-output: discard, try the next driver
-        # attribution is stamped BY THE KERNEL - a driver cannot forge it
-        $g.result.engine = [string]$p.name
-        $g.result.providerName = [string]$p.name
+        # ONE canonical snapshot of the payload, taken before any driver runs.
+        # Every dispatch below works from a private clone of this - see the
+        # payload-isolation note above.
+        $canonical = Copy-ReasoningPayload $Request.input
+
+        $tried = @(Resolve-ReasoningProviders -TaskId $taskId)
+        foreach ($p in $tried) {
+            $g = Invoke-ReasoningProviderGuarded -Provider $p -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+            if (-not $g.result) { continue }
+            # validation grounds against a FRESH canonical clone - never against the
+            # copy the driver just had its hands on
+            $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+            if (-not $v.valid) { continue }   # invalid-output: discard, try the next driver
+            # attribution is stamped BY THE KERNEL - a driver cannot forge it
+            $g.result.engine = [string]$p.name
+            $g.result.providerName = [string]$p.name
+            $g.result.reasonCode = 'ok'
+            $g.result.degraded = $false
+            return $g.result
+        }
+
+        # the floor: the deterministic engine. It always answers - and it answers
+        # from a clean clone of the canonical payload, untouched by any accelerator.
+        $floor = Get-ReasoningFloor
+        if (-not $floor) {
+            return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
+                    -Engine 'none' -ProviderName 'none' -ReasonCode 'no-provider')
+        }
+        $g = Invoke-ReasoningProviderGuarded -Provider $floor -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+        if (-not $g.result) {
+            return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
+                    -Engine 'local' -ProviderName $floor.name -ReasonCode 'provider-error')
+        }
+        # An honest "I cannot serve this task yet" from the floor is a VALID kernel
+        # answer, not invalid output - pass its own reasonCode through rather than
+        # relabelling it. (A declared-but-unmigrated task must say 'no-provider'.)
+        if (-not $g.result.ok) {
+            $g.result.engine = 'local'; $g.result.providerName = [string]$floor.name
+            $g.result.degraded = ($tried.Count -gt 0)
+            return $g.result
+        }
+        $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+        if (-not $v.valid) {
+            # the floor itself failed its own gate: report honestly rather than pass junk on
+            return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
+                    -Engine 'local' -ProviderName $floor.name -ReasonCode 'invalid-output')
+        }
+        $g.result.engine = 'local'
+        $g.result.providerName = [string]$floor.name
         $g.result.reasonCode = 'ok'
-        $g.result.degraded = $false
-        return $g.result
-    }
-
-    # the floor: the deterministic engine. It always answers.
-    $floor = Get-ReasoningFloor
-    if (-not $floor) {
-        return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
-                -Engine 'none' -ProviderName 'none' -ReasonCode 'no-provider')
-    }
-    $g = Invoke-ReasoningProviderGuarded -Provider $floor -Request $Request
-    if (-not $g.result) {
-        return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
-                -Engine 'local' -ProviderName $floor.name -ReasonCode 'provider-error')
-    }
-    # An honest "I cannot serve this task yet" from the floor is a VALID kernel
-    # answer, not invalid output - pass its own reasonCode through rather than
-    # relabelling it. (A declared-but-unmigrated task must say 'no-provider'.)
-    if (-not $g.result.ok) {
-        $g.result.engine = 'local'; $g.result.providerName = [string]$floor.name
+        # degraded = an accelerator was asked for and could not deliver
         $g.result.degraded = ($tried.Count -gt 0)
         return $g.result
+
     }
-    $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request $Request
-    if (-not $v.valid) {
-        # the floor itself failed its own gate: report honestly rather than pass junk on
-        return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
-                -Engine 'local' -ProviderName $floor.name -ReasonCode 'invalid-output')
-    }
-    $g.result.engine = 'local'
-    $g.result.providerName = [string]$floor.name
-    $g.result.reasonCode = 'ok'
-    # degraded = an accelerator was asked for and could not deliver
-    $g.result.degraded = ($tried.Count -gt 0)
-    return $g.result
+    finally { $script:ReasoningDepth-- }
 }
 
 # Convenience for callers: build + route in one line.
