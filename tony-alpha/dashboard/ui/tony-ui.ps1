@@ -1093,10 +1093,26 @@ function New-HomeCaptureCard {
     return $capB
 }
 
+# A card whose contents are invented must SAY SO, loudly, inside the card. The
+# small amber SAMPLE chip in the header was legible but visually subordinate to the
+# realistic fiction it disclaimed ("Sarah T. - Policy review - 2:00 PM" reads as
+# your actual afternoon; "Policies in Force: 214" reads as your book). This banner
+# sits above the content so the disclaimer is read before the data.
+function New-SampleDataBanner {
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush '#FEF3C7'
+    $b.BorderBrush = New-Brush '#92400E'; $b.BorderThickness = New-Object Windows.Thickness 1
+    $b.CornerRadius = New-Object Windows.CornerRadius 6
+    $b.Padding = New-Object Windows.Thickness (9, 6, 9, 6); $b.Margin = New-Object Windows.Thickness (0, 0, 0, 10)
+    $b.Child = (New-Text -Text 'SAMPLE DATA - This card is not connected to your account.' -Size 11.5 -Weight 'Bold' -Color '#92400E' -Wrap $true)
+    return $b
+}
+
 # Agency Overview / Upcoming Appointments read $Model, whose agencyMetrics and
 # appointments are PLACEHOLDER data (core/tony-core.ps1, source='placeholder').
-# Epic 11 does not change what they show - they stay tagged SAMPLE so the screen
-# keeps telling the truth. Replacing the fiction is a separate, data-level job.
+# This fix does NOT replace the fiction with live data (a later focused sprint) -
+# it makes the fiction impossible to mistake for the user's own information, and
+# takes both cards out of the default layout.
 function New-HomeAgencyCard {
     param($Model)
     $agBody = New-Object Windows.Controls.Grid
@@ -1111,11 +1127,16 @@ function New-HomeAgencyCard {
         [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c); $agBody.Children.Add($cell) | Out-Null
         $mi++
     }
-    return (New-Card -Title 'Agency Overview' -Body $agBody -Tag 'SAMPLE' -NavTo 'Agency')
+    # the body is a Grid, so wrap it to put the warning above the numbers
+    $wrap = New-Object Windows.Controls.StackPanel
+    $wrap.Children.Add((New-SampleDataBanner)) | Out-Null
+    $wrap.Children.Add($agBody) | Out-Null
+    return (New-Card -Title 'Agency Overview' -Body $wrap -Tag 'SAMPLE' -NavTo 'Agency')
 }
 function New-HomeAppointmentsCard {
     param($Model)
     $apBody = New-Object Windows.Controls.StackPanel
+    $apBody.Children.Add((New-SampleDataBanner)) | Out-Null
     foreach ($ap in $Model.appointments.items) {
         $row = New-Object Windows.Controls.StackPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 9)
         $row.Children.Add((New-Text -Text $ap.time -Size 12.5 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
@@ -2065,13 +2086,17 @@ function New-MissionControlView {
     }
     $grid.Children.Add((New-Card -Title 'Tony Recommendations' -Body $b -Col 0 -Row 1)) | Out-Null
 
-    # Agency Overview (placeholder)
+    # Agency Overview (placeholder) - same invented data as the Home card, so it
+    # carries the same explicit warning. The SAMPLE chip alone was too quiet next to
+    # realistic numbers.
     $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-SampleDataBanner)) | Out-Null
     foreach ($mt in $m.agencyMetrics.items) { $b.Children.Add((New-KeyValueRow -Key $mt.label -Value $mt.value)) | Out-Null }
     $grid.Children.Add((New-Card -Title 'Agency Overview' -Body $b -Tag 'SAMPLE' -Col 1 -Row 1)) | Out-Null
 
-    # Upcoming Appointments (placeholder)
+    # Upcoming Appointments (placeholder) - invented people and times; warn plainly.
     $b = New-Object Windows.Controls.StackPanel
+    $b.Children.Add((New-SampleDataBanner)) | Out-Null
     foreach ($ap in $m.appointments.items) {
         $b.Children.Add((New-Text -Text ("{0}  {1}" -f $ap.time, $ap.title) -Size 12 -Weight 'SemiBold' -Wrap $true)) | Out-Null
         $b.Children.Add((New-Text -Text $ap.who -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 0, 0, 6)))) | Out-Null
