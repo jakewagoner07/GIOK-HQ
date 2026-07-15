@@ -3,8 +3,38 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 11 - Personalizable Workspace** (on `feature/personalizable-workspace`, branched
-from `main` @ `1fa212f`; Epic 10 merged via PR #18).
+Last updated: **Epic 12 - Executive Reasoning Layer** (on `feature/executive-reasoning-layer`, branched
+from `main` @ `f44c844`; Epic 11 merged via PR #19 and the Home placeholder-honesty fast-follow via
+PR #20).
+
+> **Epic 12 status (Executive Reasoning Layer):** an **architecture** sprint - the app behaves exactly as
+> it did before, and that is verified rather than asserted. **No provider, no API key, no HTTP, no
+> networking.** Framed as an OS: a reasoning **task** is a syscall (8 stable ids = the ABI), a
+> **provider** is a driver declaring `supports(taskId)` / `isAvailable()`, and the **layer** is the kernel
+> that routes, validates and attributes. The **deterministic engine is the floor** - the CPU that always
+> works; models are optional accelerators. **Not greenfield:** `tony-provider-contract.ps1` already was
+> the model-agnostic provider language and `tony-brain.ps1` already had a registry, so Epic 12
+> *generalizes* rather than adding a second registry; the conversational path is documented as the legacy
+> special case (`conversation.answer`, still served by tony-brain, untouched) that folds in later. Five
+> guarantees, each tested: **total** (never throws - unlike the existing unguarded `& $p.invoke`); **a
+> floor that always answers**; **nothing unvalidated escapes** (per-task validators that **fail closed**;
+> local output is not privileged); **no ambient authority** (the layer *cannot write* - it returns
+> proposals; Identity is still written only by `Approve-UnderstandingModel` inside
+> `Invoke-IdentityTransaction`); **bounded** (`maxMs` plumbing now, enforced when a blocking provider
+> exists - `claude-provider.ps1` has no HTTP timeout, so the bound must live on our side). Routing
+> deliberately differs from `Resolve-TonyProvider`: an unavailable driver is **skipped**, not routed to,
+> because the right answer to "no provider" for `understanding.extract` is the engine's real output, not
+> an apology. **One real client proves the seam:** `Initialize-UnderstandingModel` now reasons *through*
+> the layer, **byte-identical** to the direct path, with `meta.engine` stamped by the kernel.
+> **Testing caught a dangerous bug:** the payload param was named `$Input` - a PowerShell *automatic
+> variable* - so state never arrived; the layer returned an empty model and the grounding validator,
+> guarded by `if ($state ...)`, **failed OPEN and accepted a fabricated goal**. Renamed to `$Payload`;
+> the gate now fails closed. Verified: kernel 18/18, understanding **102/102** adversarial conversations
+> unchanged, core guarantees 12/12, UI+resume+approve 21/21, clean launch, no orphans. Unlocks the Claude
+> migration as *register one driver*. Local-only, not pushed.
+
+> **Epic 11 status (Personalizable Workspace):** (on `feature/personalizable-workspace`, branched
+> from `main` @ `1fa212f`; merged via PR #19; placeholder-honesty fast-follow merged via PR #20).
 
 > **Epic 11 status (Personalizable Workspace):** two view-layer changes - no data-architecture change,
 > no second store, no new provider/agent/tab. **Goals workspace:** the page opened on a blank five-field

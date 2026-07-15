@@ -104,6 +104,17 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   fetch on paint; hiding everything keeps the briefing; a toggle never restarts the background briefing.
   Single store for goals, no new tab, no new provider/agent. See
   `Blueprint/Personalizable_Workspace.md`.
+- ✅ **Executive Reasoning Layer (Epic 12)** - the architecture every future AI plugs into, built before
+  any AI exists. **No provider, no key, no HTTP, no networking; the app behaves exactly as before.** A
+  reasoning **task** is a syscall (stable id, typed proposal out), a **provider** is a driver that
+  declares which tasks it supports and whether it is available, and the **layer** is the kernel that
+  routes, validates and attributes. The **deterministic engine is the permanent floor** - GIOK always
+  reasons, offline, keyless, forever. The kernel is **total** (never throws), **validates everything**
+  (per-task gates that fail closed - local output gets no privilege), **cannot write** (it returns
+  proposals; owners + approval + the atomic transaction still do all writing), and **cannot be lied to
+  about provenance** (attribution is stamped by the kernel, and a fallback is visibly `degraded`).
+  Swapping in Claude/GPT/Gemini later is *registering a driver* - nothing else in GIOK changes. See
+  `Blueprint/Executive_Reasoning_Layer.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
