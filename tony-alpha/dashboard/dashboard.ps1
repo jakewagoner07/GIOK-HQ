@@ -37,6 +37,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\end-of-day-audit.ps1')
 . (Join-Path $PSScriptRoot 'core\first-conversation.ps1')
 . (Join-Path $PSScriptRoot 'core\understanding-engine.ps1')
+. (Join-Path $PSScriptRoot 'core\home-layout.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-provider-contract.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-decision-framework.ps1')

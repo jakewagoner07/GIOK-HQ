@@ -989,6 +989,350 @@ function New-BriefingPlaceholder {
     return $card
 }
 
+# =====================  HOME CARDS + CUSTOMIZATION (Epic 11)  =====================
+# Home renders whatever the layout says, in the order it says, at the size it says.
+# NO card owns data: each one reads its existing owner live on every paint, so the
+# preferences file holds only {id, visible, order, size} and can be deleted freely.
+#
+# Paint safety: provider-backed cards (communications / crm) use Peek-CachedSignal,
+# which returns the cached value or nothing and NEVER fetches. The fetch-through
+# getters would block Home for ~10-30s on a cold cache, so they are never called
+# here - a cold card honestly says "not loaded yet" instead.
+$script:HomeCardHost = $null      # the flow container - rebuilt ALONE on customize
+$script:HomeBriefHost = $null     # briefing Border - created once per Home paint
+$script:HomeCustomizing = $false
+
+# Headline number + optional caption + up to a few lines. The shared shape for the
+# small summary cards, so they all read the same.
+function New-HomeListCardBody {
+    param([string]$Headline, [string]$Caption, $Lines, [string]$Empty)
+    $sp = New-Object Windows.Controls.StackPanel
+    $top = New-Object Windows.Controls.StackPanel; $top.Orientation = 'Horizontal'
+    $top.Children.Add((New-Text -Text $Headline -Size 30 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    if ($Caption) { $top.Children.Add((New-Text -Text $Caption -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 15, 0, 0)))) | Out-Null }
+    $sp.Children.Add($top) | Out-Null
+    $ls = @($Lines | Where-Object { $_ })
+    if ($ls.Count -eq 0) {
+        $sp.Children.Add((New-Text -Text $Empty -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    }
+    else {
+        foreach ($l in ($ls | Select-Object -First 3)) {
+            $t = New-Text -Text $l -Size 11.5 -Color $script:Col.Ink -Margin (New-Object Windows.Thickness (0, 3, 0, 0))
+            $t.TextTrimming = 'CharacterEllipsis'; $sp.Children.Add($t) | Out-Null
+        }
+    }
+    return $sp
+}
+
+# One Life OS domain -> one card. Get-LifeItems is the owner; every domain in the
+# registry carries a 'title', which is all a summary card needs.
+function New-HomeLifeCard {
+    param([string]$Domain, [string]$Title, [string]$NavTo, [string]$Noun)
+    if (-not (Get-Command Get-LifeItems -ErrorAction SilentlyContinue)) { return $null }
+    $items = @()
+    try { $items = @(Get-LifeItems -Domain $Domain -ActiveOnly) } catch { $items = @() }
+    $body = New-HomeListCardBody -Headline ([string]$items.Count) -Caption $Noun `
+        -Lines @($items | ForEach-Object { [string]$_.title }) `
+        -Empty ("Nothing tracked yet - open {0} to add one." -f $Title)
+    return (New-Card -Title $Title -Body $body -NavTo $NavTo)
+}
+
+# A provider card built ONLY from what is already cached. present=$false means
+# nobody has warmed it this session - we say so rather than fetch on paint.
+function New-HomePeekCard {
+    param([string]$Key, [string]$Title, [scriptblock]$Render)
+    if (-not (Get-Command Peek-CachedSignal -ErrorAction SilentlyContinue)) { return $null }
+    $peek = $null
+    try { $peek = Peek-CachedSignal -Key $Key } catch { $peek = $null }
+    if (-not $peek -or -not $peek.present) {
+        $body = New-HomeListCardBody -Headline '-' -Caption 'not loaded yet' -Lines @() `
+            -Empty 'Tony loads this in the background when he needs it. Nothing is fetched just to draw this card.'
+        return (New-Card -Title $Title -Body $body)
+    }
+    $body = $null
+    try { $body = & $Render $peek } catch { $body = $null }
+    if (-not $body) {
+        $body = New-HomeListCardBody -Headline '-' -Caption 'unavailable' -Lines @() -Empty 'Could not read the cached signal.'
+    }
+    if ($peek.stale) { $body.Children.Add((New-Text -Text 'showing recent data' -Size 10.5 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null }
+    return (New-Card -Title $Title -Body $body)
+}
+
+# Capture banner, unchanged in content - just liftable so the layout can place it.
+function New-HomeCaptureCard {
+    $cap = Get-CaptureStats
+    $capB = New-Object Windows.Controls.Border
+    $capB.Background = New-Brush $script:Col.CardBg; $capB.BorderBrush = New-Brush $script:Col.Accent; $capB.BorderThickness = New-Object Windows.Thickness 1
+    $capB.CornerRadius = New-Object Windows.CornerRadius 12; $capB.Padding = New-Object Windows.Thickness (16, 14, 16, 14)
+    $capDock = New-Object Windows.Controls.DockPanel
+    $capLeft = New-Object Windows.Controls.StackPanel; $capLeft.VerticalAlignment = 'Center'
+    $capLeft.Children.Add((New-PrimaryButton -Text '+ Capture Something' -Size 15 -OnClick { param($s, $e) Open-CaptureWindow | Out-Null })) | Out-Null
+    $capLeft.Children.Add((New-Text -Text 'Capture first, organize later - your brain is for thinking, not remembering.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (2, 8, 0, 0)))) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($capLeft, 'Left'); $capDock.Children.Add($capLeft) | Out-Null
+    $capRight = New-Object Windows.Controls.StackPanel; $capRight.HorizontalAlignment = 'Right'; $capRight.VerticalAlignment = 'Center'; $capRight.Margin = New-Object Windows.Thickness (16, 0, 0, 0)
+    $statsRow = New-Object Windows.Controls.StackPanel; $statsRow.Orientation = 'Horizontal'; $statsRow.HorizontalAlignment = 'Right'
+    foreach ($pair in @(@('Today', $cap.today), @('Unprocessed', $cap.unprocessed))) {
+        $st = New-Object Windows.Controls.StackPanel; $st.Margin = New-Object Windows.Thickness (16, 0, 0, 0)
+        $st.Children.Add((New-Text -Text ([string]$pair[1]) -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+        $st.Children.Add((New-Text -Text $pair[0] -Size 10.5 -Color $script:Col.Muted)) | Out-Null
+        $statsRow.Children.Add($st) | Out-Null
+    }
+    $capRight.Children.Add($statsRow) | Out-Null
+    if (@($cap.recent).Count -gt 0) {
+        $capRight.Children.Add((New-Text -Text 'RECENT' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 2)))) | Out-Null
+        foreach ($rc in (@($cap.recent) | Select-Object -First 2)) {
+            $rt = New-Text -Text $rc.text -Size 11 -Color $script:Col.Ink -Margin (New-Object Windows.Thickness (0, 0, 0, 1)); $rt.HorizontalAlignment = 'Right'; $rt.TextTrimming = 'CharacterEllipsis'; $rt.MaxWidth = 260
+            $capRight.Children.Add($rt) | Out-Null
+        }
+    }
+    $openInbox = New-Text -Text 'Open Inbox >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 6, 0, 0))
+    $openInbox.HorizontalAlignment = 'Right'; $openInbox.Cursor = 'Hand'; $openInbox.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView 'Capture' }) | Out-Null
+    $capRight.Children.Add($openInbox) | Out-Null
+    [Windows.Controls.DockPanel]::SetDock($capRight, 'Right'); $capDock.Children.Add($capRight) | Out-Null
+    $capB.Child = $capDock
+    return $capB
+}
+
+# Agency Overview / Upcoming Appointments read $Model, whose agencyMetrics and
+# appointments are PLACEHOLDER data (core/tony-core.ps1, source='placeholder').
+# Epic 11 does not change what they show - they stay tagged SAMPLE so the screen
+# keeps telling the truth. Replacing the fiction is a separate, data-level job.
+function New-HomeAgencyCard {
+    param($Model)
+    $agBody = New-Object Windows.Controls.Grid
+    foreach ($i in 0..1) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $agBody.ColumnDefinitions.Add($cd) | Out-Null }
+    $mi = 0
+    foreach ($m in $Model.agencyMetrics.items) {
+        $r = [int][math]::Floor($mi / 2); $c = $mi % 2
+        if ($c -eq 0) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $agBody.RowDefinitions.Add($rd) | Out-Null }
+        $cell = New-Object Windows.Controls.StackPanel; $cell.Margin = New-Object Windows.Thickness (0, 0, 8, 12)
+        $cell.Children.Add((New-Text -Text $m.value -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+        $cell.Children.Add((New-Text -Text $m.label -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+        [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c); $agBody.Children.Add($cell) | Out-Null
+        $mi++
+    }
+    return (New-Card -Title 'Agency Overview' -Body $agBody -Tag 'SAMPLE' -NavTo 'Agency')
+}
+function New-HomeAppointmentsCard {
+    param($Model)
+    $apBody = New-Object Windows.Controls.StackPanel
+    foreach ($ap in $Model.appointments.items) {
+        $row = New-Object Windows.Controls.StackPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 9)
+        $row.Children.Add((New-Text -Text $ap.time -Size 12.5 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
+        $row.Children.Add((New-Text -Text $ap.title -Size 12.5 -Weight 'SemiBold' -Wrap $true)) | Out-Null
+        $row.Children.Add((New-Text -Text $ap.who -Size 11.5 -Color $script:Col.Muted)) | Out-Null
+        $apBody.Children.Add($row) | Out-Null
+    }
+    return (New-Card -Title 'Upcoming Appointments' -Body $apBody -Tag 'SAMPLE' -NavTo 'Appointments')
+}
+function New-HomeAgentHealthCard {
+    param($Model)
+    $h = $Model.agentHealth
+    $hBody = New-Object Windows.Controls.StackPanel
+    $big = New-Object Windows.Controls.StackPanel; $big.Orientation = 'Horizontal'
+    $big.Children.Add((New-Text -Text ([string]$h.total) -Size 30 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $big.Children.Add((New-Text -Text 'agents' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 15, 0, 0)))) | Out-Null
+    $hBody.Children.Add($big) | Out-Null
+    $swp = New-Object Windows.Controls.WrapPanel; $swp.Margin = New-Object Windows.Thickness (0, 4, 0, 4)
+    foreach ($k in $h.byStatus.Keys) { $n = $h.byStatus[$k]; if ($n -gt 0) { $cc = Get-StatusChipColors $k; $swp.Children.Add((New-Chip -Text ("{0} {1}" -f $k, $n) -Bg $cc[0] -Fg $cc[1])) | Out-Null } }
+    $hBody.Children.Add($swp) | Out-Null
+    $hBody.Children.Add((New-KeyValueRow -Key 'Health measured' -Value $h.healthCoverage)) | Out-Null
+    $hBody.Children.Add((New-KeyValueRow -Key 'Agents with issues' -Value ([string]$h.withIssues))) | Out-Null
+    return (New-Card -Title 'Agent Health' -Body $hBody -NavTo 'Agents')
+}
+
+# id -> element. Returns $null when a card cannot be built (missing owner), and
+# the flow simply skips it rather than showing a broken tile.
+function New-HomeCardElement {
+    param([string]$Id, $Model)
+    try {
+        switch ($Id) {
+            'briefing' { return $script:HomeBriefHost }
+            'capture'  { return (New-HomeCaptureCard) }
+            'agency'   { return (New-HomeAgencyCard -Model $Model) }
+            'appointments' { return (New-HomeAppointmentsCard -Model $Model) }
+            'agentHealth'  { return (New-HomeAgentHealthCard -Model $Model) }
+            'inbox' {
+                if (-not (Get-Command Get-InboxSummary -ErrorAction SilentlyContinue)) { return $null }
+                $s = Get-InboxSummary -Now $script:TonyNow
+                $lines = @()
+                foreach ($k in @($s.byType.Keys)) { $lines += ("{0}: {1}" -f $k, $s.byType[$k]) }
+                $body = New-HomeListCardBody -Headline ([string]$s.pending) -Caption 'awaiting you' -Lines $lines -Empty 'Nothing waiting for your decision.'
+                return (New-Card -Title 'Executive Inbox' -Body $body -NavTo 'Executive Inbox')
+            }
+            'goals' {
+                if (-not (Get-Command Get-ActiveGoals -ErrorAction SilentlyContinue)) { return $null }
+                $g = @(Get-ActiveGoals)
+                $body = New-HomeListCardBody -Headline ([string]$g.Count) -Caption 'active goals' `
+                    -Lines @($g | ForEach-Object { ("{0} - {1}%" -f $_.title, $_.progress) }) `
+                    -Empty 'No active goals yet - open Goals to add one.'
+                return (New-Card -Title 'Goals' -Body $body -NavTo 'Goals')
+            }
+            'family'         { return (New-HomeLifeCard -Domain 'family'         -Title 'Family'          -NavTo 'Family'         -Noun 'tracked') }
+            'nonNegotiables' { return (New-HomeLifeCard -Domain 'nonNegotiables' -Title 'Non-Negotiables' -NavTo 'Non-Negotiables' -Noun 'protected') }
+            'health'         { return (New-HomeLifeCard -Domain 'health'         -Title 'Health'          -NavTo 'Health'         -Noun 'tracked') }
+            'financial'      { return (New-HomeLifeCard -Domain 'financial'      -Title 'Financial'       -NavTo 'Financial'      -Noun 'tracked') }
+            'learning'       { return (New-HomeLifeCard -Domain 'learning'       -Title 'Learning'        -NavTo 'Learning'       -Noun 'in progress') }
+            'projects'       { return (New-HomeLifeCard -Domain 'projects'       -Title 'Projects'        -NavTo 'Home Projects'  -Noun 'open') }
+            'communications' {
+                # no registered Communications view -> no NavTo (a bad NavTo would
+                # silently fall through to Home)
+                return (New-HomePeekCard -Key 'communications' -Title 'Communications' -Render {
+                    param($peek)
+                    $v = $peek.value
+                    $lines = @()
+                    if ($v.accountCount) { $lines += ("{0} account(s) connected" -f $v.accountCount) }
+                    if ($v.analyzed) { $lines += ("{0} analyzed" -f $v.analyzed) }
+                    New-HomeListCardBody -Headline ([string]([int]$v.totalToday)) -Caption 'today' -Lines $lines -Empty 'No messages today.'
+                })
+            }
+            'crm' {
+                return (New-HomePeekCard -Key 'crm' -Title 'CRM' -Render {
+                    param($peek)
+                    $v = $peek.value
+                    $sum = $null
+                    if (Get-Command Get-CRMSummary -ErrorAction SilentlyContinue) { try { $sum = Get-CRMSummary -Crm $v -Now $script:TonyNow } catch { $sum = $null } }
+                    $lines = @()
+                    if ($sum) {
+                        if ($null -ne $sum.agingLeads) { $lines += ("{0} aging lead(s)" -f @($sum.agingLeads).Count) }
+                        if ($null -ne $sum.stalledOpportunities) { $lines += ("{0} stalled opportunit(ies)" -f @($sum.stalledOpportunities).Count) }
+                    }
+                    $head = if ($v.contactCount) { [string]$v.contactCount } elseif ($sum -and $null -ne $sum.contactCount) { [string]$sum.contactCount } else { 'ok' }
+                    New-HomeListCardBody -Headline $head -Caption 'contacts' -Lines $lines -Empty 'Connected - nothing needing attention.'
+                })
+            }
+            'priorities' {
+                # The one non-trivial card (~0.7s to assemble context), which is why
+                # it ships OFF by default. Signals are PEEKED, never fetched.
+                if (-not (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue) -or -not (Get-Command Get-ExecutivePriorities -ErrorAction SilentlyContinue)) { return $null }
+                $sig = @{}
+                if (Get-Command Peek-CachedSignal -ErrorAction SilentlyContinue) {
+                    foreach ($k in @('calendar', 'communications', 'crm')) {
+                        $pk = Peek-CachedSignal -Key $k
+                        if ($pk -and $pk.present) { $sig[$k] = $pk.value }
+                    }
+                }
+                $ctx = Get-TonyExecutiveContext -CurrentWorkspace 'Home' -Now $script:TonyNow -LiveSignals $sig
+                $pri = Get-ExecutivePriorities -Context $ctx -Now $script:TonyNow
+                $lines = @(@($pri.actNow) | ForEach-Object { [string]$_.title })
+                $body = New-HomeListCardBody -Headline ([string]$pri.counts.actNow) -Caption 'act now' -Lines $lines -Empty 'Nothing demanding action right now.'
+                $body.Children.Add((New-Text -Text ("{0} to do today - {1} to keep visible" -f $pri.counts.doToday, $pri.counts.keepVisible) -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+                return (New-Card -Title 'Weekly Priorities' -Body $body)
+            }
+        }
+    }
+    catch { return $null }
+    return $null
+}
+
+# Pack the visible cards into a 6-column flow: small=2 (a third), medium=3 (a
+# half), large=6 (full width). Wraps when a row cannot fit the next card.
+function Add-HomeCardsToHost {
+    param($Model)
+    if (-not $script:HomeCardHost) { return }
+    # Detach the persistent briefing host from whatever Grid currently holds it
+    # BEFORE clearing. Clearing this StackPanel only drops the Grid; the briefing
+    # Border's logical parent is that Grid, so without this WPF throws
+    # "element is already the logical child of another element" when we re-add it.
+    if ($script:HomeBriefHost) {
+        $bp = $script:HomeBriefHost.Parent
+        if ($bp -and ($bp -is [Windows.Controls.Panel])) { $bp.Children.Remove($script:HomeBriefHost) }
+    }
+    $script:HomeCardHost.Children.Clear()
+    $grid = New-Object Windows.Controls.Grid
+    foreach ($i in 0..5) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $grid.ColumnDefinitions.Add($cd) | Out-Null }
+    $spanOf = @{ small = 2; medium = 3; large = 6 }
+    $row = 0; $col = 0
+    $addRow = { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $grid.RowDefinitions.Add($rd) | Out-Null }
+    & $addRow
+    foreach ($c in (Get-VisibleHomeCards)) {
+        $el = New-HomeCardElement -Id $c.id -Model $Model
+        if (-not $el) { continue }
+        $span = $spanOf[[string]$c.size]; if (-not $span) { $span = 2 }
+        if ($col -gt 0 -and ($col + $span) -gt 6) { $row++; $col = 0; & $addRow }
+        $el.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+        [Windows.Controls.Grid]::SetRow($el, $row); [Windows.Controls.Grid]::SetColumn($el, $col)
+        [Windows.Controls.Grid]::SetColumnSpan($el, $span)
+        $grid.Children.Add($el) | Out-Null
+        $col += $span
+        if ($col -ge 6) { $row++; $col = 0; & $addRow }
+    }
+    $script:HomeCardHost.Children.Add($grid) | Out-Null
+}
+
+# The "Customize Home" button (label toggles) + the panel when open. Lives in its
+# own host so it can be rebuilt without re-rendering Home.
+function Add-HomeCustomizeUI {
+    param($Model)
+    if (-not $script:HomeCustomizeHost) { return }
+    $script:HomeCustomizeHost.Children.Clear()
+    $ctlRow = New-Object Windows.Controls.DockPanel; $ctlRow.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $custBtn = New-MiniButton -Text $(if ($script:HomeCustomizing) { 'Close' } else { 'Customize Home' }) `
+        -Bg $(if ($script:HomeCustomizing) { $script:Col.Accent } else { $script:Col.AccentSoft }) `
+        -Fg $(if ($script:HomeCustomizing) { $script:Col.OnPrimary } else { $script:Col.AccentInk }) `
+        -OnClick { param($s, $e) $script:HomeCustomizing = -not $script:HomeCustomizing; Refresh-HomeCustomize }
+    [Windows.Controls.DockPanel]::SetDock($custBtn, 'Right'); $ctlRow.Children.Add($custBtn) | Out-Null
+    $script:HomeCustomizeHost.Children.Add($ctlRow) | Out-Null
+    if ($script:HomeCustomizing) { $script:HomeCustomizeHost.Children.Add((New-HomeCustomizePanel -Model $Model)) | Out-Null }
+}
+
+# Rebuild ONLY the customize UI + the card flow. Home's briefing is kicked onto a
+# background runspace on paint, so re-rendering the whole view on every toggle
+# would restart that work; rebuilding just these containers re-uses the same
+# briefing Border and an in-flight briefing still lands in it.
+function Refresh-HomeCustomize {
+    Add-HomeCustomizeUI -Model $script:HomeCardModel
+    Add-HomeCardsToHost -Model $script:HomeCardModel
+}
+function Refresh-HomeCards { param($Model) Add-HomeCardsToHost -Model $Model }
+
+function New-HomeCustomizePanel {
+    param($Model)
+    $b = New-Object Windows.Controls.Border
+    $b.Background = New-Brush $script:Col.CardBg; $b.BorderBrush = New-Brush $script:Col.Line; $b.BorderThickness = New-Object Windows.Thickness 1
+    $b.CornerRadius = New-Object Windows.CornerRadius 12; $b.Padding = New-Object Windows.Thickness (14, 12, 14, 12); $b.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text 'CUSTOMIZE HOME' -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $sp.Children.Add((New-Text -Text 'Show what you want, in the order you want. Your layout is saved locally - your data is untouched.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 2, 0, 8)))) | Out-Null
+
+    foreach ($c in (Get-HomeLayout | Sort-Object order)) {
+        $meta = Get-HomeCardMeta -Id $c.id
+        if (-not $meta) { continue }
+        $rowD = New-Object Windows.Controls.DockPanel; $rowD.Margin = New-Object Windows.Thickness (0, 0, 0, 5)
+        $ctrls = New-Object Windows.Controls.StackPanel; $ctrls.Orientation = 'Horizontal'; $ctrls.HorizontalAlignment = 'Right'
+        [Windows.Controls.DockPanel]::SetDock($ctrls, 'Right')
+        $on = [bool]$c.visible
+        $tg = New-MiniButton -Text $(if ($on) { 'Shown' } else { 'Hidden' }) `
+            -Bg $(if ($on) { $script:Col.Accent } else { '#E5E7EB' }) -Fg $(if ($on) { $script:Col.OnPrimary } else { '#374151' }) `
+            -Tag $c.id -OnClick { param($s, $e) [void](Set-HomeCardVisible -Id ([string]$s.Tag) -Visible (-not (@(Get-HomeLayout | Where-Object { $_.id -eq [string]$s.Tag })[0]).visible)); Refresh-HomeCustomize }
+        $ctrls.Children.Add($tg) | Out-Null
+        if (-not $meta.fixed) {
+            foreach ($sz in (Get-HomeCardSizes)) {
+                $sel = ($c.size -eq $sz)
+                $sb = New-MiniButton -Text $sz.Substring(0, 1).ToUpper() `
+                    -Bg $(if ($sel) { $script:Col.AccentInk } else { $script:Col.AccentSoft }) -Fg $(if ($sel) { '#FFFFFF' } else { $script:Col.AccentInk }) `
+                    -Tag ("{0}|{1}" -f $c.id, $sz) -OnClick { param($s, $e) $p = ([string]$s.Tag) -split '\|'; [void](Set-HomeCardSize -Id $p[0] -Size $p[1]); Refresh-HomeCustomize }
+                $ctrls.Children.Add($sb) | Out-Null
+            }
+        }
+        $up = New-MiniButton -Text '^' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $c.id -OnClick { param($s, $e) [void](Move-HomeCard -Id ([string]$s.Tag) -Direction 'up'); Refresh-HomeCustomize }
+        $dn = New-MiniButton -Text 'v' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -Tag $c.id -OnClick { param($s, $e) [void](Move-HomeCard -Id ([string]$s.Tag) -Direction 'down'); Refresh-HomeCustomize }
+        $ctrls.Children.Add($up) | Out-Null; $ctrls.Children.Add($dn) | Out-Null
+        $rowD.Children.Add($ctrls) | Out-Null
+        $lbl = New-Text -Text $meta.title -Size 12.5 -Weight $(if ($on) { 'SemiBold' } else { 'Normal' }) -Color $(if ($on) { $script:Col.Ink } else { $script:Col.Muted })
+        $lbl.VerticalAlignment = 'Center'
+        $rowD.Children.Add($lbl) | Out-Null
+        $sp.Children.Add($rowD) | Out-Null
+    }
+
+    $foot = New-Object Windows.Controls.StackPanel; $foot.Orientation = 'Horizontal'; $foot.Margin = New-Object Windows.Thickness (0, 8, 0, 0)
+    $foot.Children.Add((New-MiniButton -Text 'Reset to default' -Bg '#E5E7EB' -Fg '#374151' -OnClick { param($s, $e) [void](Reset-HomeLayout); Refresh-HomeCustomize })) | Out-Null
+    $foot.Children.Add((New-MiniButton -Text 'Done' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) $script:HomeCustomizing = $false; Refresh-HomeCustomize })) | Out-Null
+    $sp.Children.Add($foot) | Out-Null
+    $b.Child = $sp
+    return $b
+}
+
 function New-HomeView {
     param([Parameter(Mandatory)] $Model)
     $stack = New-Object Windows.Controls.StackPanel; $stack.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -1019,9 +1363,12 @@ function New-HomeView {
     # (full Executive Context assembly + live calendar/email fetch) runs only AFTER
     # Home is on screen. This removes the completion/startup freeze and keeps the UI
     # responsive. A light placeholder holds the spot until the real card is built.
+    # Created ONCE per Home paint and held in module scope: the card flow places it
+    # (per the layout) and re-adds this SAME element when the flow is rebuilt, so a
+    # customization toggle never restarts the in-flight async briefing below.
     $briefHost = New-Object Windows.Controls.Border
     $briefHost.Child = (New-BriefingPlaceholder)
-    $stack.Children.Add($briefHost) | Out-Null
+    $script:HomeBriefHost = $briefHost
     # Snapshot the render time into a LOCAL so GetNewClosure captures it: inside a
     # GetNewClosure body $script:* resolves to the closure's own (empty) module
     # scope, so $script:TonyNow would be $null there. Function CALLS are unaffected.
@@ -1067,87 +1414,17 @@ function New-HomeView {
         $null = $briefHost.Dispatcher.BeginInvoke([Action]$kick, [System.Windows.Threading.DispatcherPriority]::Background)
     }
 
-    # ---- Capture banner: prominent "+ Capture Something" + Today's / Unprocessed / Recent ----
-    $cap = Get-CaptureStats
-    $capB = New-Object Windows.Controls.Border
-    $capB.Background = New-Brush $script:Col.CardBg; $capB.BorderBrush = New-Brush $script:Col.Accent; $capB.BorderThickness = New-Object Windows.Thickness 1
-    $capB.CornerRadius = New-Object Windows.CornerRadius 12; $capB.Padding = New-Object Windows.Thickness (16, 14, 16, 14); $capB.Margin = New-Object Windows.Thickness (0, 0, 0, 14)
-    $capDock = New-Object Windows.Controls.DockPanel
-    # left: big button + subtitle
-    $capLeft = New-Object Windows.Controls.StackPanel; $capLeft.VerticalAlignment = 'Center'
-    $capLeft.Children.Add((New-PrimaryButton -Text '+ Capture Something' -Size 15 -OnClick { param($s, $e) Open-CaptureWindow | Out-Null })) | Out-Null
-    $capLeft.Children.Add((New-Text -Text 'Capture first, organize later - your brain is for thinking, not remembering.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (2, 8, 0, 0)))) | Out-Null
-    [Windows.Controls.DockPanel]::SetDock($capLeft, 'Left'); $capDock.Children.Add($capLeft) | Out-Null
-    # right: stats + recent + open inbox
-    $capRight = New-Object Windows.Controls.StackPanel; $capRight.HorizontalAlignment = 'Right'; $capRight.VerticalAlignment = 'Center'; $capRight.Margin = New-Object Windows.Thickness (16, 0, 0, 0)
-    $statsRow = New-Object Windows.Controls.StackPanel; $statsRow.Orientation = 'Horizontal'; $statsRow.HorizontalAlignment = 'Right'
-    foreach ($pair in @(@('Today', $cap.today), @('Unprocessed', $cap.unprocessed))) {
-        $st = New-Object Windows.Controls.StackPanel; $st.Margin = New-Object Windows.Thickness (16, 0, 0, 0)
-        $st.Children.Add((New-Text -Text ([string]$pair[1]) -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
-        $st.Children.Add((New-Text -Text $pair[0] -Size 10.5 -Color $script:Col.Muted)) | Out-Null
-        $statsRow.Children.Add($st) | Out-Null
-    }
-    $capRight.Children.Add($statsRow) | Out-Null
-    if (@($cap.recent).Count -gt 0) {
-        $capRight.Children.Add((New-Text -Text 'RECENT' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 8, 0, 2)))) | Out-Null
-        foreach ($rc in (@($cap.recent) | Select-Object -First 2)) {
-            $rt = New-Text -Text $rc.text -Size 11 -Color $script:Col.Ink -Margin (New-Object Windows.Thickness (0, 0, 0, 1)); $rt.HorizontalAlignment = 'Right'; $rt.TextTrimming = 'CharacterEllipsis'; $rt.MaxWidth = 260
-            $capRight.Children.Add($rt) | Out-Null
-        }
-    }
-    $openInbox = New-Text -Text 'Open Inbox >' -Size 11.5 -Weight 'SemiBold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (0, 6, 0, 0))
-    $openInbox.HorizontalAlignment = 'Right'; $openInbox.Cursor = 'Hand'; $openInbox.Add_MouseLeftButtonUp({ param($s, $e) Set-ActiveView 'Capture' }) | Out-Null
-    $capRight.Children.Add($openInbox) | Out-Null
-    [Windows.Controls.DockPanel]::SetDock($capRight, 'Right'); $capDock.Children.Add($capRight) | Out-Null
-    $capB.Child = $capDock
-    $stack.Children.Add($capB) | Out-Null
-
-    # (Today's Priorities + Tony Recommends now live inside the Morning Briefing above.)
-
-    # ---- Row B: Agency Overview | Upcoming Appointments | Agent Health ----
-    $gB = New-Object Windows.Controls.Grid
-    foreach ($i in 0..2) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $gB.ColumnDefinitions.Add($cd) | Out-Null }
-
-    # Agency Overview (placeholder metrics)
-    $agBody = New-Object Windows.Controls.Grid
-    foreach ($i in 0..1) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = [Windows.GridLength]::new(1, 'Star'); $agBody.ColumnDefinitions.Add($cd) | Out-Null }
-    $mi = 0
-    foreach ($m in $Model.agencyMetrics.items) {
-        $r = [int][math]::Floor($mi / 2); $c = $mi % 2
-        if ($c -eq 0) { $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = [Windows.GridLength]::Auto; $agBody.RowDefinitions.Add($rd) | Out-Null }
-        $cell = New-Object Windows.Controls.StackPanel; $cell.Margin = New-Object Windows.Thickness (0, 0, 8, 12)
-        $cell.Children.Add((New-Text -Text $m.value -Size 24 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
-        $cell.Children.Add((New-Text -Text $m.label -Size 11.5 -Color $script:Col.Muted)) | Out-Null
-        [Windows.Controls.Grid]::SetRow($cell, $r); [Windows.Controls.Grid]::SetColumn($cell, $c); $agBody.Children.Add($cell) | Out-Null
-        $mi++
-    }
-    $gB.Children.Add((New-Card -Title 'Agency Overview' -Body $agBody -Tag 'SAMPLE' -Col 0 -NavTo 'Agency')) | Out-Null
-
-    # Upcoming Appointments (placeholder)
-    $apBody = New-Object Windows.Controls.StackPanel
-    foreach ($ap in $Model.appointments.items) {
-        $row = New-Object Windows.Controls.StackPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 9)
-        $row.Children.Add((New-Text -Text $ap.time -Size 12.5 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
-        $row.Children.Add((New-Text -Text $ap.title -Size 12.5 -Weight 'SemiBold' -Wrap $true)) | Out-Null
-        $row.Children.Add((New-Text -Text $ap.who -Size 11.5 -Color $script:Col.Muted)) | Out-Null
-        $apBody.Children.Add($row) | Out-Null
-    }
-    $gB.Children.Add((New-Card -Title 'Upcoming Appointments' -Body $apBody -Tag 'SAMPLE' -Col 1 -NavTo 'Appointments')) | Out-Null
-
-    # Agent Health Summary (live)
-    $h = $Model.agentHealth
-    $hBody = New-Object Windows.Controls.StackPanel
-    $big = New-Object Windows.Controls.StackPanel; $big.Orientation = 'Horizontal'
-    $big.Children.Add((New-Text -Text ([string]$h.total) -Size 30 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
-    $big.Children.Add((New-Text -Text 'agents' -Size 12 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (6, 15, 0, 0)))) | Out-Null
-    $hBody.Children.Add($big) | Out-Null
-    $sw = New-Object Windows.Controls.WrapPanel; $sw.Margin = New-Object Windows.Thickness (0, 4, 0, 4)
-    foreach ($k in $h.byStatus.Keys) { $n = $h.byStatus[$k]; if ($n -gt 0) { $cc = Get-StatusChipColors $k; $sw.Children.Add((New-Chip -Text ("{0} {1}" -f $k, $n) -Bg $cc[0] -Fg $cc[1])) | Out-Null } }
-    $hBody.Children.Add($sw) | Out-Null
-    $hBody.Children.Add((New-KeyValueRow -Key 'Health measured' -Value $h.healthCoverage)) | Out-Null
-    $hBody.Children.Add((New-KeyValueRow -Key 'Agents with issues' -Value ([string]$h.withIssues))) | Out-Null
-    $gB.Children.Add((New-Card -Title 'Agent Health' -Body $hBody -Col 2 -NavTo 'Agents')) | Out-Null
-    $stack.Children.Add($gB) | Out-Null
+    # ---- Customize control + the card flow (Epic 11) ----
+    # Home no longer hard-codes its cards: it renders whatever the layout says, in
+    # the order it says. Every card still reads its own owner live on each paint -
+    # the preferences file holds only {id, visible, order, size}.
+    $script:HomeCustomizeHost = New-Object Windows.Controls.StackPanel
+    $stack.Children.Add($script:HomeCustomizeHost) | Out-Null
+    $script:HomeCardHost = New-Object Windows.Controls.StackPanel
+    $stack.Children.Add($script:HomeCardHost) | Out-Null
+    $script:HomeCardModel = $Model
+    Add-HomeCustomizeUI -Model $Model
+    Add-HomeCardsToHost -Model $Model
 
     # ---- Quick links ----
     $ql = New-Object Windows.Controls.StackPanel; $ql.Orientation = 'Horizontal'; $ql.Margin = New-Object Windows.Thickness (8, 6, 0, 6)
