@@ -34,8 +34,14 @@ $script:HomeCardCatalog = @(
     [pscustomobject]@{ id = 'inbox';          title = 'Executive Inbox';           visible = $true;  order = 3;  size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'goals';          title = 'Goals';                     visible = $true;  order = 4;  size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'agentHealth';    title = 'Agent Health';              visible = $true;  order = 5;  size = 'small';  fixed = $false }
-    [pscustomobject]@{ id = 'agency';         title = 'Agency Overview';           visible = $true;  order = 6;  size = 'small';  fixed = $false }
-    [pscustomobject]@{ id = 'appointments';   title = 'Upcoming Appointments';     visible = $true;  order = 7;  size = 'small';  fixed = $false }
+    # SAMPLE cards - off by default. Their content is invented placeholder data
+    # (core/tony-core.ps1, source='placeholder'), so Home must never show them to a
+    # user who did not ask for them: "Sarah T. - Policy review - 2:00 PM" reads as
+    # your actual afternoon. They stay selectable, but the picker says so plainly and
+    # the cards themselves carry a prominent warning. Real calendar-backed
+    # appointments are a later, focused sprint.
+    [pscustomobject]@{ id = 'agency';         title = 'Agency Overview (Sample data)';       visible = $false; order = 6;  size = 'small';  fixed = $false }
+    [pscustomobject]@{ id = 'appointments';   title = 'Upcoming Appointments (Sample data)'; visible = $false; order = 7;  size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'family';         title = 'Family';                    visible = $false; order = 8;  size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'nonNegotiables'; title = 'Non-Negotiables';           visible = $false; order = 9;  size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'health';         title = 'Health';                    visible = $false; order = 10; size = 'small';  fixed = $false }
