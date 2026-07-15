@@ -764,15 +764,45 @@ function Get-UEAnswersFingerprint {
 
 # Build (or rebuild) and persist the model. Returns the model.
 # Rebuilds only when the answers actually changed (or -Force).
+#
+# Epic 12: the model is obtained THROUGH the Executive Reasoning Layer rather than
+# by calling New-UnderstandingModel directly. Today the layer routes this to the
+# deterministic floor, which calls that same function - so the output is identical
+# and meta.engine stays 'local'. The point is the seam: when a Claude/GPT/Gemini
+# driver is registered for 'understanding.extract', it arrives already behind the
+# validation gate, the guaranteed fallback and truthful provenance, and NOTHING
+# here changes. If the layer is unavailable (e.g. a harness that dot-sources this
+# module alone), we call the engine directly - the layer must never be a new way
+# for onboarding to fail.
 function Initialize-UnderstandingModel {
     param([switch]$Force)
     $s = Get-ConversationState
     $fp = Get-UEAnswersFingerprint -State $s
     $existing = Get-UnderstandingModelFromState -State $s
     if ($existing -and -not $Force -and ($existing.meta.answersFingerprint -eq $fp)) { return $existing }
-    $m = New-UnderstandingModel -State $s
+    $m = Get-UnderstandingViaReasoning -State $s
+    if (-not $m) { return $null }
     [void](Save-UnderstandingModel -Model $m)
     return $m
+}
+
+# The single call site that asks the layer to reason about onboarding. Falls back
+# to the engine directly if the layer is not loaded or cannot serve - the layer
+# adds a router, never a dependency onboarding can die on.
+function Get-UnderstandingViaReasoning {
+    param($State)
+    if (Get-Command Invoke-ReasoningTask -ErrorAction SilentlyContinue) {
+        try {
+            $r = Invoke-ReasoningTask -TaskId 'understanding.extract' -Payload $State
+            if ($r -and $r.ok -and $r.output) {
+                # provenance comes from the kernel, and is the truth about who reasoned
+                if ($r.output.PSObject.Properties.Name -contains 'meta' -and $r.output.meta) { $r.output.meta.engine = [string]$r.engine }
+                return $r.output
+            }
+        }
+        catch { }
+    }
+    return (New-UnderstandingModel -State $State)
 }
 
 # An edit is the user's OWN words: it overrides confidence entirely and is marked.
