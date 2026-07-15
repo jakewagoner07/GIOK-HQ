@@ -88,12 +88,22 @@ Register-ReasoningValidator -TaskId 'understanding.extract' -Validator {
         return [pscustomobject]@{ valid = $false; reason = ("result too large: {0} items (cap {1})" -f $items.Count, $script:UEMaxExtractItems) }
     }
     foreach ($it in $items) {
+        # 'edited' is a USER fact, never a provider's to assert. An earlier version
+        # exempted edited items from grounding (mirroring Epic 10, where an edit is
+        # the user's own words) - but a provider could simply stamp edited=true on a
+        # fabrication and skip the entire gate. The exemption was also pointless
+        # here: extraction always emits edited=false, and a model the user HAS
+        # edited is returned by Initialize-UnderstandingModel's fingerprint
+        # early-return without ever routing through the kernel. So at reasoning
+        # time, edited=true in provider output is illegitimate by construction and
+        # rejects the whole result. User edits are unaffected: they happen in the
+        # review workflow, AFTER extraction, and never pass through here.
+        if (($it.PSObject.Properties.Name -contains 'edited') -and [bool]$it.edited) {
+            return [pscustomobject]@{ valid = $false; reason = ("provider output cannot be marked edited: {0}" -f $it.text) }
+        }
         if ([string]::IsNullOrWhiteSpace([string]$it.text)) { return [pscustomobject]@{ valid = $false; reason = 'item with no text' } }
         if ([string]::IsNullOrWhiteSpace([string]$it.sourceQuestionId)) { return [pscustomobject]@{ valid = $false; reason = ("ungrounded item (no source question): {0}" -f $it.text) } }
         if (-not $grounding) { continue }
-        # a user EDIT is their own words by definition - it is not held to the
-        # source (this mirrors Epic 10: an edit bypasses confidence entirely)
-        if (($it.PSObject.Properties.Name -contains 'edited') -and [bool]$it.edited) { continue }
         $real = $null
         try { $real = [string](Get-ConversationAnswer $state ([string]$it.sourceQuestionId)) } catch { $real = $null }
         if ($null -eq $real) { return [pscustomobject]@{ valid = $false; reason = ("cannot verify source for: {0}" -f $it.text) } }

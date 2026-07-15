@@ -177,31 +177,51 @@ function Resolve-ReasoningProviders {
     return @($c | Sort-Object @{ Expression = { if ($_.PSObject.Properties.Name -contains 'priority') { [int]$_.priority } else { 100 } } }, @{ Expression = 'name' })
 }
 
-# ---- payload isolation ---------------------------------------------------
-# Drivers never see the caller's object, and never see EACH OTHER'S copies.
-# The kernel takes ONE canonical snapshot of the payload at entry, and every
-# dispatch (accelerator, floor, and the validator's grounding source) works from
-# its own fresh clone of that snapshot. A driver that mutates its copy - then
-# fails, throws, or lies - cannot poison the fallback, another provider, a later
-# validation, or the caller. JSON round-trip cloning is deliberate: the payloads
-# this kernel carries are the same JSON-shaped objects GIOK already persists and
-# reloads, so the round trip is shape-preserving by construction.
+# ---- request isolation ---------------------------------------------------
+# Drivers never see the caller's objects, and never see EACH OTHER'S copies.
+# The kernel takes ONE canonical snapshot of the whole mutable surface at entry -
+# payload, constraints AND context - and every dispatch (each accelerator, each
+# validation, and the floor) works from its own fresh clone of that snapshot.
+#
+# Cloning the payload alone was not enough: constraints and context were passed by
+# reference, so a driver could set requireGrounding=$false on the shared object and
+# the validator - reading that same object moments later - would switch its own gate
+# off and accept a fabrication. A driver could likewise mutate the caller's context
+# in place. Anything a driver can touch must be a copy, or it is an input to
+# validation that the attacker controls.
+#
+# JSON round-trip cloning is deliberate: these are the same JSON-shaped objects
+# GIOK already persists and reloads, so the round trip is shape-preserving by
+# construction.
 function Copy-ReasoningPayload {
     param($Payload)
     if ($null -eq $Payload) { return $null }
     try { return ($Payload | ConvertTo-Json -Depth 24 | ConvertFrom-Json) }
     catch { return $null }   # an uncloneable payload yields null; validators fail closed on it
 }
-# A per-dispatch request: same envelope, private payload clone.
+# The router's private, pristine copy of everything a driver could mutate.
+# Taken once, before any driver runs; never handed out - only cloned from.
+function New-CanonicalSnapshot {
+    param($Request)
+    return [pscustomobject]@{
+        payload     = (Copy-ReasoningPayload $Request.input)
+        constraints = (Copy-ReasoningPayload $Request.constraints)
+        context     = (Copy-ReasoningPayload $Request.context)
+        cloneOk     = (($null -eq $Request.input -or $null -ne (Copy-ReasoningPayload $Request.input)) -and
+                       ($null -eq $Request.constraints -or $null -ne (Copy-ReasoningPayload $Request.constraints)) -and
+                       ($null -eq $Request.context -or $null -ne (Copy-ReasoningPayload $Request.context)))
+    }
+}
+# A per-dispatch request: envelope metadata by value, everything mutable by clone.
 function New-IsolatedRequest {
-    param($Request, $CanonicalPayload)
+    param($Request, $Canonical)
     return [pscustomobject]@{
         version     = $Request.version
         requestId   = $Request.requestId
         taskId      = $Request.taskId
-        input       = (Copy-ReasoningPayload $CanonicalPayload)
-        context     = $Request.context
-        constraints = $Request.constraints
+        input       = (Copy-ReasoningPayload $Canonical.payload)
+        context     = (Copy-ReasoningPayload $Canonical.context)
+        constraints = (Copy-ReasoningPayload $Canonical.constraints)
         createdAt   = $Request.createdAt
     }
 }
@@ -240,18 +260,27 @@ function Invoke-Reasoning {
     $script:ReasoningDepth++
     try {
 
-        # ONE canonical snapshot of the payload, taken before any driver runs.
-        # Every dispatch below works from a private clone of this - see the
-        # payload-isolation note above.
-        $canonical = Copy-ReasoningPayload $Request.input
+        # ONE canonical snapshot of everything a driver could mutate - payload,
+        # constraints, context - taken before any driver runs. Every dispatch below
+        # works from a private clone of this; the snapshot itself is never handed
+        # out. See the request-isolation note above.
+        $canonical = New-CanonicalSnapshot -Request $Request
+        if (-not $canonical.cloneOk) {
+            # We could not take a pristine copy, so we cannot guarantee isolation.
+            # Continuing would mean handing drivers shared mutable references -
+            # refuse, truthfully, rather than run without the guarantee.
+            return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
+                    -Engine 'none' -ProviderName 'none' -ReasonCode 'invalid-output')
+        }
 
         $tried = @(Resolve-ReasoningProviders -TaskId $taskId)
         foreach ($p in $tried) {
-            $g = Invoke-ReasoningProviderGuarded -Provider $p -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+            $g = Invoke-ReasoningProviderGuarded -Provider $p -Request (New-IsolatedRequest -Request $Request -Canonical $canonical)
             if (-not $g.result) { continue }
             # validation grounds against a FRESH canonical clone - never against the
-            # copy the driver just had its hands on
-            $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+            # copy the driver just had its hands on, and never against constraints a
+            # driver could have rewritten
+            $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -Canonical $canonical)
             if (-not $v.valid) { continue }   # invalid-output: discard, try the next driver
             # attribution is stamped BY THE KERNEL - a driver cannot forge it
             $g.result.engine = [string]$p.name
@@ -268,7 +297,7 @@ function Invoke-Reasoning {
             return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
                     -Engine 'none' -ProviderName 'none' -ReasonCode 'no-provider')
         }
-        $g = Invoke-ReasoningProviderGuarded -Provider $floor -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+        $g = Invoke-ReasoningProviderGuarded -Provider $floor -Request (New-IsolatedRequest -Request $Request -Canonical $canonical)
         if (-not $g.result) {
             return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
                     -Engine 'local' -ProviderName $floor.name -ReasonCode 'provider-error')
@@ -281,7 +310,7 @@ function Invoke-Reasoning {
             $g.result.degraded = ($tried.Count -gt 0)
             return $g.result
         }
-        $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -CanonicalPayload $canonical)
+        $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -Canonical $canonical)
         if (-not $v.valid) {
             # the floor itself failed its own gate: report honestly rather than pass junk on
             return (New-ReasoningResult -TaskId $taskId -Ok $false -Output $null -Confidence 0.0 `
