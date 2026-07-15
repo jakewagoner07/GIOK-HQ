@@ -1,3 +1,12 @@
+> **Superseded in part by Epic 12.** The Executive Reasoning Layer
+> (`Blueprint/Executive_Reasoning_Layer.md`) now provides the routing, the validation gate, the
+> guaranteed deterministic fallback and the truthful provenance this plan described building by hand.
+> What remains of this document is the part Epic 12 deliberately did **not** do: the prompt contract,
+> the strict-JSON parser, the bounded call, and the consent/disclosure decision. Concretely, the
+> migration is now: **register a driver that `supports('understanding.extract')`** - everything around it
+> already exists and is tested. Read this for the Claude-specific detail; read the Epic 12 Blueprint for
+> the architecture it plugs into.
+
 # Migration Plan: Claude as the Primary Extraction Layer (Epic 10 follow-up)
 
 *Replace ONLY the extraction layer of the Understanding Engine with Claude, keeping the local
