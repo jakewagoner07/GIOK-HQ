@@ -3,9 +3,35 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 10 - Tony Understanding Engine (Onboarding V2)** (on
-`feature/tony-understanding-engine`, branched from `main` @ `7738ee4`; Desktop App Identity merged via
-PR #17, including its two post-review hardening fixes).
+Last updated: **Epic 11 - Personalizable Workspace** (on `feature/personalizable-workspace`, branched
+from `main` @ `1fa212f`; Epic 10 merged via PR #18).
+
+> **Epic 11 status (Personalizable Workspace):** two view-layer changes - no data-architecture change,
+> no second store, no new provider/agent/tab. **Goals workspace:** the page opened on a blank five-field
+> Add form with the user's own goals pushed below it (`life-workspaces.ps1:604` built before `:624`).
+> Now the goals own the page: **`+ Add Goal`** sits on the header row and the form is not built until
+> it is clicked; **Cancel writes nothing**. Added **DOMAIN + STATUS filters** (the old view had one
+> binary active/done toggle collapsing four statuses, and no domain filter) and put **Delete behind a
+> confirm** - it previously called `Remove-Goal` on a single click, so a mis-click destroyed a goal.
+> Every owner function and the single `identity/goals.json` store are untouched, so the Priority Engine
+> and Executive Context read goals unchanged. **Home:** now renders from a layout instead of hard-coded
+> cards. New `core/home-layout.ps1` stores ONLY `{id, visible, order, size}` in a **gitignored**
+> `tony-alpha/home_layout.json`; **16 cards** each read their **existing owner** (`Get-LifeItems` for the
+> six Life OS domains, `Get-ActiveGoals`, `Get-InboxSummary`, `$Model`, `Get-ExecutivePriorities`) and
+> navigate to that owner's workspace - **no business data is copied**, so deleting the preferences file
+> loses nothing. Provider cards (Communications/CRM) use **`Peek-CachedSignal` and never fetch on paint**
+> (the fetch-through getters block ~10-30s on a cold cache); a cold card honestly says "not loaded yet".
+> Hiding everything **forces the briefing visible in the model**, so no UI path yields a blank Home. A
+> card toggle rebuilds **only** the card flow and re-uses the same briefing Border, so an **in-flight
+> async briefing is never restarted** (Epic 9 preserved). Weekly Priorities (~0.7s) ships off by default.
+> Agency Overview / Upcoming Appointments still render `$Model` **placeholder** data tagged `SAMPLE` -
+> deliberately unchanged; replacing that fiction is a data-level job this epic forbids. Verified with
+> stores redirected to temp: Goals 25/25, layout model 30/30, Home 32/32 (paint **966ms**; all 16 cards
+> 1.6s), 7 views render, full launch clean with no orphans, parse + secret scan + git integrity clean.
+> Local-only, not pushed.
+
+> **Epic 10 status (Tony Understanding Engine / Onboarding V2):** (on
+> `feature/tony-understanding-engine`, branched from `main` @ `7738ee4`; merged via PR #18).
 
 > **Epic 10 status (Tony Understanding Engine / Onboarding V2):** replace raw onboarding storage with a
 > reviewable, consent-gated understanding. The 7-question interview is unchanged. **What was wrong:**

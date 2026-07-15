@@ -67,3 +67,8 @@ tony-alpha/dashboard/providers/yahoo.config.json
 
 # Founder's private notes — local only, never committed (kept on Jake's machine).
 Founder/
+
+# Home dashboard layout preferences (Epic 11) — how the user arranged their
+# cards {id, visible, order, size}. Local, user-specific, no business data:
+# delete it and Home simply returns to the default layout.
+tony-alpha/home_layout.json
