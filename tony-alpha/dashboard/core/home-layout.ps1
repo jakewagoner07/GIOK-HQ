@@ -51,6 +51,7 @@ $script:HomeCardCatalog = @(
     [pscustomobject]@{ id = 'communications'; title = 'Communications';            visible = $false; order = 14; size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'crm';            title = 'CRM';                       visible = $false; order = 15; size = 'small';  fixed = $false }
     [pscustomobject]@{ id = 'priorities';     title = 'Weekly Priorities';         visible = $false; order = 16; size = 'medium'; fixed = $false }
+    [pscustomobject]@{ id = 'dailyPlan';       title = 'Daily Executive Plan';      visible = $false; order = 17; size = 'medium'; fixed = $false }
 )
 
 function Get-HomeCardCatalog { return @($script:HomeCardCatalog) }
