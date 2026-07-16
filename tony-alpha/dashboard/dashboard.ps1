@@ -39,6 +39,8 @@ try {
 . (Join-Path $PSScriptRoot 'core\reasoning-layer.ps1')
 . (Join-Path $PSScriptRoot 'core\understanding-engine.ps1')
 . (Join-Path $PSScriptRoot 'core\reasoning-local.ps1')
+. (Join-Path $PSScriptRoot 'core\reasoning-consent.ps1')
+. (Join-Path $PSScriptRoot 'core\reasoning-claude.ps1')
 . (Join-Path $PSScriptRoot 'core\home-layout.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-provider-contract.ps1')
