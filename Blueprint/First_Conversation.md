@@ -67,7 +67,19 @@ from **Settings → Restart First Conversation.**
 - **The response generator is the seam.** Today it returns warm, human acknowledgments. A future
   AI replaces *only* that function — nothing else changes. Tony's responses are generated, never
   hardcoded, and Tony never fabricates the user's answers.
-- **Local only.** No cloud, no external AI, no APIs.
+- **The interview is local only.** No cloud, no external AI, no APIs *during the seven questions*.
+
+## Organizing the answers (Epic 13: optional, consented, off-thread)
+The *interview* stays offline. After the last answer, Tony organizes what was shared into the
+Understanding Model — and that one step may, **with explicit consent**, use Claude:
+- A consent screen appears before anything leaves the machine: *"Tony can use Claude to organize what
+  you shared... Nothing will be saved to Identity until you review and approve it"*, with **Use Claude**
+  and **Keep Processing Local**. The answers never leave the computer unless the user picks Use Claude.
+- Extraction runs **off the UI thread** and is deadline-bounded; the deterministic local engine is the
+  **permanent** fallback for no-key, declined consent, timeout, or any failure. The review screen and
+  approval flow are identical either way, with one honest line noting who organized it.
+- See `Blueprint/Claude_Understanding_Driver.md`. Nothing about the interview, the close, or the
+  "distill into Identity only after approval" contract changes.
 
 ## Why this matters
 First impressions are identity-forming. A user who feels *understood* in their first minute trusts

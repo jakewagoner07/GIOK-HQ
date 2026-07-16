@@ -106,22 +106,28 @@ Unregister-TestProvider 'wellformed-empty'
 # =====================================================================
 Write-TestSection 'Archetype 7-12: the liars (fabrication with a real citation)'
 # =====================================================================
-# Each of these returns a structurally perfect model whose ONE goal is crafted.
-# 'expectPass' is the whole point: the gate must reject invention while still
-# accepting honest paraphrase, or it is just a reject-everything stub.
+# Epic 13A philosophy: the MACHINE validates FACTS, the HUMAN validates MEANING.
+# Each returns a structurally perfect model whose ONE goal is crafted. The gate
+# rejects fabricated FACTS (numbers, dates, currency, proper nouns) and the
+# zero-overlap absurdity floor, while ACCEPTING honest semantic compression - the
+# review screen is where wording is judged. A gate that rejects paraphrase is just
+# a reject-everything stub; a gate that accepts fabricated facts is a liar.
 $liars = @(
+    # fabricated FACTS -> machine rejects
     @{ n = 'fabricated sourceAnswer (cites words never said)'; i = (New-TestItem -Text 'Hit 500 policies by summer' -SourceAnswer 'I have always wanted a yacht'); pass = $false }
     @{ n = 'fabricated number'; i = (New-TestItem -Text 'Save $999,999 this year'); pass = $false }
     @{ n = 'fabricated person'; i = (New-TestItem -Text 'Meet Sarah Thompson weekly'); pass = $false }
     @{ n = 'fabricated company'; i = (New-TestItem -Text 'Sign the Acme Corporation deal'); pass = $false }
+    @{ n = 'fabricated city'; i = (New-TestItem -Text 'Grow policies in Chicago'); pass = $false }
     @{ n = 'fabricated date'; i = (New-TestItem -Text 'Finish by 11:45pm on December 25'); pass = $false }
-    @{ n = 'unrelated interpretation + real citation'; i = (New-TestItem -Text 'Buy a yacht in Monaco'); pass = $false }
+    @{ n = 'absurdity: unrelated + real citation'; i = (New-TestItem -Text 'Buy a yacht in Monaco'); pass = $false }
+    # honest MEANING -> machine accepts, human judges
+    @{ n = 'semantic compression (evenings at home) MUST PASS'; i = (New-TestItem -Text 'Protect evenings at home' -SourceAnswer 'Home by six' -SourceQuestionId 'q_week'); pass = $true }
     @{ n = 'valid paraphrase (MUST PASS)'; i = (New-TestItem -Text 'Reach 500 policies before the summer'); pass = $true }
     @{ n = 'multi-number grounded (MUST PASS)'; i = (New-TestItem -Text 'Save $12,500 at 7.5% by 6:30am'); pass = $true }
 )
 foreach ($c in $liars) {
-    $script:CraftedGoals = @($c.i)
-    Register-CraftingProvider -Name 'liar'
+    Register-CraftingProvider -Name 'liar' -Goals @($c.i)
     $r = Invoke-TestExtract
     $accepted = ($r.engine -eq 'liar')
     Assert-True ($accepted -eq $c.pass) ("{0}: {1}" -f $c.n, $(if ($accepted) { 'accepted' } else { 'rejected' }))
@@ -130,8 +136,7 @@ foreach ($c in $liars) {
 
 # whole-result rejection: one bad item among good ones kills the ENTIRE result.
 # No partial merge - a half-trusted result is not a thing.
-$script:CraftedGoals = @((New-TestItem -Text 'Hit 500 policies by summer'), (New-TestItem -Text 'Buy a yacht'))
-Register-CraftingProvider -Name 'one-bad-apple'
+Register-CraftingProvider -Name 'one-bad-apple' -Goals @((New-TestItem -Text 'Hit 500 policies by summer'), (New-TestItem -Text 'Buy a yacht'))
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'local' -and -not (Test-OutputLeaks $r 'yacht')) 'one bad item rejects the WHOLE result - no partial merge'
 Unregister-TestProvider 'one-bad-apple'
@@ -143,20 +148,21 @@ Write-TestSection 'Archetype 13: edited-abuser (a provider cannot forge edited=t
 # were exempt from grounding. A provider could stamp edited=true on a fabrication
 # and skip the entire gate. Now edited=true in PROVIDER output is illegitimate by
 # construction and rejects the whole result.
-$script:CraftedGoals = @((New-TestItem -Text 'Buy a yacht in Monaco' -SourceAnswer 'never said this' -Edited $true))
-Register-CraftingProvider -Name 'edited-abuser'
+Register-CraftingProvider -Name 'edited-abuser' -Goals @((New-TestItem -Text 'Buy a yacht in Monaco' -SourceAnswer 'never said this' -Edited $true))
 $r = Invoke-TestExtract
 Assert-True ((-not (Test-OutputLeaks $r 'yacht')) -and $r.engine -eq 'local') ("edited-abuser: edited=true + fabricated goal REJECTED (engine={0})" -f $r.engine)
+Unregister-TestProvider 'edited-abuser'
 
 # edited=true on an otherwise PERFECTLY grounded item must ALSO be rejected -
 # the flag itself is the violation, not the content.
-$script:CraftedGoals = @((New-TestItem -Text 'Hit 500 policies by summer' -Edited $true))
+Register-CraftingProvider -Name 'edited-abuser' -Goals @((New-TestItem -Text 'Hit 500 policies by summer' -Edited $true))
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'local') ("edited-abuser: edited=true + VALID grounded goal also REJECTED (engine={0})" -f $r.engine)
+Unregister-TestProvider 'edited-abuser'
 
 # ...and the SAME item with edited=false passes. This is the control that proves
 # we rejected the forged flag, not the content.
-$script:CraftedGoals = @((New-TestItem -Text 'Hit 500 policies by summer' -Edited $false))
+Register-CraftingProvider -Name 'edited-abuser' -Goals @((New-TestItem -Text 'Hit 500 policies by summer' -Edited $false))
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'edited-abuser') ("edited-abuser: same item with edited=false ACCEPTED (engine={0})" -f $r.engine)
 Unregister-TestProvider 'edited-abuser'
@@ -294,8 +300,7 @@ Write-TestSection 'Archetype 21: excessive-result flood'
 # =====================================================================
 $flood = @()
 1..201 | ForEach-Object { $flood += (New-TestItem -Text 'Hit 500 policies by summer') }
-$script:CraftedGoals = $flood
-Register-CraftingProvider -Name 'flooder'
+Register-CraftingProvider -Name 'flooder' -Goals $flood
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'local') ("excessive-result flood: 201 items REJECTED by the size cap (engine={0})" -f $r.engine)
 Assert-True (@($r.output.goals).Count -lt 10) 'excessive-result flood: rejected outright, never truncated-and-passed'

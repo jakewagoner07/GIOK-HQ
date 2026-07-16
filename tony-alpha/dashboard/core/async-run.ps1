@@ -142,6 +142,41 @@ return ([pscustomobject]@{ candidates = @() })
     return [scriptblock]::Create($text)
 }
 
+# Build the worker scriptblock that runs the onboarding extraction OFF the UI
+# thread (Epic 13). It loads its own reasoning modules (guarded by its own flag,
+# independent of the briefing worker), points the bounded Claude worker at the
+# dashboard root, sets per-attempt consent, runs the extraction through the
+# reasoning kernel, then CLEARS consent. It writes only what onboarding already
+# writes (the Understanding Model into the conversation state) and returns a tiny
+# status object. Returns a scriptblock: param($DashRoot,$UseClaude).
+function Get-AsyncExtractionWork {
+    $text = @"
+param(`$DashRoot, `$UseClaude)
+`$ErrorActionPreference = 'Stop'
+if (-not `$global:GiokExtractLoaded) {
+    `$core = Join-Path `$DashRoot 'core'; `$prov = Join-Path `$DashRoot 'providers'
+    foreach (`$m in @('reasoning-layer','first-conversation','identity','understanding-engine','reasoning-local','reasoning-consent','reasoning-claude')) { . (Join-Path `$core ("`$m.ps1")) }
+    # claude-provider gives the worker Test-ClaudeConfigured (the driver's availability
+    # check). A load-time stub keeps its Register-TonyProvider call a no-op here.
+    if (-not (Get-Command Register-TonyProvider -ErrorAction SilentlyContinue)) { function global:Register-TonyProvider { param(`$Provider) } }
+    . (Join-Path `$prov 'claude-provider.ps1')
+    `$global:GiokExtractLoaded = `$true
+}
+if (Get-Command Set-ReasoningDashboardRoot -ErrorAction SilentlyContinue) { Set-ReasoningDashboardRoot `$DashRoot }
+if (Get-Command Set-ExtractionConsent -ErrorAction SilentlyContinue) { Set-ExtractionConsent -Granted ([bool]`$UseClaude) }
+`$ok = `$false; `$engine = 'local'
+try {
+    if (Get-Command Initialize-UnderstandingModel -ErrorAction SilentlyContinue) {
+        `$m = Initialize-UnderstandingModel -Force
+        if (`$m) { `$ok = `$true; try { `$engine = [string]`$m.meta.engine } catch { `$engine = 'local' } }
+    }
+} catch { `$ok = `$false }
+if (Get-Command Clear-ExtractionConsent -ErrorAction SilentlyContinue) { Clear-ExtractionConsent }
+return ([pscustomobject]@{ ok = `$ok; engine = `$engine })
+"@
+    return [scriptblock]::Create($text)
+}
+
 # Dispose every in-flight instance and the worker runspace. Call on window close.
 function Stop-AsyncWorkers {
     foreach ($e in @($script:AsyncInFlight)) {

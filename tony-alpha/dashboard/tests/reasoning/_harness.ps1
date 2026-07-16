@@ -28,6 +28,19 @@ $script:CoreDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..\core')).Path
 $script:TestSandbox = Join-Path $env:TEMP ('giok-reasoning-tests-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $script:TestSandbox -Force | Out-Null
 
+# Sandbox cleanup that survives a CRASH. Complete-TestFile removes the sandbox on
+# a normal finish, but a test file that throws never reaches it. PowerShell.Exiting
+# fires when the runspace tears down for ANY reason - normal exit or an unhandled
+# terminating error - so the sandbox is reaped either way. (Each test file runs in
+# its own powershell.exe, so this handler is scoped to just that file's run.)
+function Remove-TestSandbox {
+    if ($script:TestSandbox -and (Test-Path $script:TestSandbox)) {
+        Remove-Item $script:TestSandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+try { Register-EngineEvent -SourceIdentifier ([System.Management.Automation.PsEngineEvent]::Exiting) -Action { Remove-TestSandbox } | Out-Null }
+catch { }
+
 # THIS OVERRIDES identity.ps1's Get-IdentityDir. Order matters: it must come
 # after the dot-source above, or the real store wins.
 function Get-IdentityDir { return $script:TestSandbox }
@@ -80,7 +93,7 @@ function Write-TestSection {
 # what makes this suite usable from a runner or CI.
 function Complete-TestFile {
     param([Parameter(Mandatory)][string]$Name)
-    if (Test-Path $script:TestSandbox) { Remove-Item $script:TestSandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    Remove-TestSandbox
     Write-Host ''
     if ($script:TestFail -gt 0) {
         Write-Host ("{0}: {1} passed, {2} FAILED" -f $Name, $script:TestPass, $script:TestFail)
@@ -173,16 +186,19 @@ function Unregister-TestProvider {
 }
 
 # An accelerator that returns a real floor model with its goals replaced by the
-# crafted items in $script:CraftedGoals. This is how nearly every hostile
-# archetype smuggles its payload: a structurally perfect model, one bad item.
+# crafted items PASSED IN. This is how nearly every hostile archetype smuggles its
+# payload: a structurally perfect model, one bad item. The crafted items are baked
+# into the invoke via GetNewClosure, so each provider carries its OWN data - there
+# is no shared script-scoped state a later test could accidentally reuse.
 function Register-CraftingProvider {
-    param([Parameter(Mandatory)][string]$Name, [int]$Priority = 1)
-    Register-TestProvider -Name $Name -Priority $Priority -Invoke {
-        param($rq)
-        $m = New-UnderstandingModel -State $rq.input
-        $m.goals = @($script:CraftedGoals)
-        return (New-ReasoningResult -TaskId $rq.taskId -Ok $true -Output $m -Confidence 0.9)
-    }
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)]$Goals, [int]$Priority = 1)
+    $craftedGoals = @($Goals)
+    Register-TestProvider -Name $Name -Priority $Priority -Invoke ({
+            param($rq)
+            $m = New-UnderstandingModel -State $rq.input
+            $m.goals = @($craftedGoals)
+            return (New-ReasoningResult -TaskId $rq.taskId -Ok $true -Output $m -Confidence 0.9)
+        }.GetNewClosure())
 }
 
 function Invoke-TestExtract {

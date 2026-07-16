@@ -89,6 +89,12 @@ $items = @(
     @{ n = 'time grounded in the answer'; i = (New-TestItem -Text 'Be ready for the 6:30am standup'); pass = $true }
     @{ n = 'text sharing nothing with the citation'; i = (New-TestItem -Text 'Buy a yacht'); pass = $false }
     @{ n = 'honest paraphrase'; i = (New-TestItem -Text 'Reach 500 policies before the summer'); pass = $true }
+    # Epic 13A fact gate: fabricated proper nouns rejected; grounded ones and
+    # reasonable semantic compression accepted (the human judges wording, not this).
+    @{ n = 'fabricated proper noun (company) riding a true citation'; i = (New-TestItem -Text 'Sign the Acme deal for policies'); pass = $false }
+    @{ n = 'fabricated proper noun (person)'; i = (New-TestItem -Text 'Meet Sarah about policies'); pass = $false }
+    @{ n = 'fabricated proper noun (city)'; i = (New-TestItem -Text 'Sell policies in Chicago'); pass = $false }
+    @{ n = 'semantic compression (no invented fact) MUST PASS'; i = (New-TestItem -Text 'Grow the book of policies' ); pass = $true }
 )
 foreach ($c in $items) {
     $m = New-UnderstandingModel -State (New-TestState)
@@ -97,6 +103,55 @@ foreach ($c in $items) {
         -Result (New-ReasoningResult -TaskId 'understanding.extract' -Ok $true -Output $m -Confidence 0.9) `
         -Request (New-ReasoningRequest -TaskId 'understanding.extract' -Payload (New-TestState))
     Assert-True ($v.valid -eq $c.pass) ("{0}: {1}" -f $c.n, $(if ($v.valid) { 'accepted' } else { ("rejected - " + $v.reason) }))
+}
+
+# =====================================================================
+Write-TestSection 'Epic 13A validation-honesty: acronyms, short names, documented limits'
+# =====================================================================
+# Full-gate helper: run the kernel validator on a model whose single goal is crafted.
+function Test-KernelGoal {
+    param([Parameter(Mandatory)]$Item)
+    $m = New-UnderstandingModel -State (New-TestState)
+    $m.goals = @($Item)
+    return (Test-ReasoningOutput -TaskId 'understanding.extract' `
+            -Result (New-ReasoningResult -TaskId 'understanding.extract' -Ok $true -Output $m -Confidence 0.9) `
+            -Request (New-ReasoningRequest -TaskId 'understanding.extract' -Payload (New-TestState))).valid
+}
+
+# --- acronyms are exempted: legitimate business/insurance vocabulary passes ---
+foreach ($acro in @('Grow the ROI on policies', 'Grow the IUL policy book', 'Improve CRM on policies', 'Review ROP policy options')) {
+    Assert-True (Test-KernelGoal (New-TestItem -Text $acro)) ("acronym passes (no fallback): {0}" -f $acro)
+}
+Assert-True (Test-KernelGoal (New-TestItem -Text 'Protect evenings at home' -SourceAnswer 'Home by six' -SourceQuestionId 'q_week')) 'semantic compression passes: Protect evenings at home'
+
+# --- mid-sentence fabricated entities still rejected ---
+Assert-True (-not (Test-KernelGoal (New-TestItem -Text 'Sign the Acme deal for policies'))) 'fabricated company (mid-sentence) rejected: Acme'
+Assert-True (-not (Test-KernelGoal (New-TestItem -Text 'Meet Sarah about policies'))) 'fabricated person (mid-sentence) rejected: Sarah'
+Assert-True (-not (Test-KernelGoal (New-TestItem -Text 'Sell policies in Chicago'))) 'fabricated city (mid-sentence) rejected: Chicago'
+Assert-True (-not (Test-KernelGoal (New-TestItem -Text 'Save $40,000 in policies'))) 'fabricated currency rejected'
+Assert-True (-not (Test-KernelGoal (New-TestItem -Text 'Hit 500 policies by summer' -SourceAnswer 'I have always wanted a yacht'))) 'false sourceAnswer rejected'
+Assert-True (-not (Test-KernelGoal (New-TestItem -Text 'Buy a yacht'))) 'zero-overlap absurdity rejected'
+
+# --- short-name grounding: exact whole-token, never a substring of an unrelated word ---
+Assert-True ('' -eq (Get-UEUngroundedProperNoun -Text 'Meet Al today' -Source 'coffee with Al today')) 'short name Al grounds when explicitly present'
+Assert-True ('Al' -eq (Get-UEUngroundedProperNoun -Text 'Meet Al today' -Source 'hit my goal today')) 'short name Al REJECTED when only substring of goal'
+Assert-True ('' -eq (Get-UEUngroundedProperNoun -Text 'See Ed today' -Source 'lunch with Ed today')) 'short name Ed grounds when explicitly present'
+Assert-True ('Ed' -eq (Get-UEUngroundedProperNoun -Text 'See Ed today' -Source 'needed that today')) 'short name Ed REJECTED when only substring of needed'
+
+# --- DOCUMENTED LIMITATIONS: recorded as notes, NOT passing security guarantees ---
+# These currently reach the review screen (the human backstop). They are deterministic
+# blind spots of capitalization/digit heuristics, labelled honestly so nobody mistakes
+# them for blocked. If any is ever tightened, revisit these notes.
+foreach ($lim in @(
+        @{ t = 'Chicago policies by summer'; sqid = 'q_goal'; ans = $REAL; why = 'sentence-initial proper noun' },
+        @{ t = 'Grow policies. Acme signed the deal'; sqid = 'q_goal'; ans = $REAL; why = 'post-period proper noun' },
+        @{ t = 'grow policies with sarah by summer'; sqid = 'q_goal'; ans = $REAL; why = 'lowercase proper noun' },
+        @{ t = 'Save five thousand by summer'; sqid = 'q_goal'; ans = $REAL; why = 'word-form amount' },
+        @{ t = 'Reach 500 policies by next march'; sqid = 'q_goal'; ans = $REAL; why = 'word-form date (lowercase month)' },
+        @{ t = 'Partner with FEMA on policies'; sqid = 'q_goal'; ans = $REAL; why = 'ALL-CAPS org rides the acronym exemption' }
+    )) {
+    $accepted = Test-KernelGoal (New-TestItem -Text $lim.t -SourceAnswer $lim.ans -SourceQuestionId $lim.sqid)
+    Write-TestNote ("KNOWN LIMITATION [{0}]: '{1}' accepted={2} -> backstopped by the human review screen, NOT a machine guarantee" -f $lim.why, $lim.t, $accepted)
 }
 
 # =====================================================================

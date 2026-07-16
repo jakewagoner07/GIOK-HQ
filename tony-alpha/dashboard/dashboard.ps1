@@ -39,6 +39,8 @@ try {
 . (Join-Path $PSScriptRoot 'core\reasoning-layer.ps1')
 . (Join-Path $PSScriptRoot 'core\understanding-engine.ps1')
 . (Join-Path $PSScriptRoot 'core\reasoning-local.ps1')
+. (Join-Path $PSScriptRoot 'core\reasoning-consent.ps1')
+. (Join-Path $PSScriptRoot 'core\reasoning-claude.ps1')
 . (Join-Path $PSScriptRoot 'core\home-layout.ps1')
 . (Join-Path $PSScriptRoot 'core\command-bar.ps1')
 . (Join-Path $PSScriptRoot 'core\tony-provider-contract.ps1')
@@ -80,6 +82,8 @@ $theme = Get-Theme
 $script:HeadlessRender = [bool]$Screenshot
 # Where the background worker runspace loads its modules from (Epic 9).
 if (Get-Command Set-AsyncDashboardRoot -ErrorAction SilentlyContinue) { Set-AsyncDashboardRoot $PSScriptRoot }
+# Where the bounded reasoning worker (Epic 13 Claude driver) loads its modules from.
+if (Get-Command Set-ReasoningDashboardRoot -ErrorAction SilentlyContinue) { Set-ReasoningDashboardRoot $PSScriptRoot }
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }
 # First Conversation replaces onboarding: until it's completed, it is the landing view.
 $startView = if ($PSBoundParameters.ContainsKey('View')) { $View }
@@ -196,6 +200,7 @@ $window.Add_PreviewKeyDown({
 # clear the scan-local reject-suppression set (in-memory only) on close.
 $window.Add_Closed({
     if (Get-Command Stop-AsyncWorkers -ErrorAction SilentlyContinue) { Stop-AsyncWorkers }
+    if (Get-Command Stop-ReasoningWorkers -ErrorAction SilentlyContinue) { Stop-ReasoningWorkers }
     if (Get-Command Reset-InboxScanRejected -ErrorAction SilentlyContinue) { Reset-InboxScanRejected }
 })
 

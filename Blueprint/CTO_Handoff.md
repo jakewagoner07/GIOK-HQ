@@ -196,6 +196,28 @@ These are settled and should not be re-litigated without a blueprint change:
    only (Agents + markdown docs); every editable/data-driven view is always rebuilt. All read-only,
    provider-neutral, mailbox/calendar/CRM behavior unchanged; no new user-facing feature.
 
+18. **The first external reasoning driver serves one task, and consent is its availability (Epic 13,
+   `Claude_Understanding_Driver.md`).** `core/reasoning-claude.ps1` registers `claude-understanding` into
+   the Epic 12 kernel and supports **only** `understanding.extract` - Claude organizes the seven onboarding
+   answers into the existing Understanding Model; no other task is migrated (goals.refine, briefing.compose,
+   capture.classify, etc. stay unmigrated and fail closed). **Consent IS availability:** `isAvailable() =
+   Claude configured AND consent granted for THIS attempt`, so a declined / unconfigured / unasked driver is
+   **not a candidate** and the kernel never passes it the answers - privacy is structural, and the
+   deterministic **local floor** (permanent, offline, keyless) answers instead (`meta.engine='local'`).
+   Consent is per-attempt and cleared after; **"remember my choice" is explicit opt-in only, never silent**,
+   written to the **existing gitignored `claude.config.json`** (no second secrets store). A strict-JSON
+   prompt/parse contract; a tighter Claude-only grounding gate (multi-anchor / token-fraction) layers
+   **over**, not replacing, the kernel validator; deterministic dedup; **one unsafe item rejects the whole
+   Claude result**, and Claude output is **never combined** with local output (mixed provenance is worse than
+   none). `maxMs` is enforced by **abandonment, not cancellation** (PS 5.1 cannot truly cancel
+   `Invoke-WebRequest`): bounded work runs in a background runspace, the deadline abandons it and falls to
+   the floor with `fallbackReason='timeout'`, late results are discarded by `requestId`, and runspaces are
+   reaped on close. External drivers are **trusted in-process code, NOT sandboxed** - registering one is a
+   code-review event. **Nothing is saved until Jake approves** on the review screen, and validation may
+   reject Claude and fall back locally - a success, not a failure. No secrets / prompts / answers / responses
+   / identity are logged; diagnostics carry only provider / task / request id, status, duration, safe error
+   class, item counts, and fallback reason.
+
 ## Security / privacy rules
 
 - **Never commit secrets.** API keys, OAuth client secrets, access/refresh tokens, authorization
@@ -215,6 +237,10 @@ These are settled and should not be re-litigated without a blueprint change:
 
 ## Current Git state
 
+- **Current work:** `feature/claude-understanding-driver` (**Epic 13 - Claude Understanding Driver**),
+  branched from **synchronized `main` @ `5477355`** - local-only, **not pushed, not merged.** `main` has
+  advanced to `5477355` since the RC2-era snapshot below; the intervening Epic 5-13 sprints are recorded in
+  `GIOK_Project_Status.md`.
 - **`main`** is at `2459b66` (Alpha PR #1 + D17 PR #2 merged). **Never merge into `main` without Jake.**
 - **`release/rc2-executive-intelligence`** is the current integration branch: D18, D19, D20 (+
   constitution), Randy, and Executive Management merged in dependency order (history preserved) from
@@ -230,11 +256,13 @@ These are settled and should not be re-litigated without a blueprint change:
 
 ## Exact current stopping point
 
-**RC2 — Executive Intelligence Integration** is committed on `release/rc2-executive-intelligence` and
-verified together (app launches; Emma/Riley activate on the merged engines; Randy uses the `crm` signal
-and connects live read-only; the Executive Manager delegates across all six specialists; both harnesses
-pass on the merged tree; Decision Framework final; all read-only). Nothing is mid-edit; the tree is
-clean. **Stopped before pushing**, awaiting CTO approval. No feature work was added during RC2.
+**Epic 13 — Claude Understanding Driver** is committed on `feature/claude-understanding-driver` (branched
+from synchronized `main` @ `5477355`) and verified: the first external reasoning driver serves only
+`understanding.extract`, consent gates its availability, the local floor answers whenever Claude is
+unconfigured / declined / times out, `maxMs` is enforced by abandonment (bounded runspace, stale results
+discarded by `requestId`, runspaces reaped on close), and the permanent Claude-driver suite passes (37 new
+assertions; existing 181 preserved -> **218 total**). Nothing is mid-edit; the tree is clean. **Stopped
+before pushing** — the branch is local-only, not pushed, not merged into `main`.
 
 ## Recommended next steps
 

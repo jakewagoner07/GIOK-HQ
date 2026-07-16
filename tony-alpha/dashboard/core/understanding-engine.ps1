@@ -793,7 +793,11 @@ function Get-UnderstandingViaReasoning {
     param($State)
     if (Get-Command Invoke-ReasoningTask -ErrorAction SilentlyContinue) {
         try {
-            $r = Invoke-ReasoningTask -TaskId 'understanding.extract' -Payload $State
+            # A real Claude extraction (all six sections + summary) plus the bounded
+            # worker's one-time module load runs ~15-20s, so the default 12s budget
+            # would time out every time. This runs off the UI thread, so a generous
+            # deadline is free; on expiry the kernel abandons and the floor answers.
+            $r = Invoke-ReasoningTask -TaskId 'understanding.extract' -Payload $State -MaxMs 30000
             if ($r -and $r.ok -and $r.output) {
                 # provenance comes from the kernel, and is the truth about who reasoned
                 if ($r.output.PSObject.Properties.Name -contains 'meta' -and $r.output.meta) { $r.output.meta.engine = [string]$r.engine }

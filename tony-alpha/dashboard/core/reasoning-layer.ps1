@@ -88,7 +88,8 @@ function New-ReasoningResult {
         [string]$ProviderName = 'local',
         [string]$ReasonCode = 'ok',
         $Clarifications = @(),
-        [bool]$Degraded = $false
+        [bool]$Degraded = $false,
+        [string]$FallbackReason = ''
     )
     return [pscustomobject]@{
         version        = $script:ReasoningVersion
@@ -101,6 +102,10 @@ function New-ReasoningResult {
         reasonCode     = $ReasonCode
         clarifications = ([array]@($Clarifications))
         degraded       = $Degraded
+        # Why an accelerator did not serve (timeout | stale | auth-failed |
+        # rate-limited | server-error | network-error | malformed | grounding | ...).
+        # Empty when an accelerator served or none was tried. Diagnostics only.
+        fallbackReason = $FallbackReason
     }
 }
 
@@ -238,6 +243,118 @@ function Invoke-ReasoningProviderGuarded {
     catch { return [pscustomobject]@{ result = $null; reasonCode = 'provider-error' } }
 }
 
+# ---- bounded dispatch: real maxMs enforcement by ABANDONMENT ------------
+# Epic 12 left maxMs as plumbing. Epic 13 enforces it, because the one real
+# provider (Claude) has no HTTP timeout and onboarding must never hang.
+#
+# A 'bounded' provider's portable work runs in a background runspace. The kernel
+# waits at most maxMs. If the work finishes in time, its result is read and used.
+# If the deadline passes, the work is ABANDONED - the kernel never reads its
+# result and tears the runspace down asynchronously. We do NOT claim cancellation:
+# the underlying HTTP request may still complete on the runspace, but its result
+# is never read, and a completion whose requestId does not match is discarded.
+# This is deliberately synchronous (it blocks the CALLER up to maxMs) - onboarding
+# runs the whole call off the WPF thread, so the UI never blocks; here we only
+# guarantee the deadline.
+$script:ReasoningDeadlineEnabled = $true       # tests disable this to run drivers inline with mocks
+$script:ReasoningDashRoot = $null              # dashboard dir, for a bounded worker to load modules
+$script:ReasoningBoundedInFlight = New-Object System.Collections.ArrayList  # abandoned instances to reap
+function Set-ReasoningDeadlineEnforcement { param([bool]$Enabled) $script:ReasoningDeadlineEnabled = $Enabled }
+function Test-ReasoningDeadlineEnforcement { return $script:ReasoningDeadlineEnabled }
+function Set-ReasoningDashboardRoot { param([string]$Path) $script:ReasoningDashRoot = $Path }
+
+# Reap finished-or-abandoned bounded instances; dispose the rest on shutdown.
+# Call on window close so no orphan runspaces/threads leak.
+function Stop-ReasoningWorkers {
+    foreach ($e in @($script:ReasoningBoundedInFlight)) {
+        try { if ($e.ps) { $e.ps.Stop(); $e.ps.Dispose() } } catch { }
+        try { if ($e.rs) { $e.rs.Close(); $e.rs.Dispose() } } catch { }
+    }
+    $script:ReasoningBoundedInFlight.Clear()
+}
+# Diagnostics: counts only, no content.
+function Get-ReasoningWorkerStats { return [pscustomobject]@{ inFlight = @($script:ReasoningBoundedInFlight).Count } }
+# Best-effort sweep of already-completed abandoned instances (called opportunistically).
+function Clear-FinishedBoundedWorkers {
+    foreach ($e in @($script:ReasoningBoundedInFlight)) {
+        try {
+            if ($e.handle -and $e.handle.IsCompleted) {
+                try { $e.ps.Dispose() } catch { }
+                try { $e.rs.Close(); $e.rs.Dispose() } catch { }
+                [void]$script:ReasoningBoundedInFlight.Remove($e)
+            }
+        }
+        catch { }
+    }
+}
+
+# Run $Work (a portable scriptblock: param($RequestJson,$DashRoot)) under a hard
+# deadline. Returns { completed; result }. On timeout, completed=$false and the
+# instance is tracked for reaping (never blocks the caller past the deadline).
+function Invoke-BoundedWork {
+    param([scriptblock]$Work, [string]$RequestJson, [int]$TimeoutMs)
+    Clear-FinishedBoundedWorkers
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.ApartmentState = 'MTA'
+    $rs.ThreadOptions = 'ReuseThread'
+    $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript($Work).AddArgument($RequestJson).AddArgument($script:ReasoningDashRoot)
+    $handle = $ps.BeginInvoke()
+    if ($handle.AsyncWaitHandle.WaitOne($TimeoutMs)) {
+        $result = $null
+        try { $result = $ps.EndInvoke($handle) } catch { $result = $null }
+        try { $ps.Dispose() } catch { }
+        try { $rs.Close(); $rs.Dispose() } catch { }
+        $payload = if ($result -is [System.Collections.IEnumerable] -and $result -isnot [string] -and @($result).Count -eq 1) { @($result)[0] } else { $result }
+        return [pscustomobject]@{ completed = $true; result = $payload }
+    }
+    # DEADLINE PASSED: abandon. Do not read the result. Track for reaping - do not
+    # block the caller waiting for a runspace that may still be in an HTTP call.
+    [void]$script:ReasoningBoundedInFlight.Add([pscustomobject]@{ ps = $ps; rs = $rs; handle = $handle })
+    return [pscustomobject]@{ completed = $false; result = $null }
+}
+
+# Dispatch one candidate, bounded if it opts in and enforcement is on. Returns
+# { result; reasonCode; fallbackReason }. A bounded timeout or a stale completion
+# yields result=$null so the router moves on to the floor with a truthful reason.
+function Invoke-CandidateGuarded {
+    param($Provider, $Request, [int]$TimeoutMs)
+    $isBounded = ($Provider.PSObject.Properties.Name -contains 'bounded' -and [bool]$Provider.bounded -and
+        $Provider.PSObject.Properties.Name -contains 'boundedWork' -and $Provider.boundedWork)
+    if (-not ($isBounded -and $script:ReasoningDeadlineEnabled -and $TimeoutMs -gt 0)) {
+        # inline path (floor, non-bounded drivers, or enforcement disabled for tests)
+        $g = Invoke-ReasoningProviderGuarded -Provider $Provider -Request $Request
+        return [pscustomobject]@{ result = $g.result; reasonCode = $g.reasonCode; fallbackReason = '' }
+    }
+    $reqJson = $Request | ConvertTo-Json -Depth 24
+    $b = $null
+    try { $b = Invoke-BoundedWork -Work $Provider.boundedWork -RequestJson $reqJson -TimeoutMs $TimeoutMs }
+    catch { return [pscustomobject]@{ result = $null; reasonCode = 'provider-error'; fallbackReason = 'worker-error' } }
+    if (-not $b.completed) {
+        return [pscustomobject]@{ result = $null; reasonCode = 'timeout'; fallbackReason = 'timeout' }
+    }
+    $raw = $b.result
+    if (-not $raw) { return [pscustomobject]@{ result = $null; reasonCode = 'provider-error'; fallbackReason = 'worker-error' } }
+    # stale-completion guard: a result whose id does not match the awaited request
+    # is discarded (belt-and-suspenders; the abandon path already never reads it).
+    # $raw may be a hashtable (member access still works, but the membership check
+    # must read the value directly rather than PSObject.Properties, which does not
+    # enumerate hashtable keys).
+    $rid = [string]$raw.requestId
+    if ($rid -and $rid -ne [string]$Request.requestId) {
+        return [pscustomobject]@{ result = $null; reasonCode = 'timeout'; fallbackReason = 'stale' }
+    }
+    if (-not [bool]$raw.ok) {
+        return [pscustomobject]@{ result = $null; reasonCode = ([string]$raw.reasonCode); fallbackReason = ([string]$raw.fallbackReason) }
+    }
+    # rebuild a proper ReasoningResult on this thread; attribution is stamped by the
+    # router, not by the worker.
+    $res = New-ReasoningResult -TaskId $Request.taskId -Ok $true -Output $raw.output -Confidence ([double]$raw.confidence) `
+        -Engine ([string]$Provider.name) -ProviderName ([string]$Provider.name) -ReasonCode 'ok' -Clarifications @($raw.clarifications)
+    return [pscustomobject]@{ result = $res; reasonCode = 'ok'; fallbackReason = '' }
+}
+
 # ---- the router (the scheduler) ----------------------------------------
 # THE entry point. Never throws. Always returns a ReasoningResult whose engine
 # tells the truth about who actually served it.
@@ -273,15 +390,27 @@ function Invoke-Reasoning {
                     -Engine 'none' -ProviderName 'none' -ReasonCode 'invalid-output')
         }
 
+        # the maxMs the caller set is the bound applied to a bounded accelerator.
+        $timeoutMs = 0
+        if ($Request.constraints -and ($Request.constraints.PSObject.Properties.Name -contains 'maxMs')) { $timeoutMs = [int]$Request.constraints.maxMs }
+        # the reason the FIRST accelerator failed - carried onto the floor result so
+        # the UI/diagnostics can say why the floor is answering (timeout, auth, etc.).
+        $lastFallbackReason = ''
         $tried = @(Resolve-ReasoningProviders -TaskId $taskId)
         foreach ($p in $tried) {
-            $g = Invoke-ReasoningProviderGuarded -Provider $p -Request (New-IsolatedRequest -Request $Request -Canonical $canonical)
-            if (-not $g.result) { continue }
+            $g = Invoke-CandidateGuarded -Provider $p -Request (New-IsolatedRequest -Request $Request -Canonical $canonical) -TimeoutMs $timeoutMs
+            if (-not $g.result) {
+                if (-not $lastFallbackReason -and $g.fallbackReason) { $lastFallbackReason = [string]$g.fallbackReason }
+                continue
+            }
             # validation grounds against a FRESH canonical clone - never against the
             # copy the driver just had its hands on, and never against constraints a
             # driver could have rewritten
             $v = Test-ReasoningOutput -TaskId $taskId -Result $g.result -Request (New-IsolatedRequest -Request $Request -Canonical $canonical)
-            if (-not $v.valid) { continue }   # invalid-output: discard, try the next driver
+            if (-not $v.valid) {
+                if (-not $lastFallbackReason) { $lastFallbackReason = 'invalid-output' }
+                continue   # invalid-output: discard, try the next driver
+            }
             # attribution is stamped BY THE KERNEL - a driver cannot forge it
             $g.result.engine = [string]$p.name
             $g.result.providerName = [string]$p.name
@@ -321,6 +450,10 @@ function Invoke-Reasoning {
         $g.result.reasonCode = 'ok'
         # degraded = an accelerator was asked for and could not deliver
         $g.result.degraded = ($tried.Count -gt 0)
+        # carry WHY the floor is answering (timeout, auth-failed, malformed, ...) so
+        # the review screen and diagnostics can be honest about the fallback.
+        if ($g.result.PSObject.Properties.Name -contains 'fallbackReason') { $g.result.fallbackReason = $lastFallbackReason }
+        else { $g.result | Add-Member -NotePropertyName fallbackReason -NotePropertyValue $lastFallbackReason -Force }
         return $g.result
 
     }

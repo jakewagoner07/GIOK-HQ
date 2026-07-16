@@ -48,6 +48,69 @@ function Get-UEGroundingTokens {
     return @($t -split '\s+' | Where-Object { $_.Length -ge 3 -and ($script:UEGroundStop -notcontains $_) } | Select-Object -Unique)
 }
 
+# Proper-noun candidates in a clause: Titlecase alphabetic tokens (>= 2 chars) that
+# are NOT sentence-initial and NOT entirely uppercase. This is the FACT gate for
+# named entities - a person, company, or city that appears in an item but not in the
+# cited answer is a fabrication, not a paraphrase. Deterministic, no dictionary:
+# honest compression almost never introduces a novel Titlecase name, so this taxes
+# fabrication without taxing wording.
+#
+# HONEST LIMITATIONS (this is capitalization heuristics, NOT named-entity recognition):
+#   * Sentence-initial or post-period words are SKIPPED - a leading capital is
+#     grammar, and we cannot tell a capitalized verb ("Reach") from a name ("Chicago")
+#     there without a lexicon. A fabricated entity that LEADS an item (or a sentence)
+#     evades this gate. It is NOT caught by the overlap floor when it is on-topic.
+#   * Lowercase names evade detection (only Titlecase tokens are flagged).
+#   * Entirely-uppercase tokens are EXEMPTED as acronyms (ROI, IUL, CRM, ROP) so that
+#     legitimate business/insurance vocabulary is not mistaken for a fabricated name.
+#     Trade-off: an invented ALL-CAPS organization name may not be detected here.
+# All of these residuals are backstopped by the MANDATORY human review screen, where
+# every interpretation sits beside its verbatim source and can be removed. The machine
+# provides deterministic fact checks where they are reliable; it does not claim perfect
+# named-entity recognition.
+$script:UEProperNounSkip = @('I', 'A', "I'm", "I'll", "I've", "I'd")
+function Get-UEProperNouns {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $out = @()
+    $sentenceStart = $true
+    foreach ($w in ($Text -split '\s+')) {
+        if ([string]::IsNullOrWhiteSpace($w)) { continue }
+        $core = ($w -replace "[^A-Za-z']", '')
+        $isStart = $sentenceStart
+        $sentenceStart = ($w -match '[.!?][""'')]*$')   # this word ends a sentence
+        if ($core.Length -lt 2) { continue }
+        if ($isStart) { continue }
+        if ($script:UEProperNounSkip -contains $core) { continue }
+        # entirely-uppercase => an acronym (ROI, IUL, CRM, ROP), not a named entity.
+        # Exempt it so real business/insurance vocabulary does not force a fallback.
+        if ($core -cmatch '^[A-Z]+$') { continue }
+        if ($core.Substring(0, 1) -cmatch '[A-Z]') { $out += $core }
+    }
+    return @($out | Select-Object -Unique)
+}
+# Does every proper noun in $Text already appear in $Source? Returns the first
+# ungrounded proper noun, or ''. Matching is case-insensitive, apostrophes stripped.
+#   * candidates >= 4 chars: SUBSTRING match, so 'Jake' grounds "Jake's" and 'Omaha'
+#     grounds "Mutual of Omaha";
+#   * candidates < 4 chars: EXACT whole-token match, so a fabricated 'Al' does not
+#     ground against "goal" nor 'Ed' against "needed" (substrings of unrelated words).
+function Get-UEUngroundedProperNoun {
+    param([string]$Text, [string]$Source)
+    $srcRaw = ($Source -replace "'", '').ToLower()
+    $srcTokens = @($srcRaw -split '[^a-z0-9]+' | Where-Object { $_ })
+    foreach ($pn in (Get-UEProperNouns $Text)) {
+        $needle = ($pn -replace "'", '').ToLower()
+        if ($needle.Length -lt 4) {
+            if ($srcTokens -notcontains $needle) { return $pn }
+        }
+        else {
+            if (-not $srcRaw.Contains($needle)) { return $pn }
+        }
+    }
+    return ''
+}
+
 # Cap on total items across all sections of one understanding.extract result.
 # Real interviews yield well under 50; a provider returning more than this is
 # malfunctioning, and the result is REJECTED outright (never silently truncated -
@@ -119,6 +182,14 @@ Register-ReasoningValidator -TaskId 'understanding.extract' -Validator {
             if ($srcNums -notcontains $n) {
                 return [pscustomobject]@{ valid = $false; reason = ("number '{0}' does not appear in the cited answer: {1}" -f $n, $it.text) }
             }
+        }
+        # 1b. every PROPER NOUN in the text must appear in the cited answer - an
+        #     invented person/company/city ("Acme", "Sarah", "Chicago") cannot ride
+        #     on a real quote. This is a FACT gate, not a wording gate: names are
+        #     facts, and honest compression does not introduce new ones.
+        $badPn = Get-UEUngroundedProperNoun -Text ([string]$it.text) -Source $real
+        if ($badPn) {
+            return [pscustomobject]@{ valid = $false; reason = ("proper noun '{0}' does not appear in the cited answer: {1}" -f $badPn, $it.text) }
         }
         # 2. conservative token overlap: at least one significant word of the text
         #    must appear in the cited answer (4-char stem match, so paraphrase and
