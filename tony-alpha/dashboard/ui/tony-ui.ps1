@@ -3007,6 +3007,91 @@ function New-UEItemRow {
     return $b
 }
 
+# ---- Epic 13: consent + off-thread extraction orchestration ----
+# The extraction (which may call Claude, ~seconds) runs OFF the WPF thread so the
+# UI never freezes. A monotonic token guards against a stale completion updating a
+# view the user has already navigated away from.
+$script:UEExtractToken = 0
+function Start-UnderstandingExtractionFlow {
+    param([bool]$UseClaude)
+    $script:UEExtractToken++
+    $token = $script:UEExtractToken
+    Set-ActiveView 'Understanding Working'
+    $dashRoot = $script:AsyncDashRoot
+    $onDone = {
+        param($result)
+        # stale-view guard: a newer flow, or the user navigating away, cancels this update.
+        if ($token -ne $script:UEExtractToken) { return }
+        if ($script:TonyActiveView -ne 'Understanding Working') { return }
+        Set-ActiveView 'Understanding Review'
+    }.GetNewClosure()
+    $canAsync = (-not $script:HeadlessRender) -and (Get-Command Start-AsyncWork -ErrorAction SilentlyContinue) -and `
+        (Get-Command Get-AsyncExtractionWork -ErrorAction SilentlyContinue) -and (Get-Command Test-AsyncAvailable -ErrorAction SilentlyContinue) -and (Test-AsyncAvailable)
+    if ($canAsync) {
+        [void](Start-AsyncWork -Work (Get-AsyncExtractionWork) -ArgList @($dashRoot, $UseClaude) -OnComplete $onDone)
+    }
+    else {
+        # headless / no async worker: run inline. There is no UI to freeze here, and
+        # the kernel still bounds the Claude call in its own child runspace.
+        if (Get-Command Set-ExtractionConsent -ErrorAction SilentlyContinue) { Set-ExtractionConsent -Granted $UseClaude }
+        $ok = $false
+        try { if (Get-Command Initialize-UnderstandingModel -ErrorAction SilentlyContinue) { $ok = ($null -ne (Initialize-UnderstandingModel -Force)) } } catch { $ok = $false }
+        if (Get-Command Clear-ExtractionConsent -ErrorAction SilentlyContinue) { Clear-ExtractionConsent }
+        & $onDone ([pscustomobject]@{ ok = $ok })
+    }
+}
+
+# The consent screen. Shown ONLY when Claude is configured and no remembered
+# choice applies - otherwise the flow starts directly (nothing to consent to when
+# there is no external provider). The disclosure names the provider so consent is
+# informed; the buttons are the epic's exact wording.
+function New-UnderstandingConsentView {
+    $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 680; $col.HorizontalAlignment = 'Center'
+    $col.Margin = New-Object Windows.Thickness (0, 40, 0, 24)
+    $col.Children.Add((New-Text -Text 'BEFORE I ORGANIZE THIS' -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+    $col.Children.Add((New-TonyBubble -Text 'Tony can use Claude to organize what you shared. Your onboarding answers will be sent to the configured AI provider for interpretation. Nothing will be saved to Identity until you review and approve it.' -Size 16 -Margin (New-Object Windows.Thickness (0, 12, 0, 16)))) | Out-Null
+
+    $remember = New-Object Windows.Controls.CheckBox
+    $remember.Content = 'Remember my choice next time'
+    $remember.Foreground = New-Brush $script:Col.Muted
+    $remember.Margin = New-Object Windows.Thickness (2, 4, 0, 14)
+    $col.Children.Add($remember) | Out-Null
+
+    $rowPanel = New-Object Windows.Controls.StackPanel; $rowPanel.Orientation = 'Horizontal'; $rowPanel.HorizontalAlignment = 'Center'
+    $useClaude = New-PrimaryButton -Text 'Use Claude' -Size 15 -OnClick {
+        param($s, $e)
+        if ($s.Tag -and (Get-Command Set-RememberedExtractionConsent -ErrorAction SilentlyContinue)) { [void](Set-RememberedExtractionConsent -Remember $true -Choice 'claude') }
+        Start-UnderstandingExtractionFlow -UseClaude $true
+    }
+    $useClaude.Tag = $false
+    $useClaude.Padding = New-Object Windows.Thickness (26, 12, 26, 12); $useClaude.Margin = New-Object Windows.Thickness (0, 0, 12, 0)
+    $local = New-MiniButton -Text 'Keep Processing Local' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick {
+        param($s, $e)
+        if ($s.Tag -and (Get-Command Set-RememberedExtractionConsent -ErrorAction SilentlyContinue)) { [void](Set-RememberedExtractionConsent -Remember $true -Choice 'local') }
+        Start-UnderstandingExtractionFlow -UseClaude $false
+    }
+    $local.Tag = $false
+    $local.Padding = New-Object Windows.Thickness (20, 12, 20, 12)
+    # bind the checkbox state onto both buttons' Tag at click time
+    $remember.Add_Checked({ $useClaude.Tag = $true; $local.Tag = $true }.GetNewClosure()) | Out-Null
+    $remember.Add_Unchecked({ $useClaude.Tag = $false; $local.Tag = $false }.GetNewClosure()) | Out-Null
+    $rowPanel.Children.Add($useClaude) | Out-Null; $rowPanel.Children.Add($local) | Out-Null
+    $col.Children.Add($rowPanel) | Out-Null
+    $col.Children.Add((New-Text -Text 'Keeping it local uses the same review screen - your answers never leave this computer.' -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 14, 0, 0)))) | Out-Null
+
+    $sv = New-Object Windows.Controls.ScrollViewer; $sv.VerticalScrollBarVisibility = 'Auto'; $sv.Content = $col
+    return $sv
+}
+
+# The calm 'working' view shown while extraction runs off-thread.
+function New-UnderstandingWorkingView {
+    $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 620; $col.HorizontalAlignment = 'Center'
+    $col.Margin = New-Object Windows.Thickness (0, 80, 0, 24)
+    $col.Children.Add((New-TonyBubble -Text 'Give me a moment - I''m organizing what you shared.' -Size 18)) | Out-Null
+    $col.Children.Add((New-Text -Text 'This stays private until you review and approve it.' -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0)))) | Out-Null
+    return $col
+}
+
 function New-UnderstandingReviewView {
     $model = $null
     if (Get-Command Initialize-UnderstandingModel -ErrorAction SilentlyContinue) {
@@ -3034,6 +3119,13 @@ function New-UnderstandingReviewView {
         $col.Children.Add((New-Text -Text 'IN SHORT' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 6, 0, 4)))) | Out-Null
         $col.Children.Add((New-TonyBubble -Text $model.executiveSummary.text -Soft $true -Size 14 -ShowLabel $false)) | Out-Null
     }
+
+    # Honest provenance: who organized this. Tony's voice never names the model, so
+    # this says "my AI engine", while the truth (claude vs local) drives the text.
+    $eng = ''; try { $eng = [string]$model.meta.engine } catch { $eng = '' }
+    $disc = if ($eng -eq 'claude-understanding') { 'I organized this with the help of my AI engine, and nothing is saved until you approve it.' }
+    else { 'I organized this privately on your device, and nothing is saved until you approve it.' }
+    $col.Children.Add((New-Text -Text $disc -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (2, 6, 0, 2)))) | Out-Null
 
     $any = $false
     foreach ($sec in $script:UESectionOrder) {
@@ -3148,8 +3240,16 @@ function New-FirstConversationView {
             param($s, $e)
             if ([int]$s.Tag -ne $script:ConvNav) { return }
             $script:ConvNav++
-            if (Complete-Conversation) { Set-ActiveView 'Understanding Review' }
-            else { $script:ConvNotice = "I could not put my understanding together just now - please try again in a moment."; Refresh-Conversation }
+            # Ask for consent ONLY when Claude could actually be used. When it is not
+            # configured there is nothing to consent to, so go straight to local
+            # extraction; when the user has explicitly remembered a choice, honour it.
+            $configured = $false
+            if (Get-Command Test-ClaudeUnderstandingConfigured -ErrorAction SilentlyContinue) { try { $configured = [bool](Test-ClaudeUnderstandingConfigured) } catch { $configured = $false } }
+            $remembered = $null
+            if (Get-Command Get-RememberedExtractionConsent -ErrorAction SilentlyContinue) { $remembered = Get-RememberedExtractionConsent }
+            if (-not $configured) { Start-UnderstandingExtractionFlow -UseClaude $false }
+            elseif ($remembered) { Start-UnderstandingExtractionFlow -UseClaude ($remembered -eq 'claude') }
+            else { Set-ActiveView 'Understanding Consent' }
         }
         $begin.Tag = $gen
         $begin.HorizontalAlignment = 'Center'; $begin.Padding = New-Object Windows.Thickness (28, 13, 28, 13)
@@ -3249,7 +3349,7 @@ function Set-ActiveView {
         else { $n.Border.Background = New-Brush $script:Col.Primary; $n.Text.Foreground = New-Brush $(if ($n.Dim) { '#6B7A93' } else { $script:Col.OnPrimaryMuted }) }
     }
     # immersive views (onboarding, the morning welcome) hide the utility toolbar for focus
-    if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Understanding Review', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
+    if ($script:TonyToolbar) { $script:TonyToolbar.Visibility = $(if ($Name -in @('First Conversation', 'Understanding Consent', 'Understanding Working', 'Understanding Review', 'Morning Experience')) { 'Collapsed' } else { 'Visible' }) }
     # cached pure-presentation view -> reuse the rendered visual (effectively instant)
     if ($script:ViewCacheable[$Name] -and $script:ViewCache.ContainsKey($Name)) {
         $script:TonyBody.Child = $script:ViewCache[$Name]
@@ -3274,6 +3374,8 @@ function Set-ActiveView {
         'Goals'          { New-GoalsView }
         'Executive Inbox'{ $script:InboxAutoScan = $true; New-ExecutiveInboxView }
         'First Conversation' { New-FirstConversationView }
+        'Understanding Consent' { New-UnderstandingConsentView }
+        'Understanding Working' { New-UnderstandingWorkingView }
         'Understanding Review' { New-UnderstandingReviewView }
         'End of Day Audit' { New-AuditView }
         'Non-Negotiables'{ New-LifeDomainView -Key 'Non-Negotiables' }
