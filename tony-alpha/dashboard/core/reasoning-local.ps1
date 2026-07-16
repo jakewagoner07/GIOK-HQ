@@ -48,15 +48,26 @@ function Get-UEGroundingTokens {
     return @($t -split '\s+' | Where-Object { $_.Length -ge 3 -and ($script:UEGroundStop -notcontains $_) } | Select-Object -Unique)
 }
 
-# Proper nouns introduced in a clause: capitalized alphabetic tokens (>= 2 chars)
-# that are NOT sentence-initial (a leading capital is grammar, not a name). This is
-# the FACT gate for named entities - a person, company, city, or organization that
-# appears in an item but not in the cited answer is a fabrication, not a paraphrase.
-# Deterministic, no dictionary: honest compression almost never introduces a novel
-# proper noun, so this taxes fabrication without taxing wording. Sentence-initial
-# words are skipped because we cannot tell a capitalized verb ("Reach") from a name
-# there without a lexicon; that narrow blind spot is covered by the overlap floor
-# (an off-topic fabrication shares no token with its source) and the review screen.
+# Proper-noun candidates in a clause: Titlecase alphabetic tokens (>= 2 chars) that
+# are NOT sentence-initial and NOT entirely uppercase. This is the FACT gate for
+# named entities - a person, company, or city that appears in an item but not in the
+# cited answer is a fabrication, not a paraphrase. Deterministic, no dictionary:
+# honest compression almost never introduces a novel Titlecase name, so this taxes
+# fabrication without taxing wording.
+#
+# HONEST LIMITATIONS (this is capitalization heuristics, NOT named-entity recognition):
+#   * Sentence-initial or post-period words are SKIPPED - a leading capital is
+#     grammar, and we cannot tell a capitalized verb ("Reach") from a name ("Chicago")
+#     there without a lexicon. A fabricated entity that LEADS an item (or a sentence)
+#     evades this gate. It is NOT caught by the overlap floor when it is on-topic.
+#   * Lowercase names evade detection (only Titlecase tokens are flagged).
+#   * Entirely-uppercase tokens are EXEMPTED as acronyms (ROI, IUL, CRM, ROP) so that
+#     legitimate business/insurance vocabulary is not mistaken for a fabricated name.
+#     Trade-off: an invented ALL-CAPS organization name may not be detected here.
+# All of these residuals are backstopped by the MANDATORY human review screen, where
+# every interpretation sits beside its verbatim source and can be removed. The machine
+# provides deterministic fact checks where they are reliable; it does not claim perfect
+# named-entity recognition.
 $script:UEProperNounSkip = @('I', 'A', "I'm", "I'll", "I've", "I'd")
 function Get-UEProperNouns {
     param([string]$Text)
@@ -71,19 +82,31 @@ function Get-UEProperNouns {
         if ($core.Length -lt 2) { continue }
         if ($isStart) { continue }
         if ($script:UEProperNounSkip -contains $core) { continue }
+        # entirely-uppercase => an acronym (ROI, IUL, CRM, ROP), not a named entity.
+        # Exempt it so real business/insurance vocabulary does not force a fallback.
+        if ($core -cmatch '^[A-Z]+$') { continue }
         if ($core.Substring(0, 1) -cmatch '[A-Z]') { $out += $core }
     }
     return @($out | Select-Object -Unique)
 }
-# Does every proper noun in $Text already appear in $Source? (Case-insensitive,
-# apostrophes stripped, substring match so 'Jake' grounds 'Jake''s' and 'Omaha'
-# grounds 'Mutual of Omaha'.) Returns the first ungrounded proper noun, or ''.
+# Does every proper noun in $Text already appear in $Source? Returns the first
+# ungrounded proper noun, or ''. Matching is case-insensitive, apostrophes stripped.
+#   * candidates >= 4 chars: SUBSTRING match, so 'Jake' grounds "Jake's" and 'Omaha'
+#     grounds "Mutual of Omaha";
+#   * candidates < 4 chars: EXACT whole-token match, so a fabricated 'Al' does not
+#     ground against "goal" nor 'Ed' against "needed" (substrings of unrelated words).
 function Get-UEUngroundedProperNoun {
     param([string]$Text, [string]$Source)
-    $src = ($Source -replace "'", '').ToLower()
+    $srcRaw = ($Source -replace "'", '').ToLower()
+    $srcTokens = @($srcRaw -split '[^a-z0-9]+' | Where-Object { $_ })
     foreach ($pn in (Get-UEProperNouns $Text)) {
         $needle = ($pn -replace "'", '').ToLower()
-        if (-not $src.Contains($needle)) { return $pn }
+        if ($needle.Length -lt 4) {
+            if ($srcTokens -notcontains $needle) { return $pn }
+        }
+        else {
+            if (-not $srcRaw.Contains($needle)) { return $pn }
+        }
     }
     return ''
 }

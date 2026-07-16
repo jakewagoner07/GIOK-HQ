@@ -161,6 +161,27 @@ Claude output passes **two** gates and must satisfy both. Both enforce FACTS onl
 malformed or absurd result. It is no longer triggered by wording distance. Claude and local output are
 still never combined; there is no partial merge.
 
+### Honest limits of the deterministic fact gates
+
+The fact gates are deterministic heuristics, **not** named-entity recognition or natural-language number
+parsing. They are reliable where they fire and honest about where they cannot. The following residuals
+are known, documented, and backstopped by the **mandatory human review screen** (every interpretation
+beside its verbatim source, Edit/Remove per item, nothing written until approval):
+
+- **Sentence-initial / post-period proper nouns evade capitalization detection.** A leading capital is
+  grammar, not a name, so a fabricated entity that *leads* an item ("Chicago policies by summer") or a
+  sentence is not flagged. It is **not** caught by the overlap floor when it is on-topic.
+- **Lowercase proper nouns evade detection** - only Titlecase tokens are candidates.
+- **All-uppercase organization names evade detection** - acronyms (ROI, IUL, CRM, ROP) are intentionally
+  exempted so real business/insurance vocabulary does not force a fallback, and an invented ALL-CAPS org
+  rides that exemption.
+- **Numbers and dates written entirely as words evade digit-based grounding** ("five thousand",
+  "next march").
+
+The machine provides deterministic fact checks where they are reliable; it does not claim perfect
+named-entity recognition. These limits are encoded as labelled *known-limitation* tests, not as passing
+security guarantees.
+
 Partial Claude output is never combined with local output. Mixing engines inside one model muddies
 provenance, and provenance that lies is worse than none.
 
