@@ -46,6 +46,39 @@ function Test-ExtractionConsentAsked {
     return ($null -ne $script:ExtractionConsentGranted)
 }
 
+# ---- executive-reasoning consent (Epic 14: distinct from onboarding) ---
+# Daily planning is NOT onboarding. Onboarding's extraction consent does NOT grant
+# permission to send daily Executive Context data (goals, calendar info,
+# communication metadata, Life OS priorities, action items) to Claude. This is its
+# own per-attempt decision, with its own remember flag - so consent is task-scoped.
+$script:ExecutiveReasoningConsentGranted = $null
+function Set-ExecutiveReasoningConsent {
+    param([Parameter(Mandatory)][bool]$Granted)
+    $script:ExecutiveReasoningConsentGranted = $Granted
+}
+function Clear-ExecutiveReasoningConsent {
+    $script:ExecutiveReasoningConsentGranted = $null
+}
+function Test-ExecutiveReasoningConsent {
+    return ($script:ExecutiveReasoningConsentGranted -eq $true)
+}
+function Test-ExecutiveReasoningConsentAsked {
+    return ($null -ne $script:ExecutiveReasoningConsentGranted)
+}
+
+# The task -> consent router. A reasoning task may only send data to a provider when
+# the consent SCOPED TO THAT TASK is granted. Onboarding (understanding.extract) reads
+# extraction consent; daily planning (briefing.compose) reads executive-reasoning
+# consent. A task with no consent scope defined returns NO (silence never sends data).
+function Test-TaskConsent {
+    param([Parameter(Mandatory)][string]$TaskId)
+    switch ($TaskId) {
+        'understanding.extract' { return (Test-ExtractionConsent) }
+        'briefing.compose' { return (Test-ExecutiveReasoningConsent) }
+        default { return $false }
+    }
+}
+
 # ---- explicit, opt-in persistence (never silent) ----------------------
 # The remembered choice lives in the EXISTING gitignored Claude config, so we do
 # not create a second store. It is written ONLY when the user explicitly asks to
@@ -98,6 +131,43 @@ function Set-RememberedExtractionConsent {
         }
         else {
             $cfg | Add-Member -NotePropertyName 'rememberExtractionConsent' -NotePropertyValue $false -Force
+        }
+        ($cfg | ConvertTo-Json -Depth 12) | Set-Content -Path $p -Encoding UTF8
+        return $true
+    }
+    catch { return $false }
+}
+
+# Remembered EXECUTIVE-REASONING choice (Epic 14) - a SEPARATE remember flag from
+# onboarding, in the same existing config (no second store). Explicit opt-in only.
+function Get-RememberedExecutiveConsent {
+    $p = Get-ClaudeConfigPath
+    if (-not $p) { return $null }
+    try {
+        $cfg = Get-Content -Path $p -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($cfg.PSObject.Properties.Name -notcontains 'rememberExecutiveConsent') { return $null }
+        if (-not [bool]$cfg.rememberExecutiveConsent) { return $null }
+        $choice = [string]$cfg.executiveConsentChoice
+        if ($choice -eq 'claude' -or $choice -eq 'local') { return $choice }
+        return $null
+    }
+    catch { return $null }
+}
+function Set-RememberedExecutiveConsent {
+    param(
+        [Parameter(Mandatory)][bool]$Remember,
+        [ValidateSet('claude', 'local')][string]$Choice = 'local'
+    )
+    $p = Get-ClaudeConfigPath
+    if (-not $p) { return $false }
+    try {
+        $cfg = Get-Content -Path $p -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($Remember) {
+            $cfg | Add-Member -NotePropertyName 'rememberExecutiveConsent' -NotePropertyValue $true -Force
+            $cfg | Add-Member -NotePropertyName 'executiveConsentChoice' -NotePropertyValue $Choice -Force
+        }
+        else {
+            $cfg | Add-Member -NotePropertyName 'rememberExecutiveConsent' -NotePropertyValue $false -Force
         }
         ($cfg | ConvertTo-Json -Depth 12) | Set-Content -Path $p -Encoding UTF8
         return $true
