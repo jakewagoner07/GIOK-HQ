@@ -89,6 +89,12 @@ $items = @(
     @{ n = 'time grounded in the answer'; i = (New-TestItem -Text 'Be ready for the 6:30am standup'); pass = $true }
     @{ n = 'text sharing nothing with the citation'; i = (New-TestItem -Text 'Buy a yacht'); pass = $false }
     @{ n = 'honest paraphrase'; i = (New-TestItem -Text 'Reach 500 policies before the summer'); pass = $true }
+    # Epic 13A fact gate: fabricated proper nouns rejected; grounded ones and
+    # reasonable semantic compression accepted (the human judges wording, not this).
+    @{ n = 'fabricated proper noun (company) riding a true citation'; i = (New-TestItem -Text 'Sign the Acme deal for policies'); pass = $false }
+    @{ n = 'fabricated proper noun (person)'; i = (New-TestItem -Text 'Meet Sarah about policies'); pass = $false }
+    @{ n = 'fabricated proper noun (city)'; i = (New-TestItem -Text 'Sell policies in Chicago'); pass = $false }
+    @{ n = 'semantic compression (no invented fact) MUST PASS'; i = (New-TestItem -Text 'Grow the book of policies' ); pass = $true }
 )
 foreach ($c in $items) {
     $m = New-UnderstandingModel -State (New-TestState)

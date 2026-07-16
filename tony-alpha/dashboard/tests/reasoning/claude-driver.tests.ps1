@@ -85,15 +85,31 @@ Set-MockClaude ($extra | ConvertTo-Json -Depth 8)
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'claude-understanding' -and ($r.output.goals[0].PSObject.Properties.Name -notcontains 'bogusField')) 'EXTRA unsupported fields -> stripped, result accepted'
 
-# --- the liars (each fabrication -> floor; each honest item -> accepted) ---
+# --- Epic 13A: the machine validates FACTS, the human validates MEANING ---
+# FACT fabrications (number/date/currency/person/company/city, false citation) and
+# the zero-overlap absurdity floor -> whole reject -> floor. Reasonable semantic
+# compression and one-generic-word wording -> PASS (the review screen judges wording).
+# (sourceAnswer must match the harness state VERBATIM: q_week='Home by six',
+#  q_protect='Sunday dinner. Non-negotiable.'; goal items default to $REAL.)
 $liars = @(
-    @{ n = 'fabricated NUMBER'; item = (New-ClaudeItem 'Save $999,999 this year'); pass = $false }
-    @{ n = 'fabricated PERSON'; item = (New-ClaudeItem 'Meet Sarah Thompson weekly'); pass = $false }
-    @{ n = 'fabricated COMPANY'; item = (New-ClaudeItem 'Sign the Acme Corporation deal'); pass = $false }
-    @{ n = 'fabricated DATE'; item = (New-ClaudeItem 'Finish by December 25'); pass = $false }
+    # --- FACT fabrications: machine rejects (each shares a token so it clears the
+    #     absurdity floor and is rejected specifically by a FACT gate) ---
+    @{ n = 'fabricated NUMBER'; item = (New-ClaudeItem 'Save $999,999 by summer'); pass = $false }
+    @{ n = 'fabricated CURRENCY amount'; item = (New-ClaudeItem 'Save $40,000 by summer'); pass = $false }
+    @{ n = 'fabricated PERCENTAGE'; item = (New-ClaudeItem 'Grow policies 200% by summer'); pass = $false }
+    @{ n = 'fabricated TIME'; item = (New-ClaudeItem 'Hit policies at 4:15am'); pass = $false }
+    @{ n = 'fabricated PERSON'; item = (New-ClaudeItem 'Hit policies with Sarah Thompson'); pass = $false }
+    @{ n = 'fabricated COMPANY'; item = (New-ClaudeItem 'Hit policies for Acme Corporation'); pass = $false }
+    @{ n = 'fabricated CITY'; item = (New-ClaudeItem 'Hit policies in Chicago'); pass = $false }
+    @{ n = 'fabricated DATE (month)'; item = (New-ClaudeItem 'Hit policies by December'); pass = $false }
+    @{ n = 'fabricated COMMITMENT/date'; item = (New-ClaudeItem 'Hit 500 policies by March 31'); pass = $false }
     @{ n = 'FALSE sourceAnswer'; item = (New-ClaudeItem 'Hit 500 policies by summer' 'q_goal' 'I have always wanted a yacht'); pass = $false }
-    @{ n = 'unrelated + ONE generic shared word'; item = (New-ClaudeItem 'Buy a yacht in the summer'); pass = $false }
+    @{ n = 'ABSURDITY: zero overlap (Buy a yacht)'; item = (New-ClaudeItem 'Buy a yacht'); pass = $false }
+    # --- wording/meaning: machine accepts, human judges on the review screen ---
+    @{ n = 'reasonable SEMANTIC COMPRESSION (evenings at home)'; item = (New-ClaudeItem 'Protect evenings at home' 'q_week' 'Home by six'); pass = $true }
+    @{ n = 'one generic shared word (now human judgment)'; item = (New-ClaudeItem 'Buy a yacht in the summer'); pass = $true }
     @{ n = 'legitimate PARAPHRASE'; item = (New-ClaudeItem 'Reach 500 policies before the summer'); pass = $true }
+    @{ n = 'grounded proper noun (Sunday in source)'; item = (New-ClaudeItem 'Protect Sunday time' 'q_protect' 'Sunday dinner. Non-negotiable.'); pass = $true }
 )
 foreach ($c in $liars) {
     Set-MockClaude (New-ClaudeJson -Goals @($c.item))
@@ -191,7 +207,9 @@ $sw = [Diagnostics.Stopwatch]::StartNew()
 $r = Invoke-ReasoningTask -TaskId 'understanding.extract' -Payload (New-TestState) -MaxMs 150
 $sw.Stop()
 Assert-True ($r.engine -eq 'local' -and $r.fallbackReason -eq 'timeout') "TIMEOUT -> floor with fallbackReason=timeout"
-Assert-True ($sw.ElapsedMilliseconds -lt 900) "caller UNBLOCKED at the deadline, not at provider completion ($($sw.ElapsedMilliseconds)ms)"
+# well below the provider's 1500ms completion (margin for runspace-creation overhead
+# under full-suite load) - the point is the caller does NOT wait for the provider.
+Assert-True ($sw.ElapsedMilliseconds -lt 1200) "caller UNBLOCKED at the deadline, not at provider completion ($($sw.ElapsedMilliseconds)ms << 1500ms)"
 
 # late completion after timeout is discarded (never overwrites the floor result)
 Assert-True ((Get-ReasoningWorkerStats).inFlight -ge 1) 'a late/abandoned worker is tracked, its result never read (LATE COMPLETION discarded)'

@@ -48,6 +48,46 @@ function Get-UEGroundingTokens {
     return @($t -split '\s+' | Where-Object { $_.Length -ge 3 -and ($script:UEGroundStop -notcontains $_) } | Select-Object -Unique)
 }
 
+# Proper nouns introduced in a clause: capitalized alphabetic tokens (>= 2 chars)
+# that are NOT sentence-initial (a leading capital is grammar, not a name). This is
+# the FACT gate for named entities - a person, company, city, or organization that
+# appears in an item but not in the cited answer is a fabrication, not a paraphrase.
+# Deterministic, no dictionary: honest compression almost never introduces a novel
+# proper noun, so this taxes fabrication without taxing wording. Sentence-initial
+# words are skipped because we cannot tell a capitalized verb ("Reach") from a name
+# there without a lexicon; that narrow blind spot is covered by the overlap floor
+# (an off-topic fabrication shares no token with its source) and the review screen.
+$script:UEProperNounSkip = @('I', 'A', "I'm", "I'll", "I've", "I'd")
+function Get-UEProperNouns {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $out = @()
+    $sentenceStart = $true
+    foreach ($w in ($Text -split '\s+')) {
+        if ([string]::IsNullOrWhiteSpace($w)) { continue }
+        $core = ($w -replace "[^A-Za-z']", '')
+        $isStart = $sentenceStart
+        $sentenceStart = ($w -match '[.!?][""'')]*$')   # this word ends a sentence
+        if ($core.Length -lt 2) { continue }
+        if ($isStart) { continue }
+        if ($script:UEProperNounSkip -contains $core) { continue }
+        if ($core.Substring(0, 1) -cmatch '[A-Z]') { $out += $core }
+    }
+    return @($out | Select-Object -Unique)
+}
+# Does every proper noun in $Text already appear in $Source? (Case-insensitive,
+# apostrophes stripped, substring match so 'Jake' grounds 'Jake''s' and 'Omaha'
+# grounds 'Mutual of Omaha'.) Returns the first ungrounded proper noun, or ''.
+function Get-UEUngroundedProperNoun {
+    param([string]$Text, [string]$Source)
+    $src = ($Source -replace "'", '').ToLower()
+    foreach ($pn in (Get-UEProperNouns $Text)) {
+        $needle = ($pn -replace "'", '').ToLower()
+        if (-not $src.Contains($needle)) { return $pn }
+    }
+    return ''
+}
+
 # Cap on total items across all sections of one understanding.extract result.
 # Real interviews yield well under 50; a provider returning more than this is
 # malfunctioning, and the result is REJECTED outright (never silently truncated -
@@ -119,6 +159,14 @@ Register-ReasoningValidator -TaskId 'understanding.extract' -Validator {
             if ($srcNums -notcontains $n) {
                 return [pscustomobject]@{ valid = $false; reason = ("number '{0}' does not appear in the cited answer: {1}" -f $n, $it.text) }
             }
+        }
+        # 1b. every PROPER NOUN in the text must appear in the cited answer - an
+        #     invented person/company/city ("Acme", "Sarah", "Chicago") cannot ride
+        #     on a real quote. This is a FACT gate, not a wording gate: names are
+        #     facts, and honest compression does not introduce new ones.
+        $badPn = Get-UEUngroundedProperNoun -Text ([string]$it.text) -Source $real
+        if ($badPn) {
+            return [pscustomobject]@{ valid = $false; reason = ("proper noun '{0}' does not appear in the cited answer: {1}" -f $badPn, $it.text) }
         }
         # 2. conservative token overlap: at least one significant word of the text
         #    must appear in the cited answer (4-char stem match, so paraphrase and

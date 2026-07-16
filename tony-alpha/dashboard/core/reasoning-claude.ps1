@@ -263,13 +263,25 @@ function ConvertFrom-ClaudeExtraction {
     return $model
 }
 
-# ---- the tighter Claude-only grounding gate ---------------------------
-# The kernel validator (reasoning-local.ps1) already grounds every provider,
-# including the floor, and is NOT weakened. This gate is ADDITIONAL and applies
-# only to Claude output, replacing the kernel's single-shared-token rule with a
-# multi-anchor / token-fraction threshold so a fabrication that borrows one
-# generic word is rejected while a genuine paraphrase survives. ONE unsafe item
-# rejects the WHOLE result - no repair, no partial merge.
+# ---- the Claude-only grounding gate: FACTS, not wording -----------------
+# Epic 13A. The machine validates facts; the human validates meaning. This gate
+# enforces the fact conditions on Claude output as a WHOLE-RESULT check (one lying
+# item rejects everything and the kernel falls to the floor), and it deliberately
+# does NOT judge paraphrase quality - semantic compression is exactly why Claude
+# exists, and the mandatory review screen is where the user approves wording.
+#
+# What it enforces (all deterministic, all FACTS):
+#   * verbatim citation - the item quotes a real answer byte-for-byte;
+#   * numeric grounding - every number/amount/percent/time in the text is in the
+#     cited answer (an invented figure cannot ride a real quote);
+#   * proper-noun grounding - every name/company/city in the text is in the cited
+#     answer (an invented entity is a fabrication);
+#   * the absurdity floor - the text shares at least ONE significant token with the
+#     answer it claims to come from. "Buy a yacht" from "I want 500 policies" still
+#     rejects. This is a tripwire for output that is about something the answer
+#     never mentioned - NOT a paraphrase-quality threshold.
+# What it NO LONGER enforces: the multi-anchor / token-fraction rule. A reasonable
+# paraphrase ("Protect evenings at home" from "Home by six most nights") now passes.
 function Test-ClaudeExtractionGrounded {
     param($Model, $State)
     foreach ($sec in $script:ClaudeUnderstandingSections) {
@@ -283,28 +295,32 @@ function Test-ClaudeExtractionGrounded {
             # verbatim citation (the kernel checks this too; the driver rejects the
             # WHOLE result rather than one item)
             if (([string]$it.sourceAnswer) -ne $real) { return [pscustomobject]@{ ok = $false; reason = 'sourceAnswer not verbatim' } }
-            # every number in the text must appear in the cited answer
+            # FACT: every number in the text must appear in the cited answer
             if (Get-Command Get-UEGroundingNumbers -ErrorAction SilentlyContinue) {
                 $srcNums = @(Get-UEGroundingNumbers $real)
                 foreach ($n in @(Get-UEGroundingNumbers $text)) {
                     if ($srcNums -notcontains $n) { return [pscustomobject]@{ ok = $false; reason = ("fabricated number: {0}" -f $n) } }
                 }
             }
-            # multi-anchor / token-fraction: long items need >= 2 anchor stems; very
-            # short items (1-2 significant tokens) need ALL of them anchored. This
-            # rejects a fabrication that shares only one generic word at any length,
-            # while a real paraphrase (which shares several concepts) passes.
+            # FACT: every proper noun in the text must appear in the cited answer
+            if (Get-Command Get-UEUngroundedProperNoun -ErrorAction SilentlyContinue) {
+                $badPn = Get-UEUngroundedProperNoun -Text $text -Source $real
+                if ($badPn) { return [pscustomobject]@{ ok = $false; reason = ("fabricated proper noun: {0}" -f $badPn) } }
+            }
+            # ABSURDITY FLOOR (tripwire, not a quality gate): the text must share at
+            # least one significant token with the cited answer. Zero overlap means
+            # the item is about something the answer never mentioned - a fabrication,
+            # not a paraphrase.
             if (Get-Command Get-UEGroundingTokens -ErrorAction SilentlyContinue) {
                 $toks = @(Get-UEGroundingTokens $text)
                 if ($toks.Count -gt 0) {
                     $low = $real.ToLower()
-                    $anchored = 0
+                    $anchored = $false
                     foreach ($tok in $toks) {
                         $stem = if ($tok.Length -ge 4) { $tok.Substring(0, 4) } else { $tok }
-                        if ($low.Contains($stem)) { $anchored++ }
+                        if ($low.Contains($stem)) { $anchored = $true; break }
                     }
-                    $pass = ($anchored -ge 2) -or (($toks.Count -le 2) -and ($anchored -eq $toks.Count))
-                    if (-not $pass) { return [pscustomobject]@{ ok = $false; reason = ("weakly grounded (anchored {0}/{1}): {2}" -f $anchored, $toks.Count, $text) } }
+                    if (-not $anchored) { return [pscustomobject]@{ ok = $false; reason = ("no meaningful grounding (shares nothing with the answer): {0}" -f $text) } }
                 }
             }
         }

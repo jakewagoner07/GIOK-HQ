@@ -124,26 +124,42 @@ Prompt rules embedded verbatim (organize, never invent):
 `sourceQuestionId` must be one of the seven real ids (`q_name, q_areas, q_goal, q_challenge, q_protect,
 q_week, q_boundaries`). The model id lives only in the Claude config; Tony never sees it.
 
-## Validation - the existing gate, plus a tighter driver gate
+## Validation - the machine validates FACTS, the human validates MEANING (Epic 13A)
 
-Claude output passes **two** gates and must satisfy both:
+> **Recalibrated in Epic 13A** after live verification and a CTO architecture review. The original design
+> added a Claude-only *multi-anchor / token-fraction* rule to reject a fabrication that borrows "one
+> generic word." Live runs proved it also rejected reasonable paraphrases of terse answers ("Protect
+> evenings at home" from "Home by six most nights"), and with whole-result rejection that dropped every
+> real Claude extraction to local - a net-negative feature (data sent, latency paid, local result
+> returned). The token-fraction rule and a paraphrase are mathematically indistinguishable (both share
+> one concept word), so no wording threshold can separate them. The decision: **stop asking the machine
+> to judge wording.** Semantic compression is the reason Claude exists; the mandatory review screen is
+> where the user approves meaning.
 
-1. **The kernel validator (unchanged, `reasoning-local.ps1`)** - every item cites a real question and
-   quotes the answer verbatim; every number in the text appears in the cited answer; `edited=true` is
-   rejected; over 200 items is rejected. This gate also guards the floor - **it is not weakened.**
-2. **A tighter Claude-only grounding gate (in the driver)** applied *before* the driver returns:
-   - **Token-fraction / multi-anchor**, replacing the single-shared-token rule: an item's text must
-     share a meaningful fraction of its significant tokens with the cited answer (at least two anchor
-     stems, or >= ~40% of its significant tokens, whichever the length allows), so a fabrication that
-     borrows one generic word ("the Yankees") is rejected while a genuine paraphrase survives.
-   - **Numeric grounding stays mandatory** (inherited from gate 1, re-checked).
-   - **Excessive item length** rejected (a single item over a sane character cap is not an extraction).
-   - **Excessive total response size** rejected (inherited 200-item cap, plus a byte ceiling on the raw
-     response before parsing).
-   - **Duplicates** are removed by a documented, deterministic dedup step (normalize text, keep first)
-     *before* the review screen - never silently merged into one ambiguous item.
-   - **One unsafe item rejects the whole Claude result.** No repair, no partial merge, no mixing Claude
-     items with local items. Whole-result rejection -> the kernel falls to the floor, `meta.engine='local'`.
+**The principle:** the machine enforces facts, deterministically and whole-result; the human enforces
+meaning, on the review screen where every interpretation sits beside its verbatim original with Edit and
+Remove, and nothing writes until atomic approval.
+
+Claude output passes **two** gates and must satisfy both. Both enforce FACTS only.
+
+1. **The kernel validator (`reasoning-local.ps1`, universal - guards the floor too, no privileged path):**
+   - every item cites a real question and quotes the answer **verbatim**;
+   - every **number/amount/percent/time** in the text appears in the cited answer;
+   - every **proper noun** (person, company, city, organization, month) in the text appears in the cited
+     answer - the new deterministic fact gate; honest compression does not introduce novel names;
+   - the **absurdity floor**: the text shares at least one significant token with the cited answer, so an
+     item about something the answer never mentioned ("Buy a yacht" from "I want 500 policies") is
+     rejected. This is a tripwire for fabrication, **not** a paraphrase-quality threshold;
+   - `edited=true` (forged provenance) is rejected; over 200 items is rejected.
+2. **The Claude driver's whole-result gate (`Test-ClaudeExtractionGrounded`)** applies the **same fact
+   conditions** before the driver returns, so a single fact violation rejects the WHOLE Claude result and
+   the kernel falls to the floor (`meta.engine='local'`). Plus size/length caps and deterministic dedup.
+   - **What was REMOVED:** the multi-anchor / token-fraction wording rule. A reasonable paraphrase now
+     passes; a one-generic-word wording choice is now the human's call on the review screen.
+
+**Whole-result rejection is reserved for a provider that LIED** - a fabricated fact, a forged flag, a
+malformed or absurd result. It is no longer triggered by wording distance. Claude and local output are
+still never combined; there is no partial merge.
 
 Partial Claude output is never combined with local output. Mixing engines inside one model muddies
 provenance, and provenance that lies is worse than none.

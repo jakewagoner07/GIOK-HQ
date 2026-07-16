@@ -106,16 +106,23 @@ Unregister-TestProvider 'wellformed-empty'
 # =====================================================================
 Write-TestSection 'Archetype 7-12: the liars (fabrication with a real citation)'
 # =====================================================================
-# Each of these returns a structurally perfect model whose ONE goal is crafted.
-# 'expectPass' is the whole point: the gate must reject invention while still
-# accepting honest paraphrase, or it is just a reject-everything stub.
+# Epic 13A philosophy: the MACHINE validates FACTS, the HUMAN validates MEANING.
+# Each returns a structurally perfect model whose ONE goal is crafted. The gate
+# rejects fabricated FACTS (numbers, dates, currency, proper nouns) and the
+# zero-overlap absurdity floor, while ACCEPTING honest semantic compression - the
+# review screen is where wording is judged. A gate that rejects paraphrase is just
+# a reject-everything stub; a gate that accepts fabricated facts is a liar.
 $liars = @(
+    # fabricated FACTS -> machine rejects
     @{ n = 'fabricated sourceAnswer (cites words never said)'; i = (New-TestItem -Text 'Hit 500 policies by summer' -SourceAnswer 'I have always wanted a yacht'); pass = $false }
     @{ n = 'fabricated number'; i = (New-TestItem -Text 'Save $999,999 this year'); pass = $false }
     @{ n = 'fabricated person'; i = (New-TestItem -Text 'Meet Sarah Thompson weekly'); pass = $false }
     @{ n = 'fabricated company'; i = (New-TestItem -Text 'Sign the Acme Corporation deal'); pass = $false }
+    @{ n = 'fabricated city'; i = (New-TestItem -Text 'Grow policies in Chicago'); pass = $false }
     @{ n = 'fabricated date'; i = (New-TestItem -Text 'Finish by 11:45pm on December 25'); pass = $false }
-    @{ n = 'unrelated interpretation + real citation'; i = (New-TestItem -Text 'Buy a yacht in Monaco'); pass = $false }
+    @{ n = 'absurdity: unrelated + real citation'; i = (New-TestItem -Text 'Buy a yacht in Monaco'); pass = $false }
+    # honest MEANING -> machine accepts, human judges
+    @{ n = 'semantic compression (evenings at home) MUST PASS'; i = (New-TestItem -Text 'Protect evenings at home' -SourceAnswer 'Home by six' -SourceQuestionId 'q_week'); pass = $true }
     @{ n = 'valid paraphrase (MUST PASS)'; i = (New-TestItem -Text 'Reach 500 policies before the summer'); pass = $true }
     @{ n = 'multi-number grounded (MUST PASS)'; i = (New-TestItem -Text 'Save $12,500 at 7.5% by 6:30am'); pass = $true }
 )
