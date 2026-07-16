@@ -253,6 +253,82 @@ function ConvertFrom-ClaudeExtraction {
     return $model
 }
 
+# ---- the tighter Claude-only grounding gate ---------------------------
+# The kernel validator (reasoning-local.ps1) already grounds every provider,
+# including the floor, and is NOT weakened. This gate is ADDITIONAL and applies
+# only to Claude output, replacing the kernel's single-shared-token rule with a
+# multi-anchor / token-fraction threshold so a fabrication that borrows one
+# generic word is rejected while a genuine paraphrase survives. ONE unsafe item
+# rejects the WHOLE result - no repair, no partial merge.
+function Test-ClaudeExtractionGrounded {
+    param($Model, $State)
+    foreach ($sec in $script:ClaudeUnderstandingSections) {
+        foreach ($it in @($Model.$sec)) {
+            if (-not $it) { continue }
+            $text = [string]$it.text
+            $sqid = [string]$it.sourceQuestionId
+            $real = ''
+            if (Get-Command Get-ConversationAnswer -ErrorAction SilentlyContinue) { $real = [string](Get-ConversationAnswer $State $sqid) }
+            if ([string]::IsNullOrWhiteSpace($real)) { return [pscustomobject]@{ ok = $false; reason = 'no source answer' } }
+            # verbatim citation (the kernel checks this too; the driver rejects the
+            # WHOLE result rather than one item)
+            if (([string]$it.sourceAnswer) -ne $real) { return [pscustomobject]@{ ok = $false; reason = 'sourceAnswer not verbatim' } }
+            # every number in the text must appear in the cited answer
+            if (Get-Command Get-UEGroundingNumbers -ErrorAction SilentlyContinue) {
+                $srcNums = @(Get-UEGroundingNumbers $real)
+                foreach ($n in @(Get-UEGroundingNumbers $text)) {
+                    if ($srcNums -notcontains $n) { return [pscustomobject]@{ ok = $false; reason = ("fabricated number: {0}" -f $n) } }
+                }
+            }
+            # multi-anchor / token-fraction: long items need >= 2 anchor stems; very
+            # short items (1-2 significant tokens) need ALL of them anchored. This
+            # rejects a fabrication that shares only one generic word at any length,
+            # while a real paraphrase (which shares several concepts) passes.
+            if (Get-Command Get-UEGroundingTokens -ErrorAction SilentlyContinue) {
+                $toks = @(Get-UEGroundingTokens $text)
+                if ($toks.Count -gt 0) {
+                    $low = $real.ToLower()
+                    $anchored = 0
+                    foreach ($tok in $toks) {
+                        $stem = if ($tok.Length -ge 4) { $tok.Substring(0, 4) } else { $tok }
+                        if ($low.Contains($stem)) { $anchored++ }
+                    }
+                    $pass = ($anchored -ge 2) -or (($toks.Count -le 2) -and ($anchored -eq $toks.Count))
+                    if (-not $pass) { return [pscustomobject]@{ ok = $false; reason = ("weakly grounded (anchored {0}/{1}): {2}" -f $anchored, $toks.Count, $text) } }
+                }
+            }
+        }
+    }
+    return [pscustomobject]@{ ok = $true; reason = '' }
+}
+
+# ---- deterministic, documented dedup ----------------------------------
+# Duplicates are removed section by section: normalize each item's text
+# (lowercase, collapse whitespace, strip trailing punctuation) and keep the FIRST
+# occurrence. Never merged into one ambiguous item; never silent - this runs
+# before the review screen and the kept items are exactly the survivors.
+function Get-ClaudeDedupKey {
+    param([string]$Text)
+    $t = ($Text -replace '\s+', ' ').Trim().TrimEnd('.', ',', '!', '?', ';', ':').ToLower()
+    return $t
+}
+function Remove-ClaudeExtractionDuplicates {
+    param($Model)
+    foreach ($sec in $script:ClaudeUnderstandingSections) {
+        $seen = @{}
+        $kept = @()
+        foreach ($it in @($Model.$sec)) {
+            if (-not $it) { continue }
+            $k = Get-ClaudeDedupKey ([string]$it.text)
+            if ($k -and $seen.ContainsKey($k)) { continue }
+            if ($k) { $seen[$k] = $true }
+            $kept += $it
+        }
+        $Model.$sec = ([array]$kept)
+    }
+    return $Model
+}
+
 # ---- the portable extraction work -------------------------------------
 # Call Claude (or the mock), parse, and return a PLAIN result hashtable the driver
 # wraps into a ReasoningResult. This function is deliberately self-contained so
@@ -331,6 +407,35 @@ $script:ClaudeUnderstandingProvider = [pscustomobject]@{
     bounded     = $true
     supports    = { param($TaskId) return ($TaskId -eq 'understanding.extract') }
     isAvailable = { return (Test-ClaudeUnderstandingAvailable) }
+    # The portable, self-contained work the kernel runs in a bounded runspace
+    # (stage 3). It closes over NOTHING - it loads its own modules from $DashRoot,
+    # rebuilds the request from JSON, and returns a PLAIN result carrying the
+    # requestId so a late/stale completion can be discarded. It reuses the SAME
+    # Invoke-ClaudeUnderstandingExtraction that the inline invoke uses, so the
+    # driver's reasoning is identical whether run inline (tests) or bounded (prod).
+    boundedWork = {
+        param($RequestJson, $DashRoot)
+        $ErrorActionPreference = 'Stop'
+        try {
+            if (-not $global:GiokReasoningWorkerLoaded) {
+                $core = Join-Path $DashRoot 'core'; $prov = Join-Path $DashRoot 'providers'
+                # a load-time stub so claude-provider's Register-TonyProvider is a no-op
+                # in this bare runspace; the raw Invoke-ClaudeApi primitive needs none of
+                # the chat contract.
+                if (-not (Get-Command Register-TonyProvider -ErrorAction SilentlyContinue)) { function global:Register-TonyProvider { param($Provider) } }
+                foreach ($m in @('reasoning-layer', 'first-conversation', 'identity', 'understanding-engine', 'reasoning-local', 'reasoning-claude')) { . (Join-Path $core ("$m.ps1")) }
+                . (Join-Path $prov 'claude-provider.ps1')
+                $global:GiokReasoningWorkerLoaded = $true
+            }
+            $req = $RequestJson | ConvertFrom-Json
+            $res = Invoke-ClaudeUnderstandingExtraction -Request $req
+            $res['requestId'] = [string]$req.requestId
+            return $res
+        }
+        catch {
+            return @{ ok = $false; reasonCode = 'provider-error'; fallbackReason = 'worker-error'; requestId = '' }
+        }
+    }
     invoke      = {
         param($Request)
         $res = Invoke-ClaudeUnderstandingExtraction -Request $Request
