@@ -118,12 +118,13 @@ Deliberately shaped to match the existing provider object (`name`, `description`
    grounding source, and the floor - its own fresh clone, so a driver that mutates its copy and then
    fails cannot poison the fallback, a later validation, another provider, or the caller.
 5. **Bounded.** `constraints.maxMs` is carried on every request and is the caller's contract with the
-   scheduler. **It remains plumbing only - no deadline is enforced today**, and nothing in this design
-   claims otherwise. Enforcement lands in the first blocking-provider sprint (in the kernel's guarded
-   dispatch, not in drivers), deliberately: the one real provider we have (`claude-provider.ps1`) has
-   **no HTTP timeout**, so the bound must live on our side of the line, and the realistic model is
-   *abandonment* (route to the floor at deadline; discard the late result by requestId) rather than true
-   cancellation.
+   scheduler. **As of Epic 13 it is ENFORCED** for a `bounded` provider: its portable work runs in a
+   background runspace and the kernel waits at most `maxMs`. On deadline the work is **abandoned** - the
+   kernel never reads its result and reaps the runspace asynchronously - and the floor answers with
+   `fallbackReason='timeout'`. A late completion is discarded (its `requestId` will not match). This is
+   *abandonment, not cancellation*: `claude-provider.ps1` has **no HTTP timeout**, so the request may
+   still finish on the runspace; we simply never read it. Non-bounded providers and the floor run inline,
+   exactly as before.
    Re-entrancy IS bounded today: a driver may call back into the kernel a few levels deep (nested
    reasoning is a legitimate future pattern), but at depth 8 the kernel answers `reentrancy-limit`
    instead of overflowing the stack.
@@ -181,7 +182,12 @@ result that fabricates or drops the source answer. Provenance never lies (`engin
 served). The layer writes nothing (no file touched by any reasoning call). Parse, secret scan, git
 integrity, full launch.
 
-## The migration this unlocks (not this sprint)
-`Blueprint/Understanding_Claude_Migration.md` becomes one line of this design: register a Claude driver
-that `supports('understanding.extract')`, and the router does the rest - validation gate, floor
-fallback, truthful provenance and consent already exist. Same for every other task, one at a time.
+## The migration this unlocked (DONE - Epic 13)
+`Blueprint/Understanding_Claude_Migration.md` became one line of this design, now shipped as
+`Blueprint/Claude_Understanding_Driver.md`: a Claude driver that `supports('understanding.extract')`,
+registered into the kernel. The router does the rest - validation gate, floor fallback, truthful
+provenance. Epic 13 also added the pieces this sprint deferred: real `maxMs` enforcement (guarantee 5,
+above), a strict-JSON prompt/parse contract with a tighter Claude-only grounding gate layered over the
+kernel validator, and an explicit consent gate (the driver reports itself unavailable until the user
+consents, so an unconsented attempt is never even routed to it). Every other task follows the same
+path, one at a time, each behind its own validator.

@@ -26,8 +26,15 @@ $script:ClaudeUnderstandingQuestionIds = @('q_name', 'q_areas', 'q_goal', 'q_cha
 $script:ClaudeUnderstandingSections = @('goals', 'values', 'priorities', 'challenges', 'strengths', 'boundaries')
 # A single item longer than this is not an extraction - it is a paste. Rejected.
 $script:ClaudeUnderstandingMaxItemChars = 400
+# More RAW items than this (across all sections, BEFORE dedup) is a malfunctioning
+# provider. Rejected outright, never truncated - checked before dedup so a flood of
+# identical items cannot collapse under the cap.
+$script:ClaudeUnderstandingMaxItems = 200
 # A raw response larger than this is malfunctioning; rejected before parsing.
 $script:ClaudeUnderstandingMaxResponseBytes = 200000
+# Token ceiling for the extraction call. The shared config default (1024) is sized
+# for chat and truncates a full six-section extraction; this gives it room.
+$script:ClaudeUnderstandingMaxTokens = 4096
 
 # ---- test seams (offline, no network) ---------------------------------
 # The permanent regression suite must exercise this driver with MOCKED responses
@@ -204,6 +211,9 @@ function ConvertFrom-ClaudeExtraction {
         }
         $built[$sec] = $clean
     }
+    # excessive TOTAL response size: reject the whole result (never truncate). Checked
+    # on the RAW count, before dedup, so a flood of duplicates cannot slip under it.
+    if ($total -gt $script:ClaudeUnderstandingMaxItems) { return $null }
 
     # clarifications + omitted are supplementary; default empty, shapes matched.
     $clar = @()
@@ -356,9 +366,14 @@ function Invoke-ClaudeUnderstandingExtraction {
                 $sw.Stop()
                 return @{ ok = $false; reasonCode = 'unavailable'; fallbackReason = 'not-configured'; errorClass = 'not-configured'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
             }
+            # Extraction needs room for all six sections + a summary; the shared config's
+            # chat-sized default (1024) TRUNCATES the JSON mid-item and the parser then
+            # (correctly) rejects it as malformed. Raise the ceiling for THIS call only,
+            # on a private copy so the chat provider's config is untouched.
+            $exCfg = [pscustomobject]@{ apiKey = $cfg.apiKey; model = $cfg.model; endpoint = $cfg.endpoint; apiVersion = $cfg.apiVersion; maxTokens = ([int][math]::Max([int]$cfg.maxTokens, $script:ClaudeUnderstandingMaxTokens)); configured = $cfg.configured }
             $sys = Get-ClaudeExtractionSystemPrompt
             $usr = Get-ClaudeExtractionUserContent -State $state
-            $raw = Invoke-ClaudeApi -System $sys -Messages @(@{ role = 'user'; content = $usr }) -Config $cfg
+            $raw = Invoke-ClaudeApi -System $sys -Messages @(@{ role = 'user'; content = $usr }) -Config $exCfg
         }
     }
     catch {

@@ -31,11 +31,22 @@ interview (unchanged)  ->  Understanding Model (temporary)  ->  "Here's what I u
    first_conversation.json                                                                      or full rollback
 ```
 
-### 1. Engine: local baseline, Claude as optional enrichment  *(decision: hybrid)*
+> **Epic 13 update.** The "Claude as optional enrichment" seam described below is now delivered as a
+> real reasoning driver - see `Blueprint/Claude_Understanding_Driver.md`. Extraction routes through the
+> Executive Reasoning Layer (Epic 12); a Claude driver serves `understanding.extract` **only when
+> configured AND consented**, its output passes the kernel validator plus a tighter Claude-only grounding
+> gate, and the deterministic extractor below remains the **permanent** floor for offline, no-key,
+> declined-consent, timeout, or any failure. `maxMs` is now genuinely enforced (by abandonment), and the
+> call runs off the UI thread. Everything in this document about the Model shape, the review screen, the
+> approval flow and the atomic transaction is unchanged - the driver produces the same Model, reviewed and
+> approved exactly the same way.
+
+### 1. Engine: local baseline, Claude as optional enrichment  *(decision: hybrid; delivered in Epic 13)*
 
 The interview today is explicitly offline ("no AI, no cloud, no APIs"), the Claude provider needs a
-gitignored API key, and it has **no HTTP timeout** (`providers/claude-provider.ps1:355`) - which we may
-not add, because this epic forbids provider changes. So the engine is layered:
+gitignored API key, and it has **no HTTP timeout** (`providers/claude-provider.ps1:355`). Epic 10 forbade
+provider changes, so extraction stayed local; Epic 13 added the bound on **our** side of the line (kernel
+deadline enforcement) rather than touching the provider. The engine is layered:
 
 - **Local deterministic extractor is the baseline** and always runs. Onboarding never depends on a
   network call, an API key, or a response that may never arrive.

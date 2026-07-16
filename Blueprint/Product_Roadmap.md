@@ -115,6 +115,20 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   about provenance** (attribution is stamped by the kernel, and a fallback is visibly `degraded`).
   Swapping in Claude/GPT/Gemini later is *registering a driver* - nothing else in GIOK changes. See
   `Blueprint/Executive_Reasoning_Layer.md`.
+- ✅ **Claude Understanding Driver (Epic 13)** - the **first real external reasoning driver** plugged into
+  the Epic 12 kernel, serving exactly one task (`understanding.extract`): Claude organizes the seven
+  onboarding answers into the existing Understanding Model. **Consent is the driver's availability** -
+  Claude is a candidate only when configured AND consent is granted for THIS attempt (per-attempt, cleared
+  after; "remember my choice" is explicit opt-in, never silent, in the gitignored `claude.config.json`);
+  declined / unconfigured / unasked -> the kernel never invokes it and the deterministic **local floor**
+  answers, so answers never leave the machine without consent. Strict-JSON contract; a tighter Claude-only
+  grounding gate (multi-anchor / token-fraction) layered over (not replacing) the kernel validator;
+  deterministic dedup; one unsafe item rejects the whole result; Claude and local output are never combined.
+  `maxMs` enforced by **abandonment** (bounded runspace; deadline -> local floor + `fallbackReason='timeout'`;
+  late results discarded by `requestId`). Reuses the existing Claude config (no second secrets store); no
+  secret / content logging. Local extraction stays the **permanent** floor; nothing is saved until Jake
+  approves. **Further task migrations (goals.refine, briefing.compose, capture.classify, ...) remain future -
+  one at a time, each behind its own validator.** See `Blueprint/Claude_Understanding_Driver.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*

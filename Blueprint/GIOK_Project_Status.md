@@ -3,9 +3,36 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 12 - Executive Reasoning Layer** (on `feature/executive-reasoning-layer`, branched
-from `main` @ `f44c844`; Epic 11 merged via PR #19 and the Home placeholder-honesty fast-follow via
-PR #20).
+Last updated: **Epic 13 - Claude Understanding Driver** (on `feature/claude-understanding-driver`,
+branched from synchronized `main` @ `5477355`; Epic 12 remains local on
+`feature/executive-reasoning-layer`).
+
+> **Epic 13 status (Claude Understanding Driver):** the **first real external reasoning driver** in the
+> Epic 12 kernel - it serves exactly one task, `understanding.extract`, by asking Claude to organize the
+> seven onboarding answers into the existing Understanding Model. No other task was migrated (goals.refine,
+> briefing.compose, capture.classify, etc. stay unmigrated and fail closed). **Consent is the driver's
+> availability:** `claude-understanding.isAvailable() = Claude configured AND consent granted for THIS
+> attempt`; declined / unconfigured / unasked -> the kernel never invokes it -> the deterministic **local
+> floor** answers (`meta.engine='local'`) and **the answers are never even passed to the driver** (privacy
+> is structural, not a promise inside the call). Consent is **per-attempt**, cleared after; "remember my
+> choice" is **explicit opt-in only, never silent**, stored in the existing gitignored `claude.config.json`.
+> Strict-JSON prompt/parse contract; a **tighter Claude-only grounding gate** (multi-anchor / token-fraction)
+> layered OVER (not replacing) the kernel validator; deterministic dedup; **one unsafe item rejects the
+> whole Claude result**; Claude and local output are **never combined** (mixed provenance is worse than
+> none). Real `maxMs` enforcement by **abandonment, not cancellation**: bounded work runs in a background
+> runspace, deadline -> abandon + local floor + `fallbackReason='timeout'`; late results discarded by
+> `requestId`; runspaces reaped on close. Reuses the **existing gitignored Claude config** (no second
+> secrets store); diagnostics carry only provider / task / request id, status, duration, safe error class,
+> item counts, fallback reason - **never prompts / answers / responses / identity / keys**. Honest posture:
+> Claude is primary only when configured AND consented; local extraction is the **permanent** offline /
+> privacy / failure floor; external drivers are **trusted in-process code, NOT sandboxed**; nothing is
+> saved until Jake approves on the review screen; validation may reject Claude and fall back locally - **a
+> success, not a failure**. New `core/reasoning-consent.ps1` + `core/reasoning-claude.ps1`; modified
+> `core/reasoning-layer.ps1` (deadline enforcement), `core/async-run.ps1` (off-thread extraction worker),
+> `ui/tony-ui.ps1` (consent screen + orchestration + one review disclosure line), `dashboard.ps1` (sourcing
+> + teardown). Permanent tests added (`tony-alpha/dashboard/tests/reasoning/claude-driver.tests.ps1`, 37
+> assertions; existing 181 preserved -> **218 total**). Branch `feature/claude-understanding-driver` off
+> synchronized `main` @ `5477355`. Local-only, not pushed, not merged.
 
 > **Epic 12 status (Executive Reasoning Layer):** an **architecture** sprint - the app behaves exactly as
 > it did before, and that is verified rather than asserted. **No provider, no API key, no HTTP, no

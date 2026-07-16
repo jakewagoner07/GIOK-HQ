@@ -56,7 +56,13 @@ hook or CI without parsing the text. The whole suite takes roughly 30 seconds.
 | `isolation.tests.ps1` | Payload / constraints / context cloning; drivers never share state |
 | `limits.tests.ps1` | Re-entrancy guard and the result-size cap |
 | `identity-transaction.tests.ps1` | The atomic identity write (all-or-nothing, roll back on failure) |
+| `claude-driver.tests.ps1` | The Epic 13 Claude understanding driver: consent, parse, grounding, dedup, bounded timeout/stale, fallback classes, attribution (mocked responses only) |
 | `_harness.ps1` | Shared fixtures, assertions, and the sandbox. Not a test file. |
+
+The Claude-driver suite never touches the real key: driver-logic cases run the
+driver inline with deadline enforcement OFF so a mocked call override applies, and
+the bounded-mechanism cases (timeout / stale / cleanup) use self-contained mock
+providers. No live response content is committed as a fixture.
 
 ## The hostile archetypes
 
@@ -108,6 +114,12 @@ than a wall.
 When a provider archetype defeats the kernel, add it to
 `hostile-providers.tests.ps1` **in the same commit as the fix**. The fix and its
 proof ship together, or the fix is just a claim.
+
+Sandbox cleanup runs in a `PowerShell.Exiting` handler, so a test file that
+*crashes* still reaps its `%TEMP%` sandbox (not only on a clean `Complete-TestFile`).
+`Register-CraftingProvider` takes its crafted items as an explicit `-Goals`
+parameter, baked into the provider via `GetNewClosure` - there is no shared
+script-scoped `CraftedGoals` that a later test could accidentally reuse.
 
 Use `Assert-True` for anything that must hold. Use `Write-TestNote` for behaviour
 that is recorded deliberately but is *not* a gate — for example, grounded

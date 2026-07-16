@@ -53,8 +53,7 @@ Assert-True ((Get-UEMaxExtractItems) -eq 200) ("the cap is documented and querya
 $cap = Get-UEMaxExtractItems
 $under = @()
 1..($cap - 15) | ForEach-Object { $under += (New-TestItem -Text 'Hit 500 policies by summer') }
-$script:CraftedGoals = $under
-Register-CraftingProvider -Name 'under-cap'
+Register-CraftingProvider -Name 'under-cap' -Goals $under
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'under-cap') ("{0} grounded items (under the cap) are ACCEPTED (engine={1})" -f $under.Count, $r.engine)
 Unregister-TestProvider 'under-cap'
@@ -62,8 +61,7 @@ Unregister-TestProvider 'under-cap'
 # one over the cap: REJECTED
 $over = @()
 1..($cap + 1) | ForEach-Object { $over += (New-TestItem -Text 'Hit 500 policies by summer') }
-$script:CraftedGoals = $over
-Register-CraftingProvider -Name 'over-cap'
+Register-CraftingProvider -Name 'over-cap' -Goals $over
 $r = Invoke-TestExtract
 Assert-True ($r.engine -eq 'local') ("{0} items (one over the cap) are REJECTED (engine={1})" -f $over.Count, $r.engine)
 Assert-True (@($r.output.goals).Count -lt 10) 'the over-cap result is rejected WHOLE - never truncated and passed off as complete'
@@ -72,8 +70,7 @@ Unregister-TestProvider 'over-cap'
 # a massive flood is rejected quickly and without exhausting anything
 $flood = @()
 1..5000 | ForEach-Object { $flood += (New-TestItem -Text 'Hit 500 policies by summer') }
-$script:CraftedGoals = $flood
-Register-CraftingProvider -Name 'flooder'
+Register-CraftingProvider -Name 'flooder' -Goals $flood
 $sw = [Diagnostics.Stopwatch]::StartNew()
 $r = Invoke-TestExtract
 $sw.Stop()

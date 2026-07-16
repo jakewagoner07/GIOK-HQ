@@ -154,8 +154,12 @@ function Get-AsyncExtractionWork {
 param(`$DashRoot, `$UseClaude)
 `$ErrorActionPreference = 'Stop'
 if (-not `$global:GiokExtractLoaded) {
-    `$core = Join-Path `$DashRoot 'core'
+    `$core = Join-Path `$DashRoot 'core'; `$prov = Join-Path `$DashRoot 'providers'
     foreach (`$m in @('reasoning-layer','first-conversation','identity','understanding-engine','reasoning-local','reasoning-consent','reasoning-claude')) { . (Join-Path `$core ("`$m.ps1")) }
+    # claude-provider gives the worker Test-ClaudeConfigured (the driver's availability
+    # check). A load-time stub keeps its Register-TonyProvider call a no-op here.
+    if (-not (Get-Command Register-TonyProvider -ErrorAction SilentlyContinue)) { function global:Register-TonyProvider { param(`$Provider) } }
+    . (Join-Path `$prov 'claude-provider.ps1')
     `$global:GiokExtractLoaded = `$true
 }
 if (Get-Command Set-ReasoningDashboardRoot -ErrorAction SilentlyContinue) { Set-ReasoningDashboardRoot `$DashRoot }
