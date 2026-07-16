@@ -222,7 +222,12 @@ Register-ReasoningValidator -TaskId 'understanding.extract' -Validator {
 # agree, which is the entire point.)
 # When a task is genuinely migrated, REPLACE its validator with a real one in the
 # same commit that gives the floor its engine - never before.
-foreach ($t in @('goals.refine', 'briefing.compose', 'capture.classify', 'inbox.propose', 'lifeos.reason', 'coaching.advise')) {
+# briefing.compose is MIGRATED (Epic 14): its validator + floor delegate live in
+# daily-plan.ps1 (loaded after this file). It is intentionally NOT in this fail-closed
+# list. Until daily-plan.ps1 registers the real validator, briefing.compose has no
+# validator and Test-ReasoningOutput fails it closed anyway - so there is no window
+# where an unvalidated briefing.compose result could escape.
+foreach ($t in @('goals.refine', 'capture.classify', 'inbox.propose', 'lifeos.reason', 'coaching.advise')) {
     Register-ReasoningValidator -TaskId $t -Validator {
         param($Output, $Request)
         return [pscustomobject]@{ valid = $false; reason = 'task not migrated' }
@@ -249,6 +254,19 @@ Register-ReasoningProvider -Provider ([pscustomobject]@{
                     $model = New-UnderstandingModel -State $Request.input
                     return (New-ReasoningResult -TaskId $Request.taskId -Ok $true -Output $model -Confidence 0.8 -Engine 'local' -ProviderName 'local' `
                             -Clarifications @($model.clarifications))
+                }
+
+                'briefing.compose' {
+                    # the permanent Daily Plan floor: deterministic, offline, always useful.
+                    if (-not (Get-Command New-DailyPlanLocal -ErrorAction SilentlyContinue)) {
+                        return (New-ReasoningResult -TaskId $Request.taskId -Ok $false -ReasonCode 'provider-error' -Engine 'local' -ProviderName 'local')
+                    }
+                    $plan = New-DailyPlanLocal -PlanSources $Request.input -RequestId ([string]$Request.requestId)
+                    if (-not $plan) {
+                        return (New-ReasoningResult -TaskId $Request.taskId -Ok $false -ReasonCode 'provider-error' -Engine 'local' -ProviderName 'local')
+                    }
+                    return (New-ReasoningResult -TaskId $Request.taskId -Ok $true -Output $plan -Confidence 0.8 -Engine 'local' -ProviderName 'local' `
+                            -Clarifications @($plan.clarifications))
                 }
 
                 default {
