@@ -218,6 +218,35 @@ These are settled and should not be re-litigated without a blueprint change:
    / identity are logged; diagnostics carry only provider / task / request id, status, duration, safe error
    class, item counts, and fallback reason.
 
+19. **The Daily Executive Plan is a read-only projection; it never writes (Epic 14,
+   `Daily_Executive_Plan.md`).** Tony's Daily Executive Plan turns the day Jake already has (goals,
+   calendar, follow-ups, commitments, Life OS) into a calm plan - top 3 outcomes, protect, follow up, can
+   wait, recommendations, clarifications, workload (empty sections omitted). **Permanent decision, verbatim:**
+   *the Daily Plan is a read-only executive projection; any write becomes a pending Executive Inbox proposal;
+   no provider may write directly.* It creates **no second store** - `Get-DailyPlanSources` projects the one
+   Executive Context into a compact, groundable sources list (each keeping its owner `sourceId`) and is
+   thrown away after composing. It **migrates the existing ABI task `briefing.compose`** (no new task id): a
+   deterministic local composer (`New-DailyPlanLocal`) is the **permanent floor** with Family-before-Financial
+   inherited from the priority score, and the **same** Epic 13 Claude driver now also supports
+   `briefing.compose` - **no separate provider path**; the Executive Reasoning Layer stays the only router /
+   validator / fallback / timeout / attribution authority. **Consent is task-scoped:** onboarding
+   (`understanding.extract`) consent does **not** grant daily-planning (`briefing.compose`) consent -
+   executive-reasoning consent is its own per-attempt flag (own remember flag) in the existing gitignored
+   `claude.config.json` (no second secrets store), gated at **routing time, before any data is sent**, by the
+   kernel's additive task-aware availability check (`isAvailableForTask` / `Test-ProviderAvailableForTask`).
+   **Validation is facts-by-machine, meaning-by-the-human:** the `briefing.compose` gate enforces valid shape,
+   allowed sections only, every item's `sourceType`+`sourceId` referencing a supplied context source (**no
+   invented goals / appointments / deadlines / names / amounts / commitments**), no fabricated action type,
+   **no provider may claim an action occurred**, anything that writes is `requiresApproval=true`, caps, and
+   **one unsafe item rejects the whole result** -> the local floor. Overload detection is conservative and
+   **evidence-only** (calendar density, time-sensitive count, conflicts, do-today count, free time) and
+   **never diagnoses stress / burnout / medical conditions**. **Tony recommends but never executes:**
+   `create-action / schedule-followup / prepare-message / move-to-inbox / protect-calendar / defer-item` each
+   becomes a pending proposal via `Add-InboxProposal` (dedup-checked), and only `Approve-InboxItem` -> the
+   owning module writes (Decision 13) - **no direct Calendar / Email / CRM / Goal / Identity / Life OS
+   write.** An optional off-by-default Home card opens the full view (async host-swap, reuses the context +
+   shared cache, no duplicate fetch); it does **not** replace the Executive Briefing and adds no sidebar tab.
+
 ## Security / privacy rules
 
 - **Never commit secrets.** API keys, OAuth client secrets, access/refresh tokens, authorization
@@ -237,10 +266,10 @@ These are settled and should not be re-litigated without a blueprint change:
 
 ## Current Git state
 
-- **Current work:** `feature/claude-understanding-driver` (**Epic 13 - Claude Understanding Driver**),
-  branched from **synchronized `main` @ `5477355`** - local-only, **not pushed, not merged.** `main` has
-  advanced to `5477355` since the RC2-era snapshot below; the intervening Epic 5-13 sprints are recorded in
-  `GIOK_Project_Status.md`.
+- **Current work:** `feature/daily-executive-plan` (**Epic 14 - Tony Daily Executive Plan**), branched
+  from `main` @ `43e114c` - local-only, **not pushed, not merged.** The prior sprint,
+  `feature/claude-understanding-driver` (**Epic 13**), branched from synchronized `main` @ `5477355`; the
+  intervening Epic 5-14 sprints are recorded in `GIOK_Project_Status.md`.
 - **`main`** is at `2459b66` (Alpha PR #1 + D17 PR #2 merged). **Never merge into `main` without Jake.**
 - **`release/rc2-executive-intelligence`** is the current integration branch: D18, D19, D20 (+
   constitution), Randy, and Executive Management merged in dependency order (history preserved) from
@@ -256,13 +285,18 @@ These are settled and should not be re-litigated without a blueprint change:
 
 ## Exact current stopping point
 
-**Epic 13 — Claude Understanding Driver** is committed on `feature/claude-understanding-driver` (branched
-from synchronized `main` @ `5477355`) and verified: the first external reasoning driver serves only
-`understanding.extract`, consent gates its availability, the local floor answers whenever Claude is
-unconfigured / declined / times out, `maxMs` is enforced by abandonment (bounded runspace, stale results
-discarded by `requestId`, runspaces reaped on close), and the permanent Claude-driver suite passes (37 new
-assertions; existing 181 preserved -> **218 total**). Nothing is mid-edit; the tree is clean. **Stopped
-before pushing** — the branch is local-only, not pushed, not merged into `main`.
+**Epic 14 — Tony Daily Executive Plan** is built on `feature/daily-executive-plan` (branched from `main` @
+`43e114c`): a read-only executive projection over the single Executive Context (top 3 / protect / follow
+up / can wait / recommendations / clarifications / workload), migrating the existing `briefing.compose`
+task with a permanent deterministic local composer and the same Epic 13 Claude driver now supporting
+`briefing.compose`, task-scoped executive-reasoning consent gated at routing time by the additive
+`isAvailableForTask`, the facts-by-machine `briefing.compose` validator, evidence-only overload detection,
+and recommendations that become pending Executive Inbox proposals (only Jake's approval writes). New
+`core/daily-plan.ps1`; modified `reasoning-local` / `reasoning-claude` / `reasoning-consent` /
+`reasoning-layer` / `async-run` / `home-layout` / `tony-ui`; permanent Daily-Plan tests added. **Stopped
+before pushing** — the branch is local-only, not pushed, not merged into `main`. (Prior stopping point:
+**Epic 13 — Claude Understanding Driver** on `feature/claude-understanding-driver`, verified with the
+permanent Claude-driver suite, likewise local-only.)
 
 ## Recommended next steps
 

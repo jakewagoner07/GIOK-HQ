@@ -89,6 +89,16 @@ from live truth - and lets the briefing surface one calm, relevant life line whe
 domain is empty, the digest is empty for that domain and Tony says plainly that nothing is set yet
 (no fabricated goals, numbers, dates, or advice).
 
+## A second read-only consumer: the Daily Executive Plan (Epic 14)
+
+Like the Executive Briefing, Tony's **Daily Executive Plan** (`Blueprint/Daily_Executive_Plan.md`)
+consumes this **one** context and creates no state of its own. `Get-DailyPlanSources` projects the
+assembled context into a compact, self-contained "sources" list every plan item must ground to - each
+entry keeping the real owner `sourceId` (goal id, action id, calendar event id, message id, `FAM-001`,
+...) - so the plan is traceable to the single source of truth and **nothing is copied into a new
+store.** It reads the context on demand and throws the projection away after composing; there is no
+second context, no cache of its own, and no write path back through the engine.
+
 ## Why context is different from memory
 
 **Memory is what Tony knows. Context is what's true right now.** Memory is durable and stored -
@@ -120,3 +130,4 @@ storage, no hidden memories. Pure read-and-assemble over the single source of tr
 - [Tony_Decision_Framework.md](Tony_Decision_Framework.md) - the judgment inside the context; retains final authority.
 - [Tony_Observation_Engine.md](Tony_Observation_Engine.md) - the patterns fed into the context.
 - [Tony_AI_Provider_Contract.md](Tony_AI_Provider_Contract.md) - receives the concise summary, not raw fields.
+- [Daily_Executive_Plan.md](Daily_Executive_Plan.md) - a read-only projection of this context (Epic 14).

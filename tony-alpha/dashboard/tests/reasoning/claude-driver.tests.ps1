@@ -16,6 +16,11 @@
 . (Join-Path $PSScriptRoot '_harness.ps1')
 . (Resolve-Path (Join-Path $PSScriptRoot '..\..\core\reasoning-consent.ps1'))
 . (Resolve-Path (Join-Path $PSScriptRoot '..\..\core\reasoning-claude.ps1'))
+# Load claude-provider so the REAL error-class mapping (Get-ClaudeErrorInfo) is
+# exercised, not skipped. A load-time stub keeps its Register-TonyProvider a no-op.
+# No test reaches the network: every configured+consented case uses a call override.
+if (-not (Get-Command Register-TonyProvider -ErrorAction SilentlyContinue)) { function Register-TonyProvider { param($Provider) } }
+try { . (Resolve-Path (Join-Path $PSScriptRoot '..\..\providers\claude-provider.ps1')) } catch { }
 Assert-Sandboxed
 
 $REAL = $script:TestGoalAnswer   # 'Hit 500 policies by summer and save $12,500 at 7.5% by 6:30am standup'
@@ -225,8 +230,18 @@ Assert-True ((Get-ReasoningWorkerStats).inFlight -ge 1) 'worker in-flight before
 Stop-ReasoningWorkers
 Assert-True ((Get-ReasoningWorkerStats).inFlight -eq 0) 'CLOSE during extraction: Stop-ReasoningWorkers reaps every worker (no orphans)'
 
-# navigate-away: the stale-token invariant that guards a superseded view update
-$token = 7; $current = 8
-Assert-True ($token -ne $current) 'NAVIGATE AWAY: a superseded token is detected, so a stale completion never updates the view'
+# navigate-away / stale-view guard: the REAL mechanism the UI uses is "capture a
+# monotonic token before the async work, then on completion proceed ONLY if the token
+# is still current". We exercise that mechanism here (capture -> mutate -> compare),
+# both branches, driven by a real incrementing token - not a constant tautology.
+$script:GuardToken = 0
+function Test-CompletionCurrent { param($Captured) return ($Captured -eq $script:GuardToken) }
+# Flow A starts and captures the current token.
+$script:GuardToken++; $capturedA = $script:GuardToken
+Assert-True (Test-CompletionCurrent -Captured $capturedA) 'a completion whose token is still current PROCEEDS (updates the view)'
+# The user navigates away / a newer flow B starts -> the token advances.
+$script:GuardToken++; $capturedB = $script:GuardToken
+Assert-True (-not (Test-CompletionCurrent -Captured $capturedA)) 'NAVIGATE AWAY: flow A''s late completion is now stale (token advanced) -> update SKIPPED'
+Assert-True (Test-CompletionCurrent -Captured $capturedB) 'the newer flow B''s completion is current -> it proceeds'
 
 Complete-TestFile 'claude-driver'

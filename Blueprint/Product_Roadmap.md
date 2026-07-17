@@ -129,6 +129,22 @@ Give Tony judgment, voice, memory, and situational awareness — entirely local,
   secret / content logging. Local extraction stays the **permanent** floor; nothing is saved until Jake
   approves. **Further task migrations (goals.refine, briefing.compose, capture.classify, ...) remain future -
   one at a time, each behind its own validator.** See `Blueprint/Claude_Understanding_Driver.md`.
+- ✅ **Tony Daily Executive Plan (Epic 14)** - a **read-only executive projection** over the single
+  Executive Context: the day Jake already has (goals, calendar, follow-ups, commitments, Life OS) turned
+  into a calm plan - top 3 outcomes, what to protect, what needs follow-up, what can wait, whether the day
+  is overloaded, and a few recommendations (empty sections omitted). **Permanent decision:** the Daily
+  Plan is a read-only projection; any write becomes a pending Executive Inbox proposal; no provider may
+  write directly. It **migrates the existing `briefing.compose` task** (no new task id) - a deterministic
+  local composer (`New-DailyPlanLocal`, the permanent floor, Family-before-Financial inherited from the
+  priority score) with the same Epic 13 Claude driver now also supporting `briefing.compose`; the
+  Reasoning Layer stays the only router/validator/fallback. **Consent is task-scoped** (onboarding consent
+  does not grant daily-planning consent; its own per-attempt flag) and gated at routing time by the new
+  additive `isAvailableForTask`. Validation is facts-by-machine (every item grounds to a supplied context
+  source, no fabricated actions, anything that writes is `requiresApproval`, one unsafe item -> floor);
+  overload detection is conservative and evidence-only, never diagnosing stress or medical conditions. An
+  optional off-by-default Home card opens the full view (async host-swap; reuses the context + shared
+  cache; does not replace the Briefing). No second store; only Jake's approval writes. See
+  `Blueprint/Daily_Executive_Plan.md`.
 
 **Remaining in Phase 1 (small):** the **Projects model** is now real (Home Projects fills the reserved
 `project` context field). *(The dormant `tony-memory.ps1` framework was retired at RC1.)*
@@ -171,7 +187,10 @@ consent-gated.
 Tony prepares and protects the day proactively, still proposing rather than acting unilaterally.
 
 - ⬜ Local scheduler — pre-compose the morning briefing ("prepared while you slept")
-- ⬜ Proactive, calendar-aware daily planning (free-block protection, workload assessment)
+- 🔄 Proactive, calendar-aware daily planning (free-block protection, workload assessment) — the
+  **read-only projection half** is delivered by the **Daily Executive Plan (Epic 14)**: it assesses
+  workload (evidence-only) and *recommends* protecting free blocks. It still **proposes rather than
+  acts** — the autonomous / scheduled / write-back half stays Phase 3.
 - ⬜ Meeting preparation (context + attendees + suggested agenda from Calendar/Gmail)
 - ⬜ Automated End-of-Day Audit assistance and week-ahead letters
 - ⬜ **Write capabilities with approval** — the first actions Tony takes on Jake's behalf (create
