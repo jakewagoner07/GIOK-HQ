@@ -57,9 +57,9 @@ function Set-ClaudeUnderstandingAttempt {
 }
 function Get-ClaudeUnderstandingLastAttempt { return $script:ClaudeUnderstandingLastAttempt }
 function New-ClaudeUnderstandingAttempt {
-    param([string]$RequestId, [string]$Status, [int]$DurationMs = 0, [string]$ErrorClass = '', [int]$ItemCount = 0, [string]$FallbackReason = '')
+    param([string]$RequestId, [string]$Status, [int]$DurationMs = 0, [string]$ErrorClass = '', [int]$ItemCount = 0, [string]$FallbackReason = '', [string]$Task = 'understanding.extract')
     return [pscustomobject]@{
-        provider = $script:ClaudeUnderstandingId; task = 'understanding.extract'
+        provider = $script:ClaudeUnderstandingId; task = $Task
         requestId = $RequestId; status = $Status; durationMs = $DurationMs
         errorClass = $ErrorClass; itemCount = $ItemCount; fallbackReason = $FallbackReason
     }
@@ -429,15 +429,200 @@ function Invoke-ClaudeUnderstandingExtraction {
     return @{ ok = $true; reasonCode = 'ok'; output = $model; confidence = 0.85; clarifications = @($model.clarifications); fallbackReason = ''; errorClass = ''; durationMs = $sw.ElapsedMilliseconds; itemCount = $count }
 }
 
+# =====================================================================
+# briefing.compose (Epic 14): the SAME driver composes the Daily Executive Plan.
+# Same architecture - configured + task-scoped consent + bounded + kernel-validated
+# + local floor on any failure. No separate provider path.
+# =====================================================================
+$script:ClaudePlanCallOverride = $null   # scriptblock(planSources) -> raw text, or throw, to mock in tests
+function Set-ClaudePlanCallOverride { param([scriptblock]$ScriptBlock) $script:ClaudePlanCallOverride = $ScriptBlock }
+
+function Get-ClaudePlanSystemPrompt {
+    $lines = @(
+        'You are an executive chief of staff composing a calm, realistic Daily Plan. You never invent.',
+        'You return a single JSON object and nothing else - no markdown, no code fences, no prose.',
+        '',
+        'Return these keys: topOutcomes, protect, followUps, canWait, recommendations (arrays), clarifications (array of strings), and workload (an object { level, reason }).',
+        'level is one of: light, balanced, heavy, overloaded. reason states the evidence plainly.',
+        'Every item in the five arrays MUST be an object with exactly these fields:',
+        '  text, sourceType, sourceId, reason, priority (1-9), confidence (0.0-1.0), requiresApproval (bool), proposedAction (object or null).',
+        '  - sourceType + sourceId MUST reference a supplied source below. Use them EXACTLY as given.',
+        '  - proposedAction, when present, is { type, title, detail } where type is one of:',
+        '    create-action, schedule-followup, prepare-message, move-to-inbox, protect-calendar, defer-item.',
+        '',
+        'Rules:',
+        '  - Organize what is supplied; never invent a goal, appointment, deadline, name, amount, or commitment.',
+        '  - Every item must reference a supplied source. Preserve all user numbers/dates/names exactly.',
+        '  - Family and personal commitments come before financial ones. People before money.',
+        '  - You may RECOMMEND actions but you NEVER perform one and NEVER claim one happened.',
+        '  - Any recommendation that would write sets requiresApproval=true with a proposedAction.',
+        '  - Keep it small and calm: 1-3 top outcomes, only what is worth protecting, only real follow-ups.',
+        '  - workload is conservative and evidence-based; never diagnose stress, burnout, or any condition.',
+        '  - Output the JSON object only.'
+    )
+    return ($lines -join "`n")
+}
+
+function Get-ClaudePlanUserContent {
+    param($PlanSources)
+    $parts = @('Compose the Daily Plan from these sources and signals. Use each sourceType/sourceId exactly as labelled.', '')
+    $t = $PlanSources.time
+    $parts += ("Today: {0}, {1} ({2})." -f $t.dayOfWeek, $t.date, $t.partOfDay)
+    $s = $PlanSources.signals
+    $parts += ("Signals: {0} calendar events today, {1} time-sensitive follow-ups, {2} conflicts, {3} do-today priorities, {4} minutes longest free block." -f $s.calendarToday, $s.timeSensitiveCount, $s.conflicts, $s.doTodayCount, $s.longestFreeMinutes)
+    $parts += ''
+    $parts += 'Sources:'
+    foreach ($src in @($PlanSources.sources)) {
+        $extra = ''
+        if ($src.PSObject.Properties.Name -contains 'when' -and $src.when) { $extra += (" when=" + [string]$src.when) }
+        if ($src.PSObject.Properties.Name -contains 'daysAway') { $extra += (" daysAway=" + [string]$src.daysAway) }
+        if ($src.PSObject.Properties.Name -contains 'why' -and $src.why) { $extra += (" why=" + [string]$src.why) }
+        $parts += ("[{0} / {1}] {2}{3}" -f $src.sourceType, $src.sourceId, $src.text, $extra)
+    }
+    if (@($PlanSources.clarifications).Count -gt 0) {
+        $parts += ''
+        $parts += 'Open questions the day raises:'
+        foreach ($c in @($PlanSources.clarifications)) { $parts += ('- ' + [string]$c) }
+    }
+    $parts += ''
+    $parts += 'Return the JSON object now.'
+    return ($parts -join "`n")
+}
+
+# Parse Claude's Daily Plan JSON into the model shape, or $null on whole-response
+# rejection. Shape + clean-item construction only; grounding (source membership,
+# claim/approval checks) is the kernel briefing.compose validator's job and is
+# ALSO re-checked in Invoke-ClaudePlanCompose for a truthful fallbackReason. A
+# fabricated action type rejects the whole result here.
+function ConvertFrom-ClaudePlan {
+    param([string]$RawText, $PlanSources)
+    if ([string]::IsNullOrWhiteSpace($RawText)) { return $null }
+    if ([System.Text.Encoding]::UTF8.GetByteCount($RawText) -gt $script:ClaudeUnderstandingMaxResponseBytes) { return $null }
+    $obj = $null
+    try { $obj = $RawText | ConvertFrom-Json } catch { $obj = $null }
+    if (-not $obj) {
+        $span = Get-JsonObjectSpan -Text $RawText
+        if (-not $span) { return $null }
+        try { $obj = $span | ConvertFrom-Json } catch { return $null }
+    }
+    if (-not $obj -or ($obj -isnot [pscustomobject])) { return $null }
+    $sections = if ($null -ne $script:DailyPlanSections) { $script:DailyPlanSections } else { @('topOutcomes', 'protect', 'followUps', 'canWait', 'recommendations') }
+    $types = if ($null -ne $script:DailyPlanSourceTypes) { $script:DailyPlanSourceTypes } else { @() }
+    $actionTypes = if ($null -ne $script:DailyPlanActionTypes) { $script:DailyPlanActionTypes } else { @() }
+    $levels = if ($null -ne $script:DailyPlanWorkloadLevels) { $script:DailyPlanWorkloadLevels } else { @('light', 'balanced', 'heavy', 'overloaded') }
+    $maxChars = if ($null -ne $script:DailyPlanMaxItemChars) { $script:DailyPlanMaxItemChars } else { 300 }
+
+    foreach ($sec in $sections) { if ($obj.PSObject.Properties.Name -notcontains $sec) { return $null } }
+    if ($obj.PSObject.Properties.Name -notcontains 'workload' -or -not $obj.workload) { return $null }
+    if ($levels -notcontains [string]$obj.workload.level) { return $null }
+
+    $built = @{}
+    foreach ($sec in $sections) {
+        $clean = @()
+        foreach ($it in @($obj.$sec)) {
+            if (-not $it -or ($it -isnot [pscustomobject])) { return $null }
+            $text = [string]$it.text
+            if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+            if ($text.Length -gt $maxChars) { return $null }
+            $st = [string]$it.sourceType; $sid = [string]$it.sourceId
+            if ($types -notcontains $st) { return $null }
+            $conf = 0.7; try { $conf = [double]$it.confidence } catch { $conf = 0.7 }
+            $pri = 5; try { $pri = [int]$it.priority } catch { $pri = 5 }
+            $reqAppr = $false; try { $reqAppr = [bool]$it.requiresApproval } catch { $reqAppr = $false }
+            $pa = $null
+            if (($it.PSObject.Properties.Name -contains 'proposedAction') -and $it.proposedAction) {
+                $atype = [string]$it.proposedAction.type
+                if ($actionTypes -notcontains $atype) { return $null }   # fabricated action -> whole reject
+                $pa = New-DailyPlanAction -Type $atype -Title ([string]$it.proposedAction.title) -Detail ([string]$it.proposedAction.detail)
+                $reqAppr = $true
+            }
+            $clean += (New-DailyPlanItem -Text $text -SourceType $st -SourceId $sid -Reason ([string]$it.reason) -Priority $pri -Confidence $conf -RequiresApproval $reqAppr -ProposedAction $pa)
+        }
+        $built[$sec] = $clean
+    }
+    $clar = @(); foreach ($c in @($obj.clarifications)) { if ($c) { $clar += [string]$c } }
+
+    $model = New-EmptyDailyPlan -Engine 'claude-understanding' -RequestId '' -ContextVersion ([string]$PlanSources.contextVersion)
+    foreach ($sec in $sections) { $model.$sec = @($built[$sec]) }
+    $model.clarifications = @($clar)
+    $model.workload = [pscustomobject]@{ level = [string]$obj.workload.level; reason = [string]$obj.workload.reason }
+    return $model
+}
+
+# Portable Daily Plan work: call (or mock), parse, ground, return a plain result.
+function Invoke-ClaudePlanCompose {
+    param($Request)
+    $ps = $Request.input
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $raw = $null
+    try {
+        if ($null -ne $script:ClaudePlanCallOverride) { $raw = & $script:ClaudePlanCallOverride $ps }
+        else {
+            if (-not (Get-Command Get-ClaudeConfig -ErrorAction SilentlyContinue) -or -not (Get-Command Invoke-ClaudeApi -ErrorAction SilentlyContinue)) {
+                $sw.Stop(); return @{ ok = $false; reasonCode = 'unavailable'; fallbackReason = 'not-configured'; errorClass = 'not-configured'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
+            }
+            $cfg = Get-ClaudeConfig
+            if (-not $cfg.configured) { $sw.Stop(); return @{ ok = $false; reasonCode = 'unavailable'; fallbackReason = 'not-configured'; errorClass = 'not-configured'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 } }
+            $exCfg = [pscustomobject]@{ apiKey = $cfg.apiKey; model = $cfg.model; endpoint = $cfg.endpoint; apiVersion = $cfg.apiVersion; maxTokens = ([int][math]::Max([int]$cfg.maxTokens, $script:ClaudeUnderstandingMaxTokens)); configured = $cfg.configured }
+            $raw = Invoke-ClaudeApi -System (Get-ClaudePlanSystemPrompt) -Messages @(@{ role = 'user'; content = (Get-ClaudePlanUserContent -PlanSources $ps) }) -Config $exCfg
+        }
+    }
+    catch {
+        $sw.Stop()
+        $class = 'network-error'
+        if (Get-Command Get-ClaudeErrorInfo -ErrorAction SilentlyContinue) { try { $class = [string](Get-ClaudeErrorInfo $_).class } catch { $class = 'network-error' } }
+        return @{ ok = $false; reasonCode = 'provider-error'; fallbackReason = $class; errorClass = $class; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$raw)) { $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'empty'; errorClass = 'empty'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 } }
+    $plan = ConvertFrom-ClaudePlan -RawText ([string]$raw) -PlanSources $ps
+    if (-not $plan) { $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'malformed'; errorClass = 'malformed'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 } }
+    # driver-side grounding sweep (truthful fallbackReason; the kernel validator is
+    # still the authority and re-checks everything).
+    $count = 0
+    foreach ($sec in @('topOutcomes', 'protect', 'followUps', 'canWait', 'recommendations')) {
+        foreach ($it in @($plan.$sec)) {
+            if (-not $it) { continue }
+            $count++
+            if (Get-Command Find-DailyPlanSource -ErrorAction SilentlyContinue) {
+                if (-not (Find-DailyPlanSource -PlanSources $ps -SourceType ([string]$it.sourceType) -SourceId ([string]$it.sourceId))) {
+                    $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'grounding'; errorClass = 'grounding'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
+                }
+            }
+        }
+    }
+    $sw.Stop()
+    return @{ ok = $true; reasonCode = 'ok'; output = $plan; confidence = 0.85; clarifications = @($plan.clarifications); fallbackReason = ''; errorClass = ''; durationMs = $sw.ElapsedMilliseconds; itemCount = $count }
+}
+
+# The dispatcher: one entry, routes by task. Same for inline and bounded paths.
+function Invoke-ClaudeReasoning {
+    param($Request)
+    switch ([string]$Request.taskId) {
+        'understanding.extract' { return (Invoke-ClaudeUnderstandingExtraction -Request $Request) }
+        'briefing.compose' { return (Invoke-ClaudePlanCompose -Request $Request) }
+        default { return @{ ok = $false; reasonCode = 'provider-error'; fallbackReason = 'unsupported-task'; errorClass = 'unsupported-task'; durationMs = 0; itemCount = 0 } }
+    }
+}
+
 # ---- the driver object ------------------------------------------------
 $script:ClaudeUnderstandingProvider = [pscustomobject]@{
     name        = $script:ClaudeUnderstandingId
-    description = 'Organizes onboarding answers into the Understanding Model via Claude. Configured + consented only. Bounded; local floor on any failure.'
+    description = 'The Claude reasoning driver. Serves understanding.extract and briefing.compose. Configured + task-scoped consent only. Bounded; local floor on any failure.'
     isFloor     = $false
     priority    = 10
     bounded     = $true
-    supports    = { param($TaskId) return ($TaskId -eq 'understanding.extract') }
-    isAvailable = { return (Test-ClaudeUnderstandingAvailable) }
+    supports    = { param($TaskId) return ($TaskId -eq 'understanding.extract' -or $TaskId -eq 'briefing.compose') }
+    # coarse (task-agnostic) availability, kept for any non-task-aware caller.
+    isAvailable = { return (Test-ClaudeUnderstandingConfigured) -and ((Test-ExtractionConsent) -or (Get-Command Test-ExecutiveReasoningConsent -ErrorAction SilentlyContinue) -and (Test-ExecutiveReasoningConsent)) }
+    # TASK-AWARE availability: consent is scoped to the task. This runs at ROUTING
+    # time on the caller's thread - so a task whose consent is not granted is never a
+    # candidate, and no data is prepared or sent (the bounded worker never starts).
+    isAvailableForTask = {
+        param($TaskId)
+        if (-not (Test-ClaudeUnderstandingConfigured)) { return $false }
+        if (-not (Get-Command Test-TaskConsent -ErrorAction SilentlyContinue)) { return $false }
+        try { return [bool](Test-TaskConsent -TaskId $TaskId) } catch { return $false }
+    }
     # The portable, self-contained work the kernel runs in a bounded runspace
     # (stage 3). It closes over NOTHING - it loads its own modules from $DashRoot,
     # rebuilds the request from JSON, and returns a PLAIN result carrying the
@@ -454,12 +639,12 @@ $script:ClaudeUnderstandingProvider = [pscustomobject]@{
                 # in this bare runspace; the raw Invoke-ClaudeApi primitive needs none of
                 # the chat contract.
                 if (-not (Get-Command Register-TonyProvider -ErrorAction SilentlyContinue)) { function global:Register-TonyProvider { param($Provider) } }
-                foreach ($m in @('reasoning-layer', 'first-conversation', 'identity', 'understanding-engine', 'reasoning-local', 'reasoning-claude')) { . (Join-Path $core ("$m.ps1")) }
+                foreach ($m in @('reasoning-layer', 'first-conversation', 'identity', 'understanding-engine', 'reasoning-local', 'daily-plan', 'reasoning-claude')) { . (Join-Path $core ("$m.ps1")) }
                 . (Join-Path $prov 'claude-provider.ps1')
                 $global:GiokReasoningWorkerLoaded = $true
             }
             $req = $RequestJson | ConvertFrom-Json
-            $res = Invoke-ClaudeUnderstandingExtraction -Request $req
+            $res = Invoke-ClaudeReasoning -Request $req
             $res['requestId'] = [string]$req.requestId
             return $res
         }
@@ -469,12 +654,12 @@ $script:ClaudeUnderstandingProvider = [pscustomobject]@{
     }
     invoke      = {
         param($Request)
-        $res = Invoke-ClaudeUnderstandingExtraction -Request $Request
-        Set-ClaudeUnderstandingAttempt (New-ClaudeUnderstandingAttempt -RequestId ([string]$Request.requestId) `
+        $res = Invoke-ClaudeReasoning -Request $Request
+        Set-ClaudeUnderstandingAttempt (New-ClaudeUnderstandingAttempt -RequestId ([string]$Request.requestId) -Task ([string]$Request.taskId) `
                 -Status $(if ($res.ok) { 'ok' } else { 'fallback' }) -DurationMs ([int]$res.durationMs) `
                 -ErrorClass ([string]$res.errorClass) -ItemCount ([int]$res.itemCount) -FallbackReason ([string]$res.fallbackReason))
         if (Get-Command Write-TonyDiag -ErrorAction SilentlyContinue) {
-            try { Write-TonyDiag -Level 'info' -Source 'reasoning-claude' -Message ('understanding.extract {0} class={1} items={2} {3}ms' -f $(if ($res.ok) { 'ok' } else { 'fallback' }), $res.errorClass, $res.itemCount, $res.durationMs) } catch { }
+            try { Write-TonyDiag -Level 'info' -Source 'reasoning-claude' -Message ('{0} {1} class={2} items={3} {4}ms' -f ([string]$Request.taskId), $(if ($res.ok) { 'ok' } else { 'fallback' }), $res.errorClass, $res.itemCount, $res.durationMs) } catch { }
         }
         if (-not $res.ok) {
             # honest failure -> the kernel discards this and falls to the floor.

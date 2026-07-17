@@ -166,6 +166,21 @@ function Test-ProviderAvailable {
     if ($Provider.PSObject.Properties.Name -notcontains 'isAvailable' -or -not $Provider.isAvailable) { return $true }
     try { return [bool](& $Provider.isAvailable) } catch { return $false }
 }
+# TASK-AWARE availability (additive). A provider that serves several tasks with
+# DIFFERENT preconditions (e.g. per-task consent) may declare isAvailableForTask;
+# the router prefers it so a driver is only a candidate for a task it may serve
+# RIGHT NOW - which is what makes consent a routing-time gate that runs BEFORE any
+# data is sent (before the bounded worker). Providers without it fall back to the
+# task-agnostic isAvailable, so existing drivers are unaffected. A throwing probe =
+# not a candidate.
+function Test-ProviderAvailableForTask {
+    param($Provider, [string]$TaskId)
+    if (-not $Provider) { return $false }
+    if ($Provider.PSObject.Properties.Name -contains 'isAvailableForTask' -and $Provider.isAvailableForTask) {
+        try { return [bool](& $Provider.isAvailableForTask $TaskId) } catch { return $false }
+    }
+    return (Test-ProviderAvailable -Provider $Provider)
+}
 
 # Candidates for a task, best first. The floor is NOT a candidate here - it is the
 # guaranteed last resort, applied by the router after every accelerator has failed.
@@ -178,7 +193,7 @@ function Resolve-ReasoningProviders {
     param([Parameter(Mandatory)][string]$TaskId)
     $c = @(Get-ReasoningProviders | Where-Object { -not $_.isFloor } |
         Where-Object { Test-ProviderSupports -Provider $_ -TaskId $TaskId } |
-        Where-Object { Test-ProviderAvailable -Provider $_ })
+        Where-Object { Test-ProviderAvailableForTask -Provider $_ -TaskId $TaskId })
     return @($c | Sort-Object @{ Expression = { if ($_.PSObject.Properties.Name -contains 'priority') { [int]$_.priority } else { 100 } } }, @{ Expression = 'name' })
 }
 

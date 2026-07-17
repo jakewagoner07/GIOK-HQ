@@ -22,7 +22,8 @@ Write-TestSection 'unmigrated tasks fail CLOSED (no engine behind them yet)'
 # kernel has no way to police an answer. No result is acceptable from ANY
 # provider. The first version of this accepted any non-null output while its own
 # comment claimed otherwise - code and comment now agree.
-$unmigrated = @('goals.refine', 'briefing.compose', 'capture.classify', 'inbox.propose', 'lifeos.reason', 'coaching.advise')
+# briefing.compose was migrated in Epic 14 (Daily Executive Plan); it is no longer here.
+$unmigrated = @('goals.refine', 'capture.classify', 'inbox.propose', 'lifeos.reason', 'coaching.advise')
 foreach ($t in $unmigrated) {
     $r = Invoke-ReasoningTask -TaskId $t -Payload ([pscustomobject]@{ x = 1 })
     Assert-True (-not $r.ok -and $r.reasonCode -eq 'no-provider') ("{0}: fails closed with an honest reasonCode ({1})" -f $t, $r.reasonCode)

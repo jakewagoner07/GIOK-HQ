@@ -191,3 +191,25 @@ above), a strict-JSON prompt/parse contract with a tighter Claude-only grounding
 kernel validator, and an explicit consent gate (the driver reports itself unavailable until the user
 consents, so an unconsented attempt is never even routed to it). Every other task follows the same
 path, one at a time, each behind its own validator.
+
+## The second migration (DONE - Epic 14)
+`briefing.compose` - the task this sprint declared but left fail-closed - is now **migrated**, exactly
+the way `understanding.extract` was: `core/reasoning-local.ps1` registers a real `briefing.compose`
+validator + floor delegate (it leaves the fail-closed list), the same Epic 13 Claude driver gains
+`briefing.compose` support, and Tony's **Daily Executive Plan** (`Blueprint/Daily_Executive_Plan.md`)
+is the one real client that reasons *through* the layer. No new task id, no new provider path, no
+second registry - the kernel remains the only router, validator, fallback, timeout, and attribution
+authority. The `briefing.compose` gate is the same "facts by machine" discipline: valid shape, allowed
+sections only, every plan item's `sourceType`+`sourceId` grounds to a supplied Executive Context source
+(no invented goals, appointments, deadlines, names, amounts, or commitments), no fabricated action
+type, no provider may claim an action occurred, anything that would write is `requiresApproval`, and
+**one unsafe item rejects the whole result** -> the local floor.
+
+Epic 14 also added, additively, a **task-aware availability check**: alongside `isAvailable()`, a
+provider may expose `isAvailableForTask(taskId)` (`Test-ProviderAvailableForTask` in the kernel), so
+availability - and therefore consent - is decided **per task at routing time, before any data is
+sent**. Executive-reasoning consent (for `briefing.compose`) is its own flag, distinct from onboarding's
+`understanding.extract` consent; a driver that is consented for extraction but not for daily planning is
+simply *not a candidate* for `briefing.compose`, and the floor answers. The check is additive - a
+provider without it keeps its plain `isAvailable()` gate unchanged. Every remaining task still follows
+the same path, one at a time, each behind its own validator.

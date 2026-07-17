@@ -3,9 +3,54 @@
 *Living status document. Snapshot of where GIOK stands, so any chat can pick up without losing
 architecture, priorities, or history. Update this at the end of each sprint.*
 
-Last updated: **Epic 13 - Claude Understanding Driver** (on `feature/claude-understanding-driver`,
-branched from synchronized `main` @ `5477355`; Epic 12 remains local on
+Last updated: **Epic 14 - Tony Daily Executive Plan** (on `feature/daily-executive-plan`, branched from
+`main` @ `43e114c`; Epic 13 on `feature/claude-understanding-driver`; Epic 12 on
 `feature/executive-reasoning-layer`).
+
+> **Epic 14 status (Tony Daily Executive Plan):** a **read-only executive projection** over the single
+> Executive Context that turns the day Jake already has (goals, calendar, follow-ups, commitments, Life
+> OS) into a calm, realistic plan - **three top outcomes today, what to protect, what needs follow-up,
+> what can wait, whether the day is overloaded, the recommended next action, and what Tony should ask.**
+> Output sections `topOutcomes / protect / followUps / canWait / recommendations / clarifications /
+> workload`; empty sections **omitted** (Tony never pads the day). **Permanent decision:** *the Daily
+> Plan is a read-only executive projection; any write becomes a pending Executive Inbox proposal; no
+> provider may write directly.* It creates **no second store** - `Get-DailyPlanSources` projects the
+> one context into a compact, groundable sources list (each keeping its owner `sourceId`) and the plan
+> is thrown away after composing. **Migrates the existing ABI task `briefing.compose`** (no new task id):
+> `core/reasoning-local.ps1` gains a `briefing.compose` validator + deterministic floor delegate (the
+> permanent composer `New-DailyPlanLocal`, and it leaves the fail-closed list) and the **same** Epic 13
+> Claude driver gains `briefing.compose` support - no new provider path; the Executive Reasoning Layer
+> stays the only router / validator / fallback / timeout / attribution authority. **Consent is
+> task-scoped:** onboarding (`understanding.extract`) consent does **not** grant daily-planning
+> (`briefing.compose`) consent - executive-reasoning consent is its own per-attempt flag (own remember
+> flag) in the existing gitignored `claude.config.json` (no second secrets store); the kernel gained an
+> **additive task-aware availability check** (`isAvailableForTask` / `Test-ProviderAvailableForTask`) so
+> consent gates at **routing time, before any data is sent**. Claude is used only when configured,
+> available, and executive-reasoning consent permits; declined / absent -> local floor. **Validation
+> (facts by machine, meaning by the human):** the `briefing.compose` gate enforces valid shape, allowed
+> sections only, every item's `sourceType`+`sourceId` referencing a supplied context source (**no
+> invented goals / appointments / deadlines / names / amounts / commitments**), no fabricated action
+> type, **no provider may claim an action occurred**, anything that writes is `requiresApproval=true`,
+> caps, and **one unsafe item rejects the whole result** -> the floor. **Overload detection is
+> conservative and evidence-only** (calendar density, time-sensitive count, conflicts, do-today count,
+> free time) - e.g. *"Today looks overloaded based on six scheduled commitments and four time-sensitive
+> follow-ups"* - and **never diagnoses stress / burnout / medical conditions.** Local ranking inherits
+> Family-before-Financial from the priority score (family/personal dated commitments -> today's calendar
+> -> time-sensitive follow-ups -> explicit deadlines -> active-goal next steps -> important-non-urgent ->
+> can wait) and **never fabricates a missing deadline or importance.** **Approval/actions:** Tony may
+> recommend `create-action / schedule-followup / prepare-message / move-to-inbox / protect-calendar /
+> defer-item` but **never executes** - each becomes a pending proposal via `Add-InboxProposal`
+> (dedup-checked), and only `Approve-InboxItem` -> the owning module writes; no direct Calendar / Email /
+> CRM / Goal / Identity / Life OS write. **Home:** an optional, off-by-default, medium **Daily Executive
+> Plan** card (in Customize Home) - a compact summary that opens the full Daily Plan view via the async
+> host-swap pattern (mirrors the briefing, never blocks the UI), reusing Executive Context + the shared
+> provider cache (**no duplicate provider fetch**); it does **not** replace the Executive Briefing and
+> adds no sidebar tab. Home card is local (no network on paint); Claude enrichment is explicit in the
+> full view; the local plan never mixes with partial Claude output. New `core/daily-plan.ps1`; modified
+> `core/reasoning-local.ps1`, `core/reasoning-claude.ps1`, `core/reasoning-consent.ps1`,
+> `core/reasoning-layer.ps1`, `core/async-run.ps1`, `core/home-layout.ps1`, `ui/tony-ui.ps1`. Permanent
+> Daily-Plan tests added (plus the four test-hygiene fixes). Branch `feature/daily-executive-plan` off
+> `main` @ `43e114c`. Local-only, **not pushed, not merged.**
 
 > **Epic 13 status (Claude Understanding Driver):** the **first real external reasoning driver** in the
 > Epic 12 kernel - it serves exactly one task, `understanding.extract`, by asking Claude to organize the

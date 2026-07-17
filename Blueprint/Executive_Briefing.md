@@ -88,6 +88,18 @@ in the Life OS: no invented urgency, no fabricated numbers or dates, and **no me
 or investment advice**. This is the read-back half of the Life OS feedback loop - what Jake enters
 is now understood and gently reflected, never write-only.
 
+## The Briefing and the Daily Executive Plan (Epic 14)
+
+Tony's **Daily Executive Plan** (`Blueprint/Daily_Executive_Plan.md`) composes from the **same** one
+Executive Context this briefing does, and the two **coexist** - the Plan does **not** replace the
+Briefing. The Briefing is the calm morning *letter* (greeting, three-sentence summary, top three,
+one observation, focus, sign-off); the Plan is the *actionable projection* of the day - Today's top 3,
+what to protect, what needs follow-up, what can wait, whether the day is overloaded, and a few
+recommendations. Where the Briefing gently *notices*, the Plan *proposes*: each write-producing
+recommendation becomes a pending **Executive Inbox** proposal that only Jake's approval can act on -
+the Plan itself never writes. Both read the one context, store nothing, and can appear on Home
+together (the Plan card is optional and off by default).
+
 ## Why it holds Single Source of Truth
 
 The briefing **creates no state**. It consumes the one Executive Context object (which itself only
@@ -117,3 +129,4 @@ automatic writes. Pure read-and-compose over the single source of truth.
 - [Tony_Decision_Framework.md](Tony_Decision_Framework.md) - the judgment folded into the context.
 - [04_Home.md](04_Home.md) - the executive home the briefing now anchors.
 - [13_Project_Diamond.md](13_Project_Diamond.md) - perfect the experience; this is the morning experience.
+- [Daily_Executive_Plan.md](Daily_Executive_Plan.md) - the actionable projection of the day; coexists with this letter (Epic 14).

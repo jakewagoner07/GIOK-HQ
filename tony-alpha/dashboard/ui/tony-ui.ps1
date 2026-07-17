@@ -989,6 +989,160 @@ function New-BriefingPlaceholder {
     return $card
 }
 
+# ---- Daily Executive Plan (Epic 14) ----
+function New-DailyPlanPlaceholder {
+    $body = New-Object Windows.Controls.StackPanel
+    $body.Children.Add((New-Text -Text 'Reading your day...' -Size 22 -Weight 'Bold' -Color $script:Col.Heading)) | Out-Null
+    $body.Children.Add((New-Text -Text 'A calm plan in a moment.' -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 0)))) | Out-Null
+    return (New-Card -Title 'Daily Executive Plan' -Body $body -NavTo 'Daily Plan')
+}
+
+# The compact Home card: top-outcome count + one line + workload, opens the full view.
+function New-HomeDailyPlanCard {
+    param($Model)
+    if (-not $Model) {
+        $b = New-HomeListCardBody -Headline '-' -Caption 'plan' -Lines @() -Empty 'Open to build today''s plan.'
+        return (New-Card -Title 'Daily Executive Plan' -Body $b -NavTo 'Daily Plan')
+    }
+    $top = @($Model.topOutcomes)
+    $lines = @($top | Select-Object -First 3 | ForEach-Object { [string]$_.text })
+    $body = New-HomeListCardBody -Headline ([string]$top.Count) -Caption 'top outcomes today' -Lines $lines -Empty 'A calm day - nothing urgent.'
+    if ($Model.workload -and $Model.workload.level) {
+        $body.Children.Add((New-Text -Text ([string]$Model.workload.reason) -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
+    }
+    return (New-Card -Title 'Daily Executive Plan' -Body $body -NavTo 'Daily Plan')
+}
+
+# The full Daily Plan view. Shows the local plan immediately (private, fast). When
+# Claude is configured, offers an explicit, task-scoped consent to sharpen it; the
+# regenerate runs off-thread and swaps in when ready. Recommendations are proposed
+# to the Executive Inbox on approval - never written directly.
+$script:DailyPlanModel = $null
+$script:DailyPlanToken = 0
+$script:DailyPlanNotice = $null
+function Refresh-DailyPlan { if ($script:TonyActiveView -eq 'Daily Plan') { $script:TonyBody.Child = (New-DailyPlanView) } }
+
+function Get-DailyPlanForView {
+    # build the LOCAL plan synchronously for the initial view (fast, no network).
+    if (-not (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue) -or -not (Get-Command Get-DailyPlan -ErrorAction SilentlyContinue)) { return $null }
+    $sig = @{}
+    if (Get-Command Peek-CachedSignal -ErrorAction SilentlyContinue) {
+        foreach ($k in @('calendar', 'communications', 'crm')) { $pk = Peek-CachedSignal -Key $k; if ($pk -and $pk.present) { $sig[$k] = $pk.value } }
+    }
+    try {
+        $ctx = Get-TonyExecutiveContext -CurrentWorkspace 'Home' -Now $script:TonyNow -LiveSignals $sig
+        return (Get-DailyPlan -Context $ctx -Now $script:TonyNow)   # local unless exec-consent is set (it is not here)
+    }
+    catch { return $null }
+}
+
+function Start-DailyPlanClaudeEnrich {
+    # regenerate the plan with Claude, off the UI thread, after explicit consent.
+    $script:DailyPlanToken++
+    $token = $script:DailyPlanToken
+    $script:DailyPlanNotice = 'Sharpening your plan with Claude...'
+    Refresh-DailyPlan
+    $planNow = $script:TonyNow
+    $onDone = {
+        param($model)
+        if ($token -ne $script:DailyPlanToken) { return }              # superseded
+        if ($script:TonyActiveView -ne 'Daily Plan') { return }        # navigated away
+        if ($model) { $script:DailyPlanModel = $model }
+        $script:DailyPlanNotice = $null
+        Refresh-DailyPlan
+    }.GetNewClosure()
+    $canAsync = (-not $script:HeadlessRender) -and (Get-Command Start-AsyncWork -ErrorAction SilentlyContinue) -and (Get-Command Get-AsyncDailyPlanWork -ErrorAction SilentlyContinue) -and (Get-Command Test-AsyncAvailable -ErrorAction SilentlyContinue) -and (Test-AsyncAvailable)
+    if ($canAsync) {
+        [void](Start-AsyncWork -Work (Get-AsyncDailyPlanWork) -ArgList @($script:AsyncDashRoot, $planNow.Ticks, $true) -OnComplete $onDone)
+    }
+    else {
+        if (Get-Command Set-ExecutiveReasoningConsent -ErrorAction SilentlyContinue) { Set-ExecutiveReasoningConsent -Granted $true }
+        $m = Get-DailyPlanForView
+        if (Get-Command Clear-ExecutiveReasoningConsent -ErrorAction SilentlyContinue) { Clear-ExecutiveReasoningConsent }
+        & $onDone $m
+    }
+}
+
+function New-DailyPlanItemRow {
+    param($Item, [bool]$Actionable = $false)
+    $row = New-Object Windows.Controls.Border
+    $row.Background = New-Brush $script:Col.CardBg; $row.BorderBrush = New-Brush $script:Col.Line; $row.BorderThickness = New-Object Windows.Thickness 1
+    $row.CornerRadius = New-Object Windows.CornerRadius 10; $row.Padding = New-Object Windows.Thickness (14, 10, 14, 10); $row.Margin = New-Object Windows.Thickness (0, 0, 0, 8)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Children.Add((New-Text -Text ([string]$Item.text) -Size 14 -Weight 'SemiBold' -Color $script:Col.Heading -Wrap $true)) | Out-Null
+    if ($Item.reason) { $sp.Children.Add((New-Text -Text ([string]$Item.reason) -Size 12 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 3, 0, 0)))) | Out-Null }
+    if ($Actionable -and $Item.requiresApproval -and $Item.proposedAction) {
+        $btn = New-MiniButton -Text 'Add to Executive Inbox' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick ({
+                param($s, $e)
+                $res = if (Get-Command Submit-DailyPlanRecommendation -ErrorAction SilentlyContinue) { Submit-DailyPlanRecommendation -Recommendation $Item } else { $null }
+                $script:DailyPlanNotice = if ($res -and $res.ok) { $res.message } else { 'I could not add that just now.' }
+                Refresh-DailyPlan
+            }.GetNewClosure())
+        $btn.Margin = New-Object Windows.Thickness (0, 8, 0, 0); $sp.Children.Add($btn) | Out-Null
+    }
+    $row.Child = $sp
+    return $row
+}
+
+function New-DailyPlanView {
+    $model = $script:DailyPlanModel
+    if (-not $model) { $model = Get-DailyPlanForView; $script:DailyPlanModel = $model }
+    $col = New-Object Windows.Controls.StackPanel; $col.MaxWidth = 780; $col.HorizontalAlignment = 'Center'; $col.Margin = New-Object Windows.Thickness (0, 24, 0, 24)
+    $col.Children.Add((New-Text -Text 'YOUR DAY' -Size 11 -Weight 'Bold' -Color $script:Col.Accent)) | Out-Null
+
+    if ($script:DailyPlanNotice) {
+        $col.Children.Add((New-Text -Text $script:DailyPlanNotice -Size 12 -Weight 'SemiBold' -Color $script:Col.Accent -Wrap $true -Margin (New-Object Windows.Thickness (0, 6, 0, 2)))) | Out-Null
+        $script:DailyPlanNotice = $null
+    }
+    if (-not $model) {
+        $col.Children.Add((New-TonyBubble -Text "I could not put today's plan together just now. Nothing was changed - please try again in a moment." -Size 16)) | Out-Null
+        $sv0 = New-Object Windows.Controls.ScrollViewer; $sv0.VerticalScrollBarVisibility = 'Auto'; $sv0.Content = $col; return $sv0
+    }
+
+    $col.Children.Add((New-TonyBubble -Text "Here's your day." -Size 20)) | Out-Null
+    # honest provenance line + optional Claude action (task-scoped consent)
+    $eng = ''; try { $eng = [string]$model.meta.engine } catch { $eng = '' }
+    $disc = if ($eng -eq 'claude-understanding') { 'I sharpened this with the help of my AI engine.' } else { 'I put this together privately on your device.' }
+    $col.Children.Add((New-Text -Text $disc -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (2, 6, 0, 2)))) | Out-Null
+    $configured = $false
+    if (Get-Command Test-ClaudeUnderstandingConfigured -ErrorAction SilentlyContinue) { try { $configured = [bool](Test-ClaudeUnderstandingConfigured) } catch { $configured = $false } }
+    if ($configured -and $eng -ne 'claude-understanding') {
+        $consentRow = New-Object Windows.Controls.StackPanel; $consentRow.Orientation = 'Horizontal'; $consentRow.Margin = New-Object Windows.Thickness (0, 8, 0, 4)
+        $useC = New-MiniButton -Text 'Use Claude for this plan' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e); Start-DailyPlanClaudeEnrich }
+        $useC.Margin = New-Object Windows.Thickness (0, 0, 8, 0); $consentRow.Children.Add($useC) | Out-Null
+        $col.Children.Add($consentRow) | Out-Null
+        $col.Children.Add((New-Text -Text 'This may send goals, calendar info, communication metadata, Life OS priorities, and action items to the configured AI provider. Nothing is saved without your approval.' -Size 10.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (2, 0, 0, 2)))) | Out-Null
+    }
+
+    # workload
+    if ($model.workload -and $model.workload.reason) {
+        $col.Children.Add((New-Text -Text 'TODAY AT A GLANCE' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 12, 0, 4)))) | Out-Null
+        $col.Children.Add((New-TonyBubble -Text ([string]$model.workload.reason) -Soft $true -Size 14 -ShowLabel $false)) | Out-Null
+    }
+    # sections (omit empties)
+    $secs = @(
+        @{ key = 'topOutcomes'; label = "TODAY'S TOP OUTCOMES"; act = $false }
+        @{ key = 'protect'; label = 'PROTECT'; act = $false }
+        @{ key = 'followUps'; label = 'FOLLOW UP'; act = $false }
+        @{ key = 'canWait'; label = 'CAN WAIT'; act = $false }
+        @{ key = 'recommendations'; label = 'TONY RECOMMENDS'; act = $true }
+    )
+    foreach ($sec in $secs) {
+        $items = @($model.($sec.key))
+        if ($items.Count -eq 0) { continue }
+        $col.Children.Add((New-Text -Text $sec.label -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 14, 0, 6)))) | Out-Null
+        foreach ($it in $items) { $col.Children.Add((New-DailyPlanItemRow -Item $it -Actionable $sec.act)) | Out-Null }
+    }
+    if (@($model.clarifications).Count -gt 0) {
+        $col.Children.Add((New-Text -Text 'I NEED TO ASK' -Size 10.5 -Weight 'Bold' -Color $script:Col.Accent -Margin (New-Object Windows.Thickness (2, 14, 0, 6)))) | Out-Null
+        foreach ($c in @($model.clarifications)) { $col.Children.Add((New-TonyBubble -Text ([string]$c) -Soft $true -Size 13.5 -ShowLabel $false)) | Out-Null }
+    }
+    $col.Children.Add((New-Text -Text 'Recommendations are proposals - nothing is created, sent, or scheduled until you approve it.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 16, 0, 0)))) | Out-Null
+
+    $sv = New-Object Windows.Controls.ScrollViewer; $sv.VerticalScrollBarVisibility = 'Auto'; $sv.Content = $col
+    return $sv
+}
+
 # =====================  HOME CARDS + CUSTOMIZATION (Epic 11)  =====================
 # Home renders whatever the layout says, in the order it says, at the size it says.
 # NO card owns data: each one reads its existing owner live on every paint, so the
@@ -1000,6 +1154,7 @@ function New-BriefingPlaceholder {
 # here - a cold card honestly says "not loaded yet" instead.
 $script:HomeCardHost = $null      # the flow container - rebuilt ALONE on customize
 $script:HomeBriefHost = $null     # briefing Border - created once per Home paint
+$script:HomeDailyPlanHost = $null # Daily Plan Border - created per paint when enabled (Epic 14)
 $script:HomeCustomizing = $false
 
 # Headline number + optional caption + up to a few lines. The shared shape for the
@@ -1240,6 +1395,11 @@ function New-HomeCardElement {
                 $body.Children.Add((New-Text -Text ("{0} to do today - {1} to keep visible" -f $pri.counts.doToday, $pri.counts.keepVisible) -Size 11 -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 0)))) | Out-Null
                 return (New-Card -Title 'Weekly Priorities' -Body $body)
             }
+            'dailyPlan' {
+                # The persistent async host built (and kicked) in New-HomeView. Like
+                # the briefing, its content is swapped in off-thread.
+                return $script:HomeDailyPlanHost
+            }
         }
     }
     catch { return $null }
@@ -1258,6 +1418,11 @@ function Add-HomeCardsToHost {
     if ($script:HomeBriefHost) {
         $bp = $script:HomeBriefHost.Parent
         if ($bp -and ($bp -is [Windows.Controls.Panel])) { $bp.Children.Remove($script:HomeBriefHost) }
+    }
+    # same detach for the persistent Daily Plan host (Epic 14).
+    if ($script:HomeDailyPlanHost) {
+        $dp = $script:HomeDailyPlanHost.Parent
+        if ($dp -and ($dp -is [Windows.Controls.Panel])) { $dp.Children.Remove($script:HomeDailyPlanHost) }
     }
     $script:HomeCardHost.Children.Clear()
     $grid = New-Object Windows.Controls.Grid
@@ -1433,6 +1598,40 @@ function New-HomeView {
         }.GetNewClosure()
         $kick = { Start-AsyncWork -Work $briefWork -ArgList @($dashRoot, $briefNow.Ticks, $briefName) -OnComplete $onDone | Out-Null }.GetNewClosure()
         $null = $briefHost.Dispatcher.BeginInvoke([Action]$kick, [System.Windows.Threading.DispatcherPriority]::Background)
+    }
+
+    # ---- Daily Executive Plan card (Epic 14) ----
+    # Optional (off by default). Only build/kick it when the user enabled the card.
+    # The Home card is always the LOCAL plan - fast, private, no network on paint.
+    # Same host-swap + parent-detach pattern as the briefing so a customize toggle
+    # never restarts an in-flight compose.
+    $script:HomeDailyPlanHost = $null
+    if (@(Get-VisibleHomeCards | Where-Object { $_.id -eq 'dailyPlan' }).Count -gt 0) {
+        $planHost = New-Object Windows.Controls.Border
+        $planHost.Child = (New-DailyPlanPlaceholder)
+        $script:HomeDailyPlanHost = $planHost
+        $planNow = $script:TonyNow
+        $onPlanDone = {
+            param($model)
+            $planHost.Child = (New-HomeDailyPlanCard -Model $model)
+        }.GetNewClosure()
+        if ($script:HeadlessRender -or -not (Get-Command Start-AsyncWork -ErrorAction SilentlyContinue) -or -not (Test-AsyncAvailable)) {
+            $m = $null
+            try {
+                if (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue) {
+                    $pctx = Get-TonyExecutiveContext -CurrentWorkspace 'Home' -Now $planNow
+                    if (Get-Command Get-DailyPlan -ErrorAction SilentlyContinue) { $m = Get-DailyPlan -Context $pctx -Now $planNow }
+                }
+            }
+            catch { $m = $null }
+            & $onPlanDone $m
+        }
+        else {
+            $planDashRoot = $script:AsyncDashRoot
+            $planWork = Get-AsyncDailyPlanWork
+            $planKick = { Start-AsyncWork -Work $planWork -ArgList @($planDashRoot, $planNow.Ticks, $false) -OnComplete $onPlanDone | Out-Null }.GetNewClosure()
+            $null = $planHost.Dispatcher.BeginInvoke([Action]$planKick, [System.Windows.Threading.DispatcherPriority]::Background)
+        }
     }
 
     # ---- Customize control + the card flow (Epic 11) ----
@@ -3373,6 +3572,7 @@ function Set-ActiveView {
         'Identity'       { New-IdentityView }
         'Goals'          { New-GoalsView }
         'Executive Inbox'{ $script:InboxAutoScan = $true; New-ExecutiveInboxView }
+        'Daily Plan'     { $script:DailyPlanModel = $null; New-DailyPlanView }
         'First Conversation' { New-FirstConversationView }
         'Understanding Consent' { New-UnderstandingConsentView }
         'Understanding Working' { New-UnderstandingWorkingView }

@@ -83,7 +83,8 @@ Write-TestSection 'honest answers for tasks with nothing behind them'
 # =====================================================================
 $r = Invoke-ReasoningTask -TaskId 'not.a.task' -Payload (New-TestState)
 Assert-True (-not $r.ok -and $r.reasonCode -eq 'unknown-task') ("an unknown task returns ok=false, reasonCode={0}, and does NOT throw" -f $r.reasonCode)
-$r = Invoke-ReasoningTask -TaskId 'briefing.compose' -Payload (New-TestState)
+# capture.classify is still unmigrated (briefing.compose was migrated in Epic 14).
+$r = Invoke-ReasoningTask -TaskId 'capture.classify' -Payload (New-TestState)
 Assert-True (-not $r.ok -and $r.reasonCode -eq 'no-provider') ("a declared-but-unmigrated task answers honestly (reasonCode={0}) - never fabricates" -f $r.reasonCode)
 
 # =====================================================================

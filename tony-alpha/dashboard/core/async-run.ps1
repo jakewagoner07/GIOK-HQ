@@ -27,7 +27,7 @@ function Set-AsyncDashboardRoot { param([string]$Path) $script:AsyncDashRoot = $
 # Core + provider modules the worker needs to fetch signals and build a briefing
 # MODEL. UI/theme are NOT loaded - the worker never builds WPF. Order matches
 # dashboard.ps1 (registration side-effects depend on it).
-$script:AsyncCoreMods = @('tony-core','action-items','capture','morning-brief','morning-experience','identity','life-os','executive-inbox','conversational-capture','end-of-day-audit','first-conversation','command-bar','tony-provider-contract','tony-decision-framework','tony-brain','tony-conversation','tony-observations','memory-manager','executive-cache','live-providers','google-oauth','email-intelligence','communications','crm-intelligence','executive-context','executive-priority','executive-timeline','executive-briefing','document-intelligence','workforce-engine','workforce-specialists','workforce-proposals','executive-management')
+$script:AsyncCoreMods = @('tony-core','action-items','capture','morning-brief','morning-experience','identity','life-os','executive-inbox','conversational-capture','end-of-day-audit','first-conversation','command-bar','tony-provider-contract','tony-decision-framework','tony-brain','tony-conversation','tony-observations','memory-manager','executive-cache','live-providers','google-oauth','email-intelligence','communications','crm-intelligence','executive-context','executive-priority','executive-timeline','executive-briefing','reasoning-layer','understanding-engine','reasoning-local','reasoning-consent','reasoning-claude','daily-plan','document-intelligence','workforce-engine','workforce-specialists','workforce-proposals','executive-management')
 $script:AsyncProvMods = @('claude-provider','weather-provider','google-calendar-provider','gmail-provider','yahoo-provider','gohighlevel-provider')
 
 function Get-AsyncWorkerRunspace {
@@ -138,6 +138,44 @@ if (Get-Command Get-WorkforceProposalCandidates -ErrorAction SilentlyContinue) {
     try { return ([pscustomobject]@{ candidates = @(Get-WorkforceProposalCandidates -Now `$now) }) } catch { return ([pscustomobject]@{ candidates = @() }) }
 }
 return ([pscustomobject]@{ candidates = @() })
+"@
+    return [scriptblock]::Create($text)
+}
+
+# Build the worker scriptblock that composes the Daily Executive Plan OFF the UI
+# thread (Epic 14). It builds the ONE Executive Context (calendar/email via the
+# CACHED single-flight wrappers - no duplicate provider fetch), projects it, and
+# routes briefing.compose through the Reasoning Layer. $UseClaude=$false (the Home
+# card default) stays purely local and private - no network. $UseClaude=$true (the
+# full view, after explicit consent) sets executive-reasoning consent so the kernel
+# may route to Claude, then CLEARS it. Returns the pure Daily Plan model - no WPF,
+# no writes. Returns a scriptblock: param($DashRoot,$NowTicks,$UseClaude).
+function Get-AsyncDailyPlanWork {
+    $coreList = ($script:AsyncCoreMods | ForEach-Object { "'$_'" }) -join ','
+    $provList = ($script:AsyncProvMods | ForEach-Object { "'$_'" }) -join ','
+    $text = @"
+param(`$DashRoot, `$NowTicks, `$UseClaude)
+`$ErrorActionPreference = 'Stop'
+if (-not `$global:GiokWorkerLoaded) {
+    `$core = Join-Path `$DashRoot 'core'; `$prov = Join-Path `$DashRoot 'providers'
+    foreach (`$m in @($coreList)) { . (Join-Path `$core ("`$m.ps1")) }
+    foreach (`$p in @($provList)) { . (Join-Path `$prov ("`$p.ps1")) }
+    `$global:GiokWorkerLoaded = `$true
+}
+`$now = [datetime]`$NowTicks
+if (Get-Command Set-ReasoningDashboardRoot -ErrorAction SilentlyContinue) { Set-ReasoningDashboardRoot `$DashRoot }
+`$cal = `$null; if (Get-Command Get-CalendarSignal -ErrorAction SilentlyContinue) { try { `$cal = Get-CalendarSignal -Now `$now } catch { `$cal = `$null } }
+`$em  = `$null; if (Get-Command Get-CommunicationsSignal -ErrorAction SilentlyContinue) { try { `$em = Get-CommunicationsSignal -Now `$now } catch { `$em = `$null } }
+`$ctx = `$null
+if (Get-Command Get-TonyExecutiveContext -ErrorAction SilentlyContinue) {
+    try { `$ctx = Get-TonyExecutiveContext -CurrentWorkspace 'Home' -Now `$now -LiveSignals @{ calendar = `$cal; email = `$em } } catch { `$ctx = `$null }
+}
+if (-not `$ctx) { return `$null }
+if ([bool]`$UseClaude -and (Get-Command Set-ExecutiveReasoningConsent -ErrorAction SilentlyContinue)) { Set-ExecutiveReasoningConsent -Granted `$true }
+`$plan = `$null
+try { if (Get-Command Get-DailyPlan -ErrorAction SilentlyContinue) { `$plan = Get-DailyPlan -Context `$ctx -Now `$now } } catch { `$plan = `$null }
+if (Get-Command Clear-ExecutiveReasoningConsent -ErrorAction SilentlyContinue) { Clear-ExecutiveReasoningConsent }
+return `$plan
 "@
     return [scriptblock]::Create($text)
 }
