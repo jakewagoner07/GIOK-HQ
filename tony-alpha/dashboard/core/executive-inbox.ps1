@@ -20,7 +20,10 @@
 
 $ErrorActionPreference = 'Stop'
 
-$script:InboxTypes = @('goal', 'project', 'task', 'non-negotiable', 'family', 'health', 'financial', 'agency', 'learning', 'calendar', 'crm', 'communication', 'document', 'memory')
+# The last four are LOCAL ACTION verbs executed by the Executive Action Engine
+# (Epic 15) against the Action Items store: reminder (create), set-priority / defer
+# (modify an existing item by sourceId), archive (retire an existing item).
+$script:InboxTypes = @('goal', 'project', 'task', 'non-negotiable', 'family', 'health', 'financial', 'agency', 'learning', 'calendar', 'crm', 'communication', 'document', 'memory', 'reminder', 'set-priority', 'defer', 'archive')
 function Get-InboxTypes { return $script:InboxTypes }
 
 function Get-InboxPath { return (Join-Path $PSScriptRoot '..\..\executive_inbox.json') }
@@ -271,6 +274,21 @@ function Approve-InboxItem {
     $item = Get-InboxItemById -Id $Id
     if (-not $item) { return [pscustomobject]@{ ok = $false; message = 'Proposal not found.' } }
     if ($item.status -ne 'pending') { return [pscustomobject]@{ ok = $false; message = 'Proposal is not pending.' } }
+    # Approval is the ONLY gate that starts an execution. All executing is delegated to
+    # the Executive Action Engine (Epic 15): it validates, executes through the owner's
+    # writer, VERIFIES the owner store actually changed, and records the full audit
+    # trail. The proposal leaves the inbox only after a verified success (SSOT: the data
+    # now lives in its owner, no copy kept); a failed or unverified execution stays
+    # pending so it can be retried. If the engine is absent, fall back to the direct
+    # owner route so approval never becomes a hard dependency on the engine module.
+    if (Get-Command Invoke-ProposalExecution -ErrorAction SilentlyContinue) {
+        $exec = Invoke-ProposalExecution -Proposal $item
+        if ($exec.ok) {
+            [void](Remove-InboxItem -Id $Id)
+            return [pscustomobject]@{ ok = $true; destination = $exec.destination; newId = $exec.newId; message = $exec.message; executionId = $exec.executionId }
+        }
+        return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = $exec.message; executionId = $exec.executionId }
+    }
     $route = Invoke-InboxRoute -Item $item
     if ($route.ok) {
         [void](Remove-InboxItem -Id $Id)   # data now lives in its owner; no copy kept
