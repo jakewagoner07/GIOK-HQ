@@ -1,5 +1,5 @@
 # =====================================================================
-# action-engine.ps1  -  The Executive Action Engine (Epic 15)
+# action-engine.ps1  -  The Executive Action Engine (Epic 15, hardened 15.1)
 # ---------------------------------------------------------------------
 # The SOLE execution authority for Tony. Nothing in GIOK writes an owner store
 # as the RESULT OF AN ACTION except through this engine, and every execution
@@ -13,12 +13,17 @@
 #                    |             |            |     \-> failed
 #                    +-------------+------------+--------> failed
 #
-# and SUCCESS is never claimed until VERIFICATION confirms the owner store
-# actually changed (the new record exists by id). Every transition is appended
-# to a durable audit trail (execution_log.json, gitignored), so the log is both
-# the history AND the restart-recovery source: an execution interrupted mid-flight
-# is re-verified on the next launch and resolved to succeeded or failed - never
-# left dangling, never silently retried into a double-write.
+# INTENT BEFORE SIDE EFFECT (Epic 15.1): before any owner write, the engine
+# persists an immutable execution INTENT - the action type, the target id (or a
+# PRE-ALLOCATED new id for create-style actions), and the exact facts that will
+# prove the change landed. Recovery therefore ALWAYS has enough deterministic
+# information to re-verify an interrupted execution: a crash after the owner
+# write but before any later logging recovers to succeeded (the intended change
+# exists) or failed (it does not) - never a blind re-run, never a double write.
+#
+# SUCCESS is never claimed until VERIFICATION confirms the owner store actually
+# changed. The verification gate is the ENGINE'S OWN intent check; a handler's
+# verify block can only add strictness, never grant success.
 #
 # Guarantees preserved from the rest of GIOK:
 #   * approval-first        - only Approve-InboxItem drives an execution;
@@ -27,13 +32,14 @@
 #                             no second copy of business data (the log records
 #                             executions, not the data);
 #   * deterministic         - no AI, no network in this file; pure local dispatch;
-#   * restart safety        - non-terminal executions are recovered by verification;
-#   * no direct writes       - reasoning providers still only propose.
+#   * restart safety        - non-terminal executions are recovered by verifying
+#                             the persisted intent;
+#   * no direct writes      - reasoning providers still only propose.
 # =====================================================================
 
 $ErrorActionPreference = 'Stop'
 
-$script:ActionEngineVersion = '1.0'
+$script:ActionEngineVersion = '1.1'
 
 # The canonical execution states. 'succeeded'/'failed' are terminal.
 $script:ExecStates      = @('pending', 'validating', 'executing', 'verifying', 'succeeded', 'failed')
@@ -46,7 +52,7 @@ function Get-ExecutionLogPath { return (Join-Path $PSScriptRoot '..\..\execution
 function Get-ExecutionLog {
     $p = Get-ExecutionLogPath; $d = $null
     if (Test-Path $p) { try { $d = Get-Content -Path $p -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $d = $null } }
-    if (-not $d) { $d = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.0'; updated = '' }; executions = @() } }
+    if (-not $d) { $d = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.1'; updated = '' }; executions = @() } }
     if (-not ($d.PSObject.Properties.Name -contains 'executions') -or $null -eq $d.executions) { $d | Add-Member -NotePropertyName executions -NotePropertyValue @() -Force }
     return $d
 }
@@ -72,7 +78,8 @@ function Get-NextExecutionId {
 # ---- execution record + transitions ------------------------------------
 # A record carries everything needed to VERIFY and AUDIT an execution without the
 # original proposal (which is removed from the inbox on success). It is the audit
-# entry and the restart-recovery unit.
+# entry and the restart-recovery unit. 'intent' is the immutable statement of what
+# the execution is ABOUT TO do - persisted before any side effect.
 function New-ExecutionRecord {
     param([Parameter(Mandatory)] $Proposal)
     $log = Get-ExecutionLog
@@ -91,12 +98,26 @@ function New-ExecutionRecord {
         createdAt           = $now
         updatedAt           = $now
         attempts            = 0
+        intent              = $null   # persisted BEFORE any side effect (15.1)
         result              = $null   # { ok; destination; newId; message }
         history             = @([pscustomobject]@{ state = 'pending'; at = $now; detail = 'execution created from approved proposal' })
     }
     $log.executions = @($log.executions) + $rec
     Save-ExecutionLog $log
     return $rec
+}
+# Persist the record's CURRENT content (intent/result) without a state change.
+# Used to write the intent before executing and the result immediately after -
+# the two persists that close the crash-recovery gap.
+function Update-ExecutionRecord {
+    param([Parameter(Mandatory)] $Record)
+    $Record.updatedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $log = Get-ExecutionLog
+    $found = $false
+    $log.executions = @(@($log.executions) | ForEach-Object { if ($_.id -eq $Record.id) { $found = $true; $Record } else { $_ } })
+    if (-not $found) { $log.executions = @($log.executions) + $Record }
+    Save-ExecutionLog $log
+    return $Record
 }
 # Move a record to a new state, append an audit line, and persist. Returns the record.
 function Set-ExecutionState {
@@ -116,7 +137,7 @@ function Set-ExecutionState {
 }
 
 # ---- verification: did the owner store actually change? ----------------
-# Maps a routing destination to its Life OS domain (for Get-LifeItemById).
+# Maps a routing destination to its Life OS domain (for Get-LifeItemById / titles).
 $script:ExecDestinationDomain = @{
     'Home Projects'   = 'projects'
     'Non-Negotiables' = 'nonNegotiables'
@@ -126,8 +147,7 @@ $script:ExecDestinationDomain = @{
     'Agency'          = 'agency'
     'Learning'        = 'learning'
 }
-# Confirm an owner record with $NewId now exists at $Destination. This is the gate
-# that stands between 'executing' and 'succeeded': no verifier passing => no success.
+# Confirm an owner record with $NewId now exists at $Destination.
 function Test-ExecutionApplied {
     param([string]$Destination, [string]$NewId)
     if ([string]::IsNullOrWhiteSpace($NewId)) { return $false }
@@ -156,10 +176,117 @@ function Test-ExecutionApplied {
     }
     catch { return $false }
 }
+# The normalized titles currently present at a destination - the verification
+# surface for owner-minted creates (goals / life items / memory), where the owner
+# assigns the id inside its own writer and the engine cannot pre-allocate one.
+function Get-DestinationTitleSet {
+    param([string]$Destination)
+    $titles = @()
+    try {
+        switch ($Destination) {
+            'Goals' { if (Get-Command Get-GoalsList -ErrorAction SilentlyContinue) { $titles = @(Get-GoalsList | ForEach-Object { [string]$_.title }) } }
+            'Tony Memory' { if (Get-Command Get-Memories -ErrorAction SilentlyContinue) { $titles = @(Get-Memories | ForEach-Object { [string]$_.value }) } }
+            default {
+                $dom = $script:ExecDestinationDomain[$Destination]
+                if ($dom -and (Get-Command Get-LifeItems -ErrorAction SilentlyContinue)) { $titles = @(Get-LifeItems -Domain $dom | ForEach-Object { [string]$_.title }) }
+            }
+        }
+    }
+    catch { $titles = @() }
+    return @($titles | ForEach-Object { ConvertTo-ExecNormalizedTitle $_ })
+}
+function ConvertTo-ExecNormalizedTitle {
+    param([string]$Text)
+    return (([string]$Text) -replace '\s+', ' ').Trim().TrimEnd('.', ',', '!', '?', ';', ':').ToLower()
+}
+
+# ---- the execution INTENT (Epic 15.1) ----------------------------------
+# The immutable, persisted statement of what an execution will do and how success
+# will be PROVEN. Built at validation time, persisted BEFORE any side effect.
+# Modes:
+#   'field'     - an existing Action Item ($targetId) gains $field = $expected
+#   'create-id' - a NEW Action Item is created under the PRE-ALLOCATED id $newId
+#   'title'     - an owner-minted record (goal/life/memory) with $title appears
+#                 at $destination (the owner assigns the id inside its writer)
+#   'result'    - a registered custom handler; verified from its persisted result
+#                 (documented limitation: a crash before the result persist
+#                 recovers to failed/retriable - safe, never a double write)
+$script:ExecFollowUpTypes = @('calendar', 'crm', 'communication', 'document')
+function New-ExecutionIntent {
+    param([Parameter(Mandatory)] $Proposal)
+    $type = [string]$Proposal.type
+    $title = [string]$Proposal.title
+    $value = if ($Proposal.description) { [string]$Proposal.description } else { [string]$Proposal.proposedDestination }
+    $mk = { param($h) [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h } }
+    switch ($type) {
+        'reminder' {
+            $newId = if (Get-Command Get-NextActionId -ErrorAction SilentlyContinue) { Get-NextActionId -Data (Get-ActionItemsData) } else { $null }
+            if (-not $newId) { return [pscustomobject]@{ valid = $false; reason = 'Action Items owner unavailable'; intent = $null } }
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = $newId; newId = $newId; field = 'remindAt'; expected = $value; title = $title; create = $true })
+        }
+        'set-priority' {
+            if (-not $Proposal.sourceId) { return [pscustomobject]@{ valid = $false; reason = 'no target action item id on the proposal'; intent = $null } }
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'priority'; expected = $value; title = $title; create = $false })
+        }
+        'defer' {
+            if (-not $Proposal.sourceId) { return [pscustomobject]@{ valid = $false; reason = 'no target action item id on the proposal'; intent = $null } }
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'deferredUntil'; expected = $value; title = $title; create = $false })
+        }
+        'archive' {
+            if (-not $Proposal.sourceId) { return [pscustomobject]@{ valid = $false; reason = 'no target action item id on the proposal'; intent = $null } }
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'archived'; expected = 'True'; title = $title; create = $false })
+        }
+        { $_ -eq 'task' -or $script:ExecFollowUpTypes -contains $_ } {
+            $t = if ($script:ExecFollowUpTypes -contains $type) { 'Follow up: ' + $title } else { $title }
+            $newId = if (Get-Command Get-NextActionId -ErrorAction SilentlyContinue) { Get-NextActionId -Data (Get-ActionItemsData) } else { $null }
+            if (-not $newId) { return [pscustomobject]@{ valid = $false; reason = 'Action Items owner unavailable'; intent = $null } }
+            return (& $mk @{ mode = 'create-id'; destination = 'Action Items'; targetId = $newId; newId = $newId; field = ''; expected = ''; title = $t; create = $true })
+        }
+        'goal'           { return (& $mk @{ mode = 'title'; destination = 'Goals'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'project'        { return (& $mk @{ mode = 'title'; destination = 'Home Projects'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'non-negotiable' { return (& $mk @{ mode = 'title'; destination = 'Non-Negotiables'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'family'         { return (& $mk @{ mode = 'title'; destination = 'Family'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'health'         { return (& $mk @{ mode = 'title'; destination = 'Health'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'financial'      { return (& $mk @{ mode = 'title'; destination = 'Financial'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'agency'         { return (& $mk @{ mode = 'title'; destination = 'Agency'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'learning'       { return (& $mk @{ mode = 'title'; destination = 'Learning'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        'memory'         { return (& $mk @{ mode = 'title'; destination = 'Tony Memory'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        default          { return (& $mk @{ mode = 'result'; destination = ''; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $false }) }
+    }
+}
+# THE verification gate: does the owner store now show exactly what the persisted
+# intent said it would? Works identically at runtime and during restart recovery,
+# because the intent (not the handler's claims) defines success.
+function Test-ExecutionIntentApplied {
+    param($Intent, $Result)
+    if (-not $Intent) { return $false }
+    try {
+        switch ([string]$Intent.mode) {
+            'field' {
+                $actual = Get-ActionItemField -Id ([string]$Intent.targetId) -Field ([string]$Intent.field)
+                if ([string]$Intent.field -eq 'archived') { return [bool]$actual }
+                return ($null -ne $actual -and [string]$actual -eq [string]$Intent.expected)
+            }
+            'create-id' { return (Test-ExecutionApplied -Destination ([string]$Intent.destination) -NewId ([string]$Intent.newId)) }
+            'title' {
+                $want = ConvertTo-ExecNormalizedTitle ([string]$Intent.title)
+                if (-not $want) { return $false }
+                return ((Get-DestinationTitleSet -Destination ([string]$Intent.destination)) -contains $want)
+            }
+            'result' {
+                if (-not $Result -or -not $Result.newId) { return $false }
+                return (Test-ExecutionApplied -Destination ([string]$Result.destination) -NewId ([string]$Result.newId))
+            }
+            default { return $false }
+        }
+    }
+    catch { return $false }
+}
 
 # ---- local action verbs (first-class; Action Items) --------------------
-# Small, deterministic mutators on the Action Items owner store. Each returns a
-# result the engine verifies. These are the LOCAL actions Epic 15 supports first.
+# Small, deterministic mutators on the Action Items owner store. Every handler
+# reads its ids and values from the PERSISTED INTENT - never invents them - so
+# what executes is exactly what was recorded before the side effect.
 function Set-ActionItemFields {
     param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][hashtable]$Fields)
     if (-not (Get-Command Get-ActionItemsData -ErrorAction SilentlyContinue)) { return $false }
@@ -184,11 +311,22 @@ function Get-ActionItemField {
     if (-not $it -or -not ($it.PSObject.Properties.Name -contains $Field)) { return $null }
     return $it.$Field
 }
+# Idempotent create under a PRE-ALLOCATED id: if the intended item already exists
+# (a retried/recovered execution), it is NOT created twice.
+function New-IntendedActionItem {
+    param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Title)
+    if (-not (Get-Command Add-ActionItem -ErrorAction SilentlyContinue)) { return $false }
+    $d = Get-ActionItemsData
+    if (@($d.items | Where-Object { [string]$_.id -eq $Id }).Count -gt 0) { return $true }
+    [void](Add-ActionItem -Data $d -Title $Title -Id $Id)
+    Save-ActionItemsData $d
+    return $true
+}
 
 # ---- handler registry --------------------------------------------------
-# type -> { execute(record) -> {ok,destination,newId,message}; verify(record) -> bool }.
-# Local verbs are registered here; everything else uses the DEFAULT handler that
-# routes through the owner's existing writer (Invoke-InboxRoute) and verifies by id.
+# type -> { execute(request) -> {ok,destination,newId,message}; verify(request) -> bool }.
+# The engine's own intent gate is ALWAYS the authority; a handler verify can only
+# add strictness on top of it.
 $script:ActionHandlers = @{}
 function Register-ActionHandler {
     param([Parameter(Mandatory)][string]$Type, [Parameter(Mandatory)][scriptblock]$Execute, [Parameter(Mandatory)][scriptblock]$Verify)
@@ -196,62 +334,63 @@ function Register-ActionHandler {
 }
 function Get-ActionHandler { param([string]$Type) if ($script:ActionHandlers.ContainsKey($Type)) { return $script:ActionHandlers[$Type] } return $null }
 
-# reminder: create a NEW action item carrying a remindAt (from the proposal).
+# reminder: create the PRE-ALLOCATED action item carrying remindAt (from the intent).
 Register-ActionHandler -Type 'reminder' `
     -Execute {
-        param($Record)
-        if (-not (Get-Command Add-ActionItem -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; message = 'Action Items owner unavailable.' } }
-        $d = Get-ActionItemsData
-        $newId = if (Get-Command Get-NextActionId -ErrorAction SilentlyContinue) { Get-NextActionId -Data $d } else { ('AI-{0:000}' -f (@($d.items).Count + 1)) }
-        [void](Add-ActionItem -Data $d -Title ([string]$Record.title) -Id $newId)
-        Save-ActionItemsData $d
-        $when = if ($Record.description) { [string]$Record.description } else { [string]$Record.proposedDestination }
-        [void](Set-ActionItemFields -Id $newId -Fields @{ remindAt = $when; kind = 'reminder' })
-        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = $newId; message = ("Reminder created ({0})." -f $newId) }
+        param($Request)
+        $i = $Request.intent
+        if (-not (New-IntendedActionItem -Id ([string]$i.newId) -Title ([string]$Request.title))) { return [pscustomobject]@{ ok = $false; message = 'Action Items owner unavailable.' } }
+        [void](Set-ActionItemFields -Id ([string]$i.newId) -Fields @{ remindAt = [string]$i.expected; kind = 'reminder' })
+        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = [string]$i.newId; message = ("Reminder created ({0})." -f $i.newId) }
     } `
-    -Verify { param($Record) $r = $Record.result; return ((Test-ExecutionApplied -Destination 'Action Items' -NewId ([string]$r.newId)) -and $null -ne (Get-ActionItemField -Id ([string]$r.newId) -Field 'remindAt')) }
+    -Verify { param($Request) return $true }   # the engine's intent gate is the authority
 
-# set-priority: set priority on an EXISTING action item (the proposal's sourceId).
+# set-priority: set priority on the EXISTING intent target.
 Register-ActionHandler -Type 'set-priority' `
     -Execute {
-        param($Record)
-        $target = [string]$Record.sourceId
-        $value = if ($Record.description) { [string]$Record.description } else { [string]$Record.proposedDestination }
-        if (-not $target) { return [pscustomobject]@{ ok = $false; message = 'No target action item id on the proposal.' } }
-        if (-not (Set-ActionItemFields -Id $target -Fields @{ priority = $value })) { return [pscustomobject]@{ ok = $false; message = 'Target action item not found.' } }
-        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = $target; message = ("Priority set on {0}." -f $target) }
+        param($Request)
+        $i = $Request.intent
+        if (-not (Set-ActionItemFields -Id ([string]$i.targetId) -Fields @{ priority = [string]$i.expected })) { return [pscustomobject]@{ ok = $false; message = 'Target action item not found.' } }
+        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = [string]$i.targetId; message = ("Priority set on {0}." -f $i.targetId) }
     } `
-    -Verify { param($Record) $r = $Record.result; $v = if ($Record.description) { [string]$Record.description } else { [string]$Record.proposedDestination }; return ([string](Get-ActionItemField -Id ([string]$r.newId) -Field 'priority') -eq $v) }
+    -Verify { param($Request) return $true }
 
-# defer: set deferredUntil on an existing action item.
+# defer: set deferredUntil on the existing intent target.
 Register-ActionHandler -Type 'defer' `
     -Execute {
-        param($Record)
-        $target = [string]$Record.sourceId
-        $until = if ($Record.description) { [string]$Record.description } else { [string]$Record.proposedDestination }
-        if (-not $target) { return [pscustomobject]@{ ok = $false; message = 'No target action item id on the proposal.' } }
-        if (-not (Set-ActionItemFields -Id $target -Fields @{ deferredUntil = $until })) { return [pscustomobject]@{ ok = $false; message = 'Target action item not found.' } }
-        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = $target; message = ("Deferred {0}." -f $target) }
+        param($Request)
+        $i = $Request.intent
+        if (-not (Set-ActionItemFields -Id ([string]$i.targetId) -Fields @{ deferredUntil = [string]$i.expected })) { return [pscustomobject]@{ ok = $false; message = 'Target action item not found.' } }
+        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = [string]$i.targetId; message = ("Deferred {0}." -f $i.targetId) }
     } `
-    -Verify { param($Record) $r = $Record.result; return ($null -ne (Get-ActionItemField -Id ([string]$r.newId) -Field 'deferredUntil')) }
+    -Verify { param($Request) return $true }
 
-# archive: archive an existing action item.
+# archive: archive the existing intent target.
 Register-ActionHandler -Type 'archive' `
     -Execute {
-        param($Record)
-        $target = [string]$Record.sourceId
-        if (-not $target) { return [pscustomobject]@{ ok = $false; message = 'No target action item id on the proposal.' } }
+        param($Request)
+        $i = $Request.intent
         if (-not (Get-Command Set-ActionItemArchived -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; message = 'Action Items owner unavailable.' } }
         $d = Get-ActionItemsData
-        [void](Set-ActionItemArchived -Data $d -Id $target -Archived $true)
+        if (@($d.items | Where-Object { [string]$_.id -eq [string]$i.targetId }).Count -eq 0) { return [pscustomobject]@{ ok = $false; message = 'Target action item not found.' } }
+        [void](Set-ActionItemArchived -Data $d -Id ([string]$i.targetId) -Archived $true)
         Save-ActionItemsData $d
-        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = $target; message = ("Archived {0}." -f $target) }
+        return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = [string]$i.targetId; message = ("Archived {0}." -f $i.targetId) }
     } `
-    -Verify { param($Record) $r = $Record.result; $it = @((Get-ActionItemsData).items | Where-Object { [string]$_.id -eq ([string]$r.newId) })[0]; return ([bool]$it -and [bool]$it.archived) }
+    -Verify { param($Request) return $true }
 
-# The DEFAULT handler: route the proposal through its owner's existing writer, then
-# verify the owner record exists by id. This is how goal / project / life / memory /
-# task / connector-follow-up proposals execute - all through the engine, all verified.
+# Engine-internal create for 'create-id' intents (task + connector follow-ups):
+# the item is created under the intent's PRE-ALLOCATED id, so recovery can always
+# tell whether this exact write landed.
+function Invoke-IntentCreateExecute {
+    param($Request)
+    $i = $Request.intent
+    if (-not (New-IntendedActionItem -Id ([string]$i.newId) -Title ([string]$i.title))) { return [pscustomobject]@{ ok = $false; message = 'Action Items owner unavailable.' } }
+    return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = [string]$i.newId; message = ("Added action item {0}." -f $i.newId) }
+}
+# Owner-minted creates (goal / project / life domains / memory): route through the
+# owner's existing writer. The intent's TITLE is the recovery-verification surface,
+# because the owner assigns the id inside its own function.
 function Invoke-DefaultActionExecute {
     param($Record)
     if (-not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; message = 'Inbox router unavailable.' } }
@@ -260,58 +399,74 @@ function Invoke-DefaultActionExecute {
     if (-not $route.ok) { return [pscustomobject]@{ ok = $false; message = [string]$route.message } }
     return [pscustomobject]@{ ok = $true; destination = [string]$route.destination; newId = [string]$route.newId; message = [string]$route.message }
 }
-function Test-DefaultActionVerified { param($Record) $r = $Record.result; return (Test-ExecutionApplied -Destination ([string]$r.destination) -NewId ([string]$r.newId)) }
 
 # ---- the state machine: the one execution path -------------------------
-# Drives an approved proposal through validate -> execute -> verify. Never throws:
-# any failure at any stage transitions the record to 'failed' with a truthful reason
-# and returns a calm result. SUCCESS requires the verifier to pass.
+# intent persisted -> execute -> result persisted -> verify (from intent) -> terminal.
+# Never throws: any failure at any stage transitions the record to 'failed' with a
+# truthful reason and returns a calm result.
 function Invoke-ProposalExecution {
     param([Parameter(Mandatory)] $Proposal)
     if (-not $Proposal -or -not $Proposal.id) { return [pscustomobject]@{ ok = $false; message = 'No proposal to execute.'; executionId = $null } }
-    $rec = New-ExecutionRecord -Proposal $Proposal
+    $rec = $null
+    try { $rec = New-ExecutionRecord -Proposal $Proposal }
+    catch { return [pscustomobject]@{ ok = $false; message = 'The execution log could not be written; nothing was changed.'; executionId = $null } }
     $rec.attempts = 1
 
     # ---- validating ----
     [void](Set-ExecutionState -Record $rec -State 'validating' -Detail ("type={0}" -f $rec.type))
-    $handler = Get-ActionHandler -Type ([string]$rec.type)
-    $isLocal = [bool]$handler
-    if (-not $isLocal) {
-        # a standard owner-routed proposal: the router must be present
-        if (-not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) {
-            [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'no owner router available')
-            return [pscustomobject]@{ ok = $false; message = 'The owning module is not available; left pending.'; executionId = $rec.id }
-        }
-    }
     if ([string]::IsNullOrWhiteSpace([string]$rec.title)) {
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'proposal has no title')
         return [pscustomobject]@{ ok = $false; message = 'Proposal has no title; cannot execute.'; executionId = $rec.id }
     }
+    # build + PERSIST THE INTENT before any side effect. If this persist fails, no
+    # owner write happens - a log that cannot record intent blocks execution.
+    $iv = New-ExecutionIntent -Proposal $Proposal
+    if (-not $iv.valid) {
+        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail ("intent: {0}" -f $iv.reason))
+        return [pscustomobject]@{ ok = $false; message = $iv.reason; executionId = $rec.id }
+    }
+    $rec.intent = $iv.intent
+    try { [void](Update-ExecutionRecord -Record $rec) }
+    catch {
+        try { [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'could not persist the execution intent') } catch { }
+        return [pscustomobject]@{ ok = $false; message = 'The execution intent could not be recorded; nothing was changed.'; executionId = $rec.id }
+    }
+    $handler = Get-ActionHandler -Type ([string]$rec.type)
+    if (-not $handler -and [string]$rec.intent.mode -eq 'title' -and -not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) {
+        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'no owner router available')
+        return [pscustomobject]@{ ok = $false; message = 'The owning module is not available; left pending.'; executionId = $rec.id }
+    }
 
     # ---- executing ----
-    [void](Set-ExecutionState -Record $rec -State 'executing' -Detail $(if ($isLocal) { ("local:{0}" -f $rec.type) } else { 'owner-route' }))
+    [void](Set-ExecutionState -Record $rec -State 'executing' -Detail ("mode={0}" -f $rec.intent.mode))
     $result = $null
     try {
-        $result = if ($isLocal) { & $handler.execute $rec } else { Invoke-DefaultActionExecute -Record $rec }
+        $result = if ($handler) { & $handler.execute $rec }
+        elseif ([string]$rec.intent.mode -eq 'create-id') { Invoke-IntentCreateExecute -Request $rec }
+        else { Invoke-DefaultActionExecute -Record $rec }
     }
     catch {
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail ("execute threw: {0}" -f $_.Exception.Message))
         return [pscustomobject]@{ ok = $false; message = ("Could not execute it: {0}" -f $_.Exception.Message); executionId = $rec.id }
     }
-    if (-not $result -or -not $result.ok) {
-        $msg = if ($result) { [string]$result.message } else { 'the owning module returned nothing' }
+    if (-not $result -or -not ($result.PSObject.Properties.Name -contains 'ok') -or -not [bool]$result.ok) {
+        $msg = if ($result -and ($result.PSObject.Properties.Name -contains 'message')) { [string]$result.message } else { 'the owning module returned nothing' }
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail ("execute not ok: {0}" -f $msg))
         return [pscustomobject]@{ ok = $false; message = $msg; executionId = $rec.id }
     }
+    # persist the RESULT immediately - before verification - so a crash from here on
+    # recovers with full knowledge of what was written.
     $rec.result = [pscustomobject]@{ ok = $true; destination = [string]$result.destination; newId = [string]$result.newId; message = [string]$result.message }
+    try { [void](Update-ExecutionRecord -Record $rec) } catch { }
 
-    # ---- verifying (SUCCESS is not claimed without this) ----
+    # ---- verifying (the ENGINE'S intent gate; a handler verify only adds strictness) ----
     [void](Set-ExecutionState -Record $rec -State 'verifying' -Detail ("{0}:{1}" -f $rec.result.destination, $rec.result.newId))
-    $verified = $false
-    try { $verified = [bool]$(if ($isLocal) { & $handler.verify $rec } else { Test-DefaultActionVerified -Record $rec }) }
-    catch { $verified = $false }
+    $verified = Test-ExecutionIntentApplied -Intent $rec.intent -Result $rec.result
+    if ($verified -and $handler -and $handler.verify) {
+        try { $verified = [bool](& $handler.verify $rec) } catch { $verified = $false }
+    }
     if (-not $verified) {
-        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'verification did not confirm the owner change')
+        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'verification did not confirm the intended owner change')
         return [pscustomobject]@{ ok = $false; message = 'The change could not be verified; it was not marked done.'; executionId = $rec.id }
     }
 
@@ -321,22 +476,31 @@ function Invoke-ProposalExecution {
 }
 
 # ---- restart safety ----------------------------------------------------
-# On launch, any execution left non-terminal (a crash between executing and the final
-# transition) is resolved by RE-VERIFYING the owner store: if the change actually
-# landed, mark it succeeded; otherwise fail it (safe to re-propose). Never re-runs a
-# write blindly - that is how a crash could double-write. Returns a small summary.
+# On launch, any execution left non-terminal (a crash mid-flight) is resolved by
+# verifying its PERSISTED INTENT against the owner store: the intended change
+# exists -> succeeded; it does not -> failed (safe to re-propose). An execution
+# with no intent persisted made no side effect by construction -> failed. Never
+# re-runs a write blindly. Idempotent: terminal records are never touched again.
 function Restore-ActionEngine {
     $recovered = 0; $succeeded = 0; $failed = 0
     foreach ($rec in @(Get-Executions -State 'all')) {
         if ($script:ExecTerminal -contains [string]$rec.state) { continue }
         $recovered++
-        $r = $rec.result
-        if ($r -and $r.newId -and (Test-ExecutionApplied -Destination ([string]$r.destination) -NewId ([string]$r.newId))) {
-            [void](Set-ExecutionState -Record $rec -State 'succeeded' -Detail 'recovered after restart: owner change verified')
+        $landed = $false
+        if ($rec.PSObject.Properties.Name -contains 'intent' -and $rec.intent) {
+            $landed = Test-ExecutionIntentApplied -Intent $rec.intent -Result $rec.result
+        }
+        elseif ($rec.result -and $rec.result.newId) {
+            # legacy record (pre-intent): verify from the persisted result
+            $landed = Test-ExecutionApplied -Destination ([string]$rec.result.destination) -NewId ([string]$rec.result.newId)
+        }
+        if ($landed) {
+            [void](Set-ExecutionState -Record $rec -State 'verifying' -Detail 'recovery: re-verifying persisted intent')
+            [void](Set-ExecutionState -Record $rec -State 'succeeded' -Detail 'recovered after restart: intended owner change verified')
             $succeeded++
         }
         else {
-            [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'recovered after restart: owner change not verified (safe to re-propose)')
+            [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'recovered after restart: intended change not found (safe to re-propose; nothing was re-run)')
             $failed++
         }
     }
