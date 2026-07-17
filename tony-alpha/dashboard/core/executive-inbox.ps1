@@ -274,25 +274,20 @@ function Approve-InboxItem {
     $item = Get-InboxItemById -Id $Id
     if (-not $item) { return [pscustomobject]@{ ok = $false; message = 'Proposal not found.' } }
     if ($item.status -ne 'pending') { return [pscustomobject]@{ ok = $false; message = 'Proposal is not pending.' } }
-    # Approval is the ONLY gate that starts an execution. All executing is delegated to
-    # the Executive Action Engine (Epic 15): it validates, executes through the owner's
-    # writer, VERIFIES the owner store actually changed, and records the full audit
-    # trail. The proposal leaves the inbox only after a verified success (SSOT: the data
-    # now lives in its owner, no copy kept); a failed or unverified execution stays
-    # pending so it can be retried. If the engine is absent, fall back to the direct
-    # owner route so approval never becomes a hard dependency on the engine module.
-    if (Get-Command Invoke-ProposalExecution -ErrorAction SilentlyContinue) {
-        $exec = Invoke-ProposalExecution -Proposal $item
-        if ($exec.ok) {
-            [void](Remove-InboxItem -Id $Id)
-            return [pscustomobject]@{ ok = $true; destination = $exec.destination; newId = $exec.newId; message = $exec.message; executionId = $exec.executionId }
-        }
-        return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = $exec.message; executionId = $exec.executionId }
+    # Approval is the ONLY gate that starts an execution, and the Executive Action
+    # Engine is the ONLY executor (PERMANENT DECISION, Epic 15.1): it validates,
+    # persists the execution intent, executes through the owner's writer, VERIFIES
+    # the owner store actually changed, and records the full audit trail. If the
+    # engine is unavailable, approval FAILS CLOSED - the proposal stays pending
+    # with a calm message, and there is NO direct owner-route fallback: an
+    # unvalidated, unaudited, unverified execution path must not exist.
+    if (-not (Get-Command Invoke-ProposalExecution -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = 'The Action Engine is not available. Nothing was changed; the proposal is still pending.' }
     }
-    $route = Invoke-InboxRoute -Item $item
-    if ($route.ok) {
+    $exec = Invoke-ProposalExecution -Proposal $item
+    if ($exec.ok) {
         [void](Remove-InboxItem -Id $Id)   # data now lives in its owner; no copy kept
-        return [pscustomobject]@{ ok = $true; destination = $route.destination; newId = $route.newId; message = $route.message }
+        return [pscustomobject]@{ ok = $true; destination = $exec.destination; newId = $exec.newId; message = $exec.message; executionId = $exec.executionId }
     }
-    return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = $route.message }
+    return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = $exec.message; executionId = $exec.executionId }
 }

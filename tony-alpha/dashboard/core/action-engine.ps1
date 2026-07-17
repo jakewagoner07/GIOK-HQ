@@ -98,6 +98,7 @@ function New-ExecutionRecord {
         createdAt           = $now
         updatedAt           = $now
         attempts            = 0
+        idempotencyKey      = (Get-ExecutionIdempotencyKey -Proposal $Proposal)
         intent              = $null   # persisted BEFORE any side effect (15.1)
         result              = $null   # { ok; destination; newId; message }
         history             = @([pscustomobject]@{ state = 'pending'; at = $now; detail = 'execution created from approved proposal' })
@@ -119,10 +120,37 @@ function Update-ExecutionRecord {
     Save-ExecutionLog $log
     return $Record
 }
+# ---- the transition table: the ONLY legal state moves (Epic 15.1) ------
+# Skipping a stage or re-entering a terminal record is refused, so neither a bug
+# nor a hostile handler can walk a record to 'succeeded' out of order, and a
+# finished execution can never be rewritten.
+$script:ExecTransitions = @{
+    'pending'    = @('validating', 'failed')
+    'validating' = @('executing', 'failed')
+    'executing'  = @('verifying', 'failed')
+    'verifying'  = @('succeeded', 'failed')
+    'succeeded'  = @()
+    'failed'     = @()
+}
 # Move a record to a new state, append an audit line, and persist. Returns the record.
+# ENGINE-PRIVATE by contract: handlers receive a DTO (no 'state'/'history'), so any
+# handler calling this throws; and the persisted copy is checked so a terminal
+# record can never be transitioned again, even via a stale reference.
 function Set-ExecutionState {
     param([Parameter(Mandatory)] $Record, [Parameter(Mandatory)][string]$State, [string]$Detail = '')
     if ($script:ExecStates -notcontains $State) { throw ("unknown execution state: {0}" -f $State) }
+    if (-not ($Record.PSObject.Properties.Name -contains 'id') -or -not ($Record.PSObject.Properties.Name -contains 'state')) {
+        throw 'not an execution record (state transitions are engine-private)'
+    }
+    $from = [string]$Record.state
+    if (@($script:ExecTransitions[$from]) -notcontains $State) {
+        throw ("illegal execution transition: {0} -> {1}" -f $from, $State)
+    }
+    # terminal lock against the PERSISTED copy: a finished record is immutable.
+    $persisted = Get-ExecutionById -Id ([string]$Record.id)
+    if ($persisted -and ($script:ExecTerminal -contains [string]$persisted.state)) {
+        throw ("execution {0} is terminal ({1}); it cannot be transitioned" -f $Record.id, $persisted.state)
+    }
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $Record.state = $State
     $Record.updatedAt = $now
@@ -323,6 +351,59 @@ function New-IntendedActionItem {
     return $true
 }
 
+# ---- identity: fingerprint + idempotency (Epic 15.1) --------------------
+# The fingerprint pins the proposal CONTENT; the idempotency key pins proposal +
+# content, so one proposal maps to at most one active/successful execution and an
+# edited proposal is a different execution identity.
+function Get-ProposalFingerprint {
+    param([Parameter(Mandatory)] $Proposal)
+    $material = (@([string]$Proposal.type, [string]$Proposal.title, [string]$Proposal.description,
+            [string]$Proposal.sourceId, [string]$Proposal.proposedDestination) -join "`n")
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    return (([System.BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material))) -replace '-', '').Substring(0, 16))
+}
+function Get-ExecutionIdempotencyKey {
+    param([Parameter(Mandatory)] $Proposal)
+    return ('{0}|{1}' -f [string]$Proposal.id, (Get-ProposalFingerprint -Proposal $Proposal))
+}
+
+# ---- engine-private state: what a handler is allowed to see -------------
+# Handlers receive a DEEP-CLONED request DTO - proposal facts + intent, nothing
+# else. No 'id', no 'state', no 'history': mutating it changes nothing, and
+# passing it to Set-ExecutionState throws. The engine alone owns the record.
+function New-ActionRequest {
+    param([Parameter(Mandatory)] $Record, $Result = $null)
+    $c = $Record | ConvertTo-Json -Depth 12 | ConvertFrom-Json
+    $req = [pscustomobject]@{
+        executionId         = [string]$c.id
+        proposalId          = [string]$c.proposalId
+        type                = [string]$c.type
+        title               = [string]$c.title
+        description         = [string]$c.description
+        source              = [string]$c.source
+        sourceId            = [string]$c.sourceId
+        proposedDestination = [string]$c.proposedDestination
+        intent              = $c.intent
+    }
+    if ($null -ne $Result) { $req | Add-Member -NotePropertyName result -NotePropertyValue ($Result | ConvertTo-Json -Depth 8 | ConvertFrom-Json) -Force }
+    return $req
+}
+# A handler's return is REDUCED to the four result fields. Forged state / history /
+# succeeded flags are dropped; multiple pipeline outputs are malformed (rejected);
+# anything without a boolean 'ok' is malformed.
+function ConvertTo-SanitizedActionResult {
+    param($Raw)
+    if ($null -eq $Raw) { return $null }
+    if ($Raw -is [System.Array]) { return $null }
+    if (-not $Raw.PSObject -or -not ($Raw.PSObject.Properties.Name -contains 'ok')) { return $null }
+    return [pscustomobject]@{
+        ok          = [bool]$Raw.ok
+        destination = $(if ($Raw.PSObject.Properties.Name -contains 'destination') { [string]$Raw.destination } else { '' })
+        newId       = $(if ($Raw.PSObject.Properties.Name -contains 'newId') { [string]$Raw.newId } else { '' })
+        message     = $(if ($Raw.PSObject.Properties.Name -contains 'message') { [string]$Raw.message } else { '' })
+    }
+}
+
 # ---- handler registry --------------------------------------------------
 # type -> { execute(request) -> {ok,destination,newId,message}; verify(request) -> bool }.
 # The engine's own intent gate is ALWAYS the authority; a handler verify can only
@@ -400,13 +481,65 @@ function Invoke-DefaultActionExecute {
     return [pscustomobject]@{ ok = $true; destination = [string]$route.destination; newId = [string]$route.newId; message = [string]$route.message }
 }
 
+# ---- recovery resolution (shared by restart + idempotency) --------------
+# Resolve ONE non-terminal record by verifying its persisted intent - walking only
+# LEGAL transitions to the truthful terminal state. Never re-runs a write.
+function Resolve-ExecutionByVerification {
+    param([Parameter(Mandatory)] $Record, [string]$Why = 'recovery')
+    $landed = $false
+    if ($Record.PSObject.Properties.Name -contains 'intent' -and $Record.intent) {
+        $landed = Test-ExecutionIntentApplied -Intent $Record.intent -Result $Record.result
+    }
+    elseif ($Record.result -and $Record.result.newId) {
+        # legacy record (pre-intent): verify from the persisted result
+        $landed = Test-ExecutionApplied -Destination ([string]$Record.result.destination) -NewId ([string]$Record.result.newId)
+    }
+    if ($landed) {
+        # walk the LEGAL chain from wherever the crash left it up to succeeded
+        while ([string]$Record.state -ne 'verifying') {
+            $next = switch ([string]$Record.state) { 'pending' { 'validating' } 'validating' { 'executing' } 'executing' { 'verifying' } }
+            [void](Set-ExecutionState -Record $Record -State $next -Detail ("{0}: advancing to re-verify" -f $Why))
+        }
+        [void](Set-ExecutionState -Record $Record -State 'succeeded' -Detail ("{0}: intended owner change verified (nothing re-run)" -f $Why))
+        return 'succeeded'
+    }
+    [void](Set-ExecutionState -Record $Record -State 'failed' -Detail ("{0}: intended change not found (safe to re-propose; nothing was re-run)" -f $Why))
+    return 'failed'
+}
+
 # ---- the state machine: the one execution path -------------------------
-# intent persisted -> execute -> result persisted -> verify (from intent) -> terminal.
-# Never throws: any failure at any stage transitions the record to 'failed' with a
-# truthful reason and returns a calm result.
+# idempotency -> intent persisted -> execute (DTO) -> result persisted -> verify
+# (from intent) -> terminal. Never throws: any failure transitions the record to
+# 'failed' with a truthful reason and returns a calm result.
 function Invoke-ProposalExecution {
     param([Parameter(Mandatory)] $Proposal)
     if (-not $Proposal -or -not $Proposal.id) { return [pscustomobject]@{ ok = $false; message = 'No proposal to execute.'; executionId = $null } }
+
+    # ---- idempotency: one proposal -> at most one active/successful execution ----
+    $key = $null
+    try { $key = Get-ExecutionIdempotencyKey -Proposal $Proposal } catch { $key = $null }
+    if ($key) {
+        $twins = @(Get-Executions -State 'all' | Where-Object { ($_.PSObject.Properties.Name -contains 'idempotencyKey') -and [string]$_.idempotencyKey -eq $key })
+        $done = @($twins | Where-Object { $_.state -eq 'succeeded' })
+        if ($done.Count -gt 0) {
+            $d = $done[-1]
+            return [pscustomobject]@{ ok = $true; destination = [string]$d.result.destination; newId = [string]$d.result.newId; message = ([string]$d.result.message + ' (already completed)'); executionId = [string]$d.id; deduped = $true }
+        }
+        $open = @($twins | Where-Object { $script:ExecNonTerminal -contains [string]$_.state })
+        if ($open.Count -gt 0) {
+            # resolve the in-flight twin by verification instead of starting a second
+            # execution (and a second write). A deliberate retry is a NEW invocation
+            # after this one reports the truthful terminal state.
+            $o = $open[0]
+            $outcome = Resolve-ExecutionByVerification -Record $o -Why 'duplicate-invocation resolution'
+            if ($outcome -eq 'succeeded') {
+                return [pscustomobject]@{ ok = $true; destination = [string]$o.result.destination; newId = [string]$o.result.newId; message = 'Verified as already applied.'; executionId = [string]$o.id; deduped = $true }
+            }
+            return [pscustomobject]@{ ok = $false; message = 'A previous attempt could not be verified and was marked failed. Approve again to retry.'; executionId = [string]$o.id; deduped = $true }
+        }
+        # only FAILED twins remain -> a deliberate retry is allowed (new attempt below)
+    }
+
     $rec = $null
     try { $rec = New-ExecutionRecord -Proposal $Proposal }
     catch { return [pscustomobject]@{ ok = $false; message = 'The execution log could not be written; nothing was changed.'; executionId = $null } }
@@ -437,40 +570,45 @@ function Invoke-ProposalExecution {
         return [pscustomobject]@{ ok = $false; message = 'The owning module is not available; left pending.'; executionId = $rec.id }
     }
 
-    # ---- executing ----
+    # ---- executing (handlers see a DTO, never the live record) ----
     [void](Set-ExecutionState -Record $rec -State 'executing' -Detail ("mode={0}" -f $rec.intent.mode))
     $result = $null
     try {
-        $result = if ($handler) { & $handler.execute $rec }
-        elseif ([string]$rec.intent.mode -eq 'create-id') { Invoke-IntentCreateExecute -Request $rec }
+        $request = New-ActionRequest -Record $rec
+        $raw = if ($handler) { & $handler.execute $request }
+        elseif ([string]$rec.intent.mode -eq 'create-id') { Invoke-IntentCreateExecute -Request $request }
         else { Invoke-DefaultActionExecute -Record $rec }
+        $result = ConvertTo-SanitizedActionResult -Raw $raw
     }
     catch {
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail ("execute threw: {0}" -f $_.Exception.Message))
         return [pscustomobject]@{ ok = $false; message = ("Could not execute it: {0}" -f $_.Exception.Message); executionId = $rec.id }
     }
-    if (-not $result -or -not ($result.PSObject.Properties.Name -contains 'ok') -or -not [bool]$result.ok) {
-        $msg = if ($result -and ($result.PSObject.Properties.Name -contains 'message')) { [string]$result.message } else { 'the owning module returned nothing' }
-        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail ("execute not ok: {0}" -f $msg))
-        return [pscustomobject]@{ ok = $false; message = $msg; executionId = $rec.id }
+    if (-not $result) {
+        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'execute returned a malformed result')
+        return [pscustomobject]@{ ok = $false; message = 'The handler returned a malformed result; nothing was marked done.'; executionId = $rec.id }
+    }
+    if (-not $result.ok) {
+        [void](Set-ExecutionState -Record $rec -State 'failed' -Detail ("execute not ok: {0}" -f $result.message))
+        return [pscustomobject]@{ ok = $false; message = $result.message; executionId = $rec.id }
     }
     # persist the RESULT immediately - before verification - so a crash from here on
     # recovers with full knowledge of what was written.
-    $rec.result = [pscustomobject]@{ ok = $true; destination = [string]$result.destination; newId = [string]$result.newId; message = [string]$result.message }
+    $rec.result = $result
     try { [void](Update-ExecutionRecord -Record $rec) } catch { }
 
     # ---- verifying (the ENGINE'S intent gate; a handler verify only adds strictness) ----
     [void](Set-ExecutionState -Record $rec -State 'verifying' -Detail ("{0}:{1}" -f $rec.result.destination, $rec.result.newId))
     $verified = Test-ExecutionIntentApplied -Intent $rec.intent -Result $rec.result
     if ($verified -and $handler -and $handler.verify) {
-        try { $verified = [bool](& $handler.verify $rec) } catch { $verified = $false }
+        try { $verified = [bool](& $handler.verify (New-ActionRequest -Record $rec -Result $rec.result)) } catch { $verified = $false }
     }
     if (-not $verified) {
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'verification did not confirm the intended owner change')
         return [pscustomobject]@{ ok = $false; message = 'The change could not be verified; it was not marked done.'; executionId = $rec.id }
     }
 
-    # ---- succeeded ----
+    # ---- succeeded (the ENGINE'S final word; the persisted record is now immutable) ----
     [void](Set-ExecutionState -Record $rec -State 'succeeded' -Detail ("verified {0}:{1}" -f $rec.result.destination, $rec.result.newId))
     return [pscustomobject]@{ ok = $true; destination = $rec.result.destination; newId = $rec.result.newId; message = $rec.result.message; executionId = $rec.id }
 }
@@ -486,23 +624,8 @@ function Restore-ActionEngine {
     foreach ($rec in @(Get-Executions -State 'all')) {
         if ($script:ExecTerminal -contains [string]$rec.state) { continue }
         $recovered++
-        $landed = $false
-        if ($rec.PSObject.Properties.Name -contains 'intent' -and $rec.intent) {
-            $landed = Test-ExecutionIntentApplied -Intent $rec.intent -Result $rec.result
-        }
-        elseif ($rec.result -and $rec.result.newId) {
-            # legacy record (pre-intent): verify from the persisted result
-            $landed = Test-ExecutionApplied -Destination ([string]$rec.result.destination) -NewId ([string]$rec.result.newId)
-        }
-        if ($landed) {
-            [void](Set-ExecutionState -Record $rec -State 'verifying' -Detail 'recovery: re-verifying persisted intent')
-            [void](Set-ExecutionState -Record $rec -State 'succeeded' -Detail 'recovered after restart: intended owner change verified')
-            $succeeded++
-        }
-        else {
-            [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'recovered after restart: intended change not found (safe to re-propose; nothing was re-run)')
-            $failed++
-        }
+        $outcome = Resolve-ExecutionByVerification -Record $rec -Why 'recovered after restart'
+        if ($outcome -eq 'succeeded') { $succeeded++ } else { $failed++ }
     }
     return [pscustomobject]@{ recovered = $recovered; succeeded = $succeeded; failed = $failed }
 }
