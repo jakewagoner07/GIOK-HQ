@@ -144,11 +144,26 @@ A task-specific `briefing.compose` validator (Epic 13A philosophy):
 - valid model shape; **allowed sections only**;
 - every item's `sourceType` + `sourceId` refers to a supplied `planSources` entry (no invented goals,
   appointments, deadlines, names, amounts, or commitments);
+- **text-fact grounding (Epic 14A)**: every hard fact in an item's `text` *and* `reason` - numbers,
+  currency, percentages, times, digit-form dates, and mid-sentence proper nouns - must appear in that
+  cited source's own content. A valid `sourceId` can no longer conceal fabricated free text ("Call Robert
+  Kessler about the $80,000 wire at 3pm" citing a goal that only says "Grow the agency" now rejects). This
+  reuses the proven Epic 13A gates (`Get-UEGroundingNumbers` / `Get-UEUngroundedProperNoun`); the source
+  content is read from the single `planSources` projection (`Get-DailyPlanSourceContent`) - no second store.
+  Paraphrase, tone, and semantic compression are deliberately untouched: facts by machine, meaning by human;
 - no fabricated `proposedAction`; the action type is from the allowed set;
-- **no provider may claim an automatic action occurred** - a plan can only *recommend*;
+- **no provider may claim an automatic action occurred**, in first *or* third person - "Meeting scheduled",
+  "Email sent", "Booked your flight" reject alongside "I scheduled..."; advisory/future wording
+  ("Consider scheduling...", "nothing is sent until you approve") passes. A plan can only *recommend*;
 - anything that would write is `requiresApproval = true`;
 - reasonable item and total-size caps;
 - **one unsafe item rejects the whole result** and the kernel falls to the local floor.
+
+**Documented residuals (inherited from Epic 13A, backstopped by mandatory review-before-write):** the
+deterministic gate does not catch sentence-initial proper nouns, lowercase names, all-uppercase
+organizations (exempted as acronyms), or numbers/dates written entirely as words. These pass the machine
+gate and are removed by the human at the review screen - the machine provides deterministic fact checks
+where they are reliable and never claims perfect named-entity recognition.
 
 The plan is shown beside its real sources; Jake approves meaning and any action. The machine guarantees
 the plan invents no facts and writes nothing.

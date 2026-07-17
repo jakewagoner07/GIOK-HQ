@@ -306,6 +306,93 @@ function Find-DailyPlanSource {
     return $null
 }
 
+# ---- text-fact grounding (Epic 14A) ------------------------------------
+# The machine validates FACTS; the human validates MEANING. A plan item may paraphrase
+# and compress freely, but every HARD FACT in its text/reason - numbers, currency,
+# percentages, times, digit-form dates, and mid-sentence proper nouns - must appear in
+# the CITED source's own content. A valid sourceId can no longer smuggle a fabricated
+# person, company, city, amount, or time ("Call Robert Kessler about the $80,000 wire
+# at 3pm" citing a goal that only says "Grow the agency" now REJECTS the whole result).
+#
+# This REUSES the proven Epic 13A gates (Get-UEGroundingNumbers / Get-UEUngroundedProperNoun
+# in reasoning-local.ps1) rather than building a parallel validation system.
+#
+# DOCUMENTED RESIDUALS (inherited from Epic 13A; each backstopped by the MANDATORY
+# review-before-write screen, where every item sits beside its source and nothing is
+# written without approval):
+#   * sentence-initial proper nouns (a leading capital is grammar, not necessarily a name);
+#   * lowercase proper nouns (only Titlecase tokens are flagged);
+#   * all-uppercase organizations (exempted as acronyms: ROI, IUL, CRM);
+#   * numbers or dates written entirely as words ("eighty thousand", "next Tuesday").
+
+# The authoritative source content for a projected source: its text PLUS every scalar
+# fact the projection already carried (when, amount, dueDate, nextStep, why, from,
+# category, daysAway, ...). Reads the SAME single-source projection - it introduces no
+# second store; it just reads every fact already present on the source entry.
+function Get-DailyPlanSourceContent {
+    param($SourceEntry)
+    if (-not $SourceEntry) { return '' }
+    $parts = @([string]$SourceEntry.text)
+    foreach ($p in $SourceEntry.PSObject.Properties) {
+        if ($p.Name -in @('sourceType', 'sourceId', 'text')) { continue }
+        $v = $p.Value
+        if ($null -eq $v) { continue }
+        if ($v -is [string] -or $v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [bool]) { $parts += [string]$v }
+    }
+    return (($parts | Where-Object { $_ }) -join ' ')
+}
+
+# Ground one item's hard facts (text AND reason) against its cited source content.
+# Returns { ok, reason }. Only FACTS are checked - numbers and mid-sentence proper
+# nouns; wording, tone, and semantic compression are deliberately untouched.
+function Test-DailyPlanItemFacts {
+    param([string]$Text, [string]$Reason, $SourceEntry)
+    $src = Get-DailyPlanSourceContent -SourceEntry $SourceEntry
+    foreach ($field in @([string]$Text, [string]$Reason)) {
+        if ([string]::IsNullOrWhiteSpace($field)) { continue }
+        # FACT: every number/amount/percent/time/digit-date in the field is in the source
+        if (Get-Command Get-UEGroundingNumbers -ErrorAction SilentlyContinue) {
+            $srcNums = @(Get-UEGroundingNumbers $src)
+            foreach ($n in @(Get-UEGroundingNumbers $field)) {
+                if ($srcNums -notcontains $n) { return [pscustomobject]@{ ok = $false; reason = ("fabricated number not in the cited source: {0}" -f $n) } }
+            }
+        }
+        # FACT: every mid-sentence proper noun (person/company/city/month) is in the source
+        if (Get-Command Get-UEUngroundedProperNoun -ErrorAction SilentlyContinue) {
+            $badPn = Get-UEUngroundedProperNoun -Text $field -Source $src
+            if ($badPn) { return [pscustomobject]@{ ok = $false; reason = ("fabricated name not in the cited source: {0}" -f $badPn) } }
+        }
+    }
+    return [pscustomobject]@{ ok = $true; reason = '' }
+}
+
+# Completed-action claim detection (Epic 14A - broadened beyond first person). Tony may
+# RECOMMEND but never implies an action already happened, in first OR third person.
+# Advisory / future / imperative wording stays allowed BY CONSTRUCTION: the verb list is
+# past-tense/participle ONLY, so gerunds ("scheduling"), infinitives ("to protect"), and
+# imperatives ("Prepare", "Add", "Consider") never match - and "nothing is sent until you
+# approve it" passes because "is sent" is neither first-person nor a stative completion.
+$script:DailyPlanDoneVerbs = 'booked|scheduled|sent|created|added|contacted|prepared|protected|completed|drafted|arranged|reserved|submitted|filed|posted|published|emailed|messaged|canceled|cancelled|invited|confirmed|delivered|finished|handled|resolved|closed|moved|updated|saved|deleted|removed'
+$script:DailyPlanDoneNouns = 'meeting|email|e-mail|message|follow[- ]?up|action item|calendar block|client|flight|reply|draft|invite|invitation|appointment|task|note|summary|report|payment|order|booking|call|block'
+function Test-DailyPlanActionClaim {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    $t = [string]$Text
+    $v = $script:DailyPlanDoneVerbs
+    # first person: "I have scheduled", "I've sent", "we created", "I just added"
+    if ($t -match ("(?i)\b(i|we)\b(\s+(have|'ve|had|already|just))?\s+(" + $v + ")\b")) { return $true }
+    # stative / passive completion: "has been scheduled", "was sent", "already added", "now protected"
+    if ($t -match ("(?i)\b(has|have|had|was|were|been|already|now)\b(\s+\w+){0,3}?\s+(" + $v + ")\b")) { return $true }
+    # terse noun + participle: "Meeting scheduled", "Email sent", "Client contacted", "Action item added"
+    if ($t -match ("(?i)\b(" + $script:DailyPlanDoneNouns + ")s?\s+(was\s+|has\s+been\s+|been\s+|already\s+|now\s+)?(" + $v + ")\b")) { return $true }
+    # leading participle: "Booked your flight", "Sent the email", "Scheduled the review"
+    if ($t -match ("(?i)^\s*(" + $v + ")\b")) { return $true }
+    # explicit done markers (incl. the CJK "completed" done-marker, kept ASCII in source)
+    if ($t -match '(?i)\b(done|completed)\s*:') { return $true }
+    if ($t -match (@([char]0x5DF2,[char]0x5B8C,[char]0x6210) -join '')) { return $true }
+    return $false
+}
+
 # ---- overload detection (conservative, evidence-only) ------------------
 # Levels from REAL evidence: calendar density, time-sensitive count, conflicts,
 # do-today count, and available focus time. It counts what is there; it NEVER
@@ -449,10 +536,9 @@ if (Get-Command Register-ReasoningValidator -ErrorAction SilentlyContinue) {
         foreach ($pn in $Output.PSObject.Properties.Name) {
             if ($allowed -notcontains $pn) { return [pscustomobject]@{ valid = $false; reason = ("unexpected section: {0}" -f $pn) } }
         }
-        # every item in every section grounds to a supplied source; caps; approval;
-        # no fabricated action; no auto-action claim.
+        # every item in every section grounds to a supplied source AND to its FACTS;
+        # caps; approval; no fabricated action; no completed-action claim.
         $total = 0
-        $claimRx = '(?i)\b(i (have |''ve )?(created|added|scheduled|sent|moved|updated|saved|booked|completed|done|deleted|removed)|done:|已完成)\b'
         foreach ($sec in $script:DailyPlanSections) {
             foreach ($it in @($Output.$sec)) {
                 if (-not $it) { continue }
@@ -462,9 +548,16 @@ if (Get-Command Register-ReasoningValidator -ErrorAction SilentlyContinue) {
                 if ($text.Length -gt $script:DailyPlanMaxItemChars) { return [pscustomobject]@{ valid = $false; reason = ("item too long in {0}" -f $sec) } }
                 $st = [string]$it.sourceType; $sid = [string]$it.sourceId
                 if ($script:DailyPlanSourceTypes -notcontains $st) { return [pscustomobject]@{ valid = $false; reason = ("unsupported sourceType: {0}" -f $st) } }
-                if (-not (Find-DailyPlanSource -PlanSources $ps -SourceType $st -SourceId $sid)) { return [pscustomobject]@{ valid = $false; reason = ("item cites a source not in the context: {0}:{1}" -f $st, $sid) } }
-                # no provider may claim an action already happened
-                if ($text -match $claimRx -or ([string]$it.reason) -match $claimRx) { return [pscustomobject]@{ valid = $false; reason = ("claims an action occurred: {0}" -f $text) } }
+                # FACT 1: the item cites a REAL supplied source (keep the entry to ground against)
+                $srcEntry = Find-DailyPlanSource -PlanSources $ps -SourceType $st -SourceId $sid
+                if (-not $srcEntry) { return [pscustomobject]@{ valid = $false; reason = ("item cites a source not in the context: {0}:{1}" -f $st, $sid) } }
+                # FACT 2 (Epic 14A): numbers + mid-sentence proper nouns in text/reason must
+                # appear in that source's own content - a valid id cannot conceal fabricated
+                # free text. Paraphrase and compression pass; invented facts reject the whole.
+                $fc = Test-DailyPlanItemFacts -Text $text -Reason ([string]$it.reason) -SourceEntry $srcEntry
+                if (-not $fc.ok) { return [pscustomobject]@{ valid = $false; reason = ("{0}: {1}" -f $fc.reason, $text) } }
+                # no provider may claim an action already happened (first OR third person)
+                if ((Test-DailyPlanActionClaim -Text $text) -or (Test-DailyPlanActionClaim -Text ([string]$it.reason))) { return [pscustomobject]@{ valid = $false; reason = ("claims an action occurred: {0}" -f $text) } }
                 # a proposed action is a WRITE - it must require approval and be an allowed type
                 if ($it.PSObject.Properties.Name -contains 'proposedAction' -and $it.proposedAction) {
                     if (-not [bool]$it.requiresApproval) { return [pscustomobject]@{ valid = $false; reason = ("a proposedAction must set requiresApproval=true: {0}" -f $text) } }

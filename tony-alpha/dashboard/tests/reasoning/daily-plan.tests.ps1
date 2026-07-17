@@ -173,4 +173,77 @@ if ($rec) {
 }
 else { Write-TestNote 'no recommendation to propose in this fixture' }
 
+# =====================================================================
+Write-TestSection 'Epic 14A: text-fact grounding (a valid id cannot conceal fabricated text)'
+# =====================================================================
+# A fixture whose sources carry REAL facts to ground against: a goal that names
+# "Sarah Chen" and the number 500, plus the standard non-negotiable.
+$fx = [pscustomobject]@{
+    generatedAt = '2026-07-16 09:00:00'
+    time        = [pscustomobject]@{ date = '2026-07-16'; dayOfWeek = 'Thursday'; hour = 9; partOfDay = 'morning'; isWeekend = $false }
+    activeGoals = @(
+        [pscustomobject]@{ id = 'FG-001'; title = 'Grow the agency'; nextStep = ''; domain = 'agency'; targetDate = '' },
+        [pscustomobject]@{ id = 'FG-002'; title = 'Follow up with Sarah Chen'; nextStep = 'Reach 500 active policies'; domain = 'agency'; targetDate = '' }
+    )
+    nonNegotiables = @([pscustomobject]@{ id = 'NN-001'; title = 'Sunday dinner with family' })
+}
+$fps = Get-DailyPlanSources -Context $fx -Now ([datetime]'2026-07-16 09:00')
+function FPlan { param($Text, $SourceType = 'goal', $SourceId = 'FG-001', $Reason = 'ok') $p = New-EmptyDailyPlan -Now ([datetime]'2026-07-16 09:00') -Engine 'x' -ContextVersion ([string]$fps.contextVersion); $p.topOutcomes = @((New-DailyPlanItem -Text $Text -SourceType $SourceType -SourceId $SourceId -Reason $Reason)); return $p }
+function FKV { param($p) (Test-ReasoningOutput -TaskId 'briefing.compose' -Result (New-ReasoningResult -TaskId 'briefing.compose' -Ok $true -Output $p -Confidence 0.8) -Request (New-ReasoningRequest -TaskId 'briefing.compose' -Payload $fps)).valid }
+
+# THE Epic 14 CTO-review gap example: real goal id, fabricated person + amount + time.
+Assert-True (-not (FKV (FPlan 'Call Robert Kessler about the $80,000 wire at 3pm'))) 'GAP CLOSED: real goal id + fabricated person/amount/time -> REJECT'
+
+# --- required REJECT cases (a fabricated fact riding a valid source id) ---
+Assert-True (-not (FKV (FPlan 'Meet Robert about the renewal')))   'real id + fabricated PERSON -> reject'
+Assert-True (-not (FKV (FPlan 'Prep the Acme partnership')))        'real id + fabricated COMPANY -> reject'
+Assert-True (-not (FKV (FPlan 'Fly to Chicago for the pitch')))     'real id + fabricated CITY -> reject'
+Assert-True (-not (FKV (FPlan 'Chase the $80,000 wire')))           'real id + fabricated AMOUNT -> reject'
+Assert-True (-not (FKV (FPlan 'Push for a 25% increase')))          'real id + fabricated PERCENTAGE -> reject'
+Assert-True (-not (FKV (FPlan 'Be ready by 3:45 today')))          'real id + fabricated TIME -> reject'
+Assert-True (-not (FKV (FPlan 'File it by 09/30 sharp')))           'real id + fabricated DIGIT-FORM DATE -> reject'
+Assert-True (-not (FKV (FPlan 'Wrap this before December')))        'real id + fabricated MONTH NAME -> reject'
+# valid source + third-person completed-action claim
+Assert-True (-not (FKV (FPlan 'Meeting scheduled with the team')))  'valid id + completed-action claim (Meeting scheduled) -> reject'
+Assert-True (-not (FKV (FPlan 'Email sent to the client')))         'valid id + completed-action claim (Email sent) -> reject'
+Assert-True (-not (FKV (FPlan 'Booked your flight for the trip')))  'valid id + completed-action claim (leading Booked) -> reject'
+# one valid item + one unsafe item -> the WHOLE result rejects
+$mix14a = New-EmptyDailyPlan -Now ([datetime]'2026-07-16 09:00') -Engine 'x' -ContextVersion ([string]$fps.contextVersion)
+$mix14a.topOutcomes = @((New-DailyPlanItem -Text 'Grow the agency' -SourceType 'goal' -SourceId 'FG-001' -Reason 'ok'))
+$mix14a.protect     = @((New-DailyPlanItem -Text 'Sunday dinner with family' -SourceType 'nonNegotiable' -SourceId 'NN-001' -Reason 'ok'))
+$mix14a.followUps   = @((New-DailyPlanItem -Text 'Wire the $80,000 today' -SourceType 'goal' -SourceId 'FG-001' -Reason 'ok'))
+Assert-True (-not (FKV $mix14a)) 'one valid + one unsafe item -> WHOLE result rejects (no partial merge)'
+
+# --- required PASS cases (facts by machine; meaning by the human) ---
+Assert-True (FKV (FPlan 'Grow the agency'))                                     'grounded, fact-free -> pass'
+Assert-True (FKV (FPlan 'Reach out to Sarah Chen on renewals' 'goal' 'FG-002')) 'grounded NAME (Sarah Chen in the source) -> pass'
+Assert-True (FKV (FPlan 'Push toward 500 active policies' 'goal' 'FG-002'))     'grounded NUMBER (500 in the source) -> pass'
+Assert-True (FKV (FPlan 'Advance the agency this quarter'))                     'semantic compression / paraphrase -> pass'
+Assert-True (FKV (FPlan 'Protect Sunday dinner tonight' 'nonNegotiable' 'NN-001')) 'grounded proper noun (Sunday) + wording change -> pass'
+$recOk14a = New-EmptyDailyPlan -Now ([datetime]'2026-07-16 09:00') -Engine 'x' -ContextVersion ([string]$fps.contextVersion)
+$recOk14a.topOutcomes = @((New-DailyPlanItem -Text 'Grow the agency' -SourceType 'goal' -SourceId 'FG-001' -Reason 'ok'))
+$recOk14a.recommendations = @((New-DailyPlanItem -Text 'Consider preparing a reply' -SourceType 'goal' -SourceId 'FG-001' -Reason 'A timely reply helps; nothing is sent until you approve it.' -RequiresApproval $true -ProposedAction (New-DailyPlanAction -Type 'prepare-message' -Title 'Prepare a reply')))
+Assert-True (FKV $recOk14a) 'write-producing proposal: requiresApproval=true + advisory wording -> pass'
+$recNo14a = New-EmptyDailyPlan -Now ([datetime]'2026-07-16 09:00') -Engine 'x' -ContextVersion ([string]$fps.contextVersion)
+$recNo14a.recommendations = @((New-DailyPlanItem -Text 'Follow up with Sarah Chen when you can' -SourceType 'goal' -SourceId 'FG-002' -Reason 'ok' -RequiresApproval $false))
+Assert-True (FKV $recNo14a) 'non-write recommendation: requiresApproval=false -> pass'
+
+# --- END-TO-END through the kernel + Claude driver mock: fabricated free text on a
+#     real id is rejected whole and the deterministic floor answers (engine=local). ---
+Set-ReasoningDeadlineEnforcement -Enabled $false
+Set-ClaudeUnderstandingConfiguredOverride $true
+Set-ExecutiveReasoningConsent -Granted $true
+Set-ClaudePlanCallOverride ({ param($p) PlanJson -Top @((PItem 'Call Robert about the $80,000 wire' 'goal' 'G-001')) }.GetNewClosure())
+$e2e14a = Invoke-ReasoningTask -TaskId 'briefing.compose' -Payload $ps
+Assert-True ($e2e14a.ok -and $e2e14a.engine -eq 'local') 'END-TO-END: provider fabricates free text on a real id -> whole reject -> local floor serves'
+Clear-ExecutiveReasoningConsent; Clear-ClaudeUnderstandingOverrides; Set-ClaudePlanCallOverride $null
+Set-ReasoningDeadlineEnforcement -Enabled $true
+
+# --- LABELLED KNOWN LIMITATIONS (Epic 13A residuals; documented in daily-plan.ps1 and
+#     backstopped by the MANDATORY review-before-write screen). These intentionally PASS
+#     the deterministic machine gate - the human removes them at review. ---
+Assert-True (FKV (FPlan 'Robert should get a call'))            'KNOWN LIMITATION: sentence-initial proper noun (Robert leads) is not caught deterministically'
+Assert-True (FKV (FPlan 'Ship it for eighty thousand dollars')) 'KNOWN LIMITATION: an amount written entirely as WORDS is not caught deterministically'
+Assert-True (FKV (FPlan 'Sync with the ACME team'))            'KNOWN LIMITATION: an all-uppercase organization is exempted as an acronym'
+
 Complete-TestFile 'daily-plan'

@@ -577,14 +577,27 @@ function Invoke-ClaudePlanCompose {
     $plan = ConvertFrom-ClaudePlan -RawText ([string]$raw) -PlanSources $ps
     if (-not $plan) { $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'malformed'; errorClass = 'malformed'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 } }
     # driver-side grounding sweep (truthful fallbackReason; the kernel validator is
-    # still the authority and re-checks everything).
+    # still the authority and re-checks everything). Mirrors the kernel gates: source
+    # membership, text-fact grounding (Epic 14A), and completed-action claims - so the
+    # UI's fallbackReason is 'grounding' rather than a generic 'invalid-output'.
     $count = 0
     foreach ($sec in @('topOutcomes', 'protect', 'followUps', 'canWait', 'recommendations')) {
         foreach ($it in @($plan.$sec)) {
             if (-not $it) { continue }
             $count++
             if (Get-Command Find-DailyPlanSource -ErrorAction SilentlyContinue) {
-                if (-not (Find-DailyPlanSource -PlanSources $ps -SourceType ([string]$it.sourceType) -SourceId ([string]$it.sourceId))) {
+                $srcEntry = Find-DailyPlanSource -PlanSources $ps -SourceType ([string]$it.sourceType) -SourceId ([string]$it.sourceId)
+                if (-not $srcEntry) {
+                    $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'grounding'; errorClass = 'grounding'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
+                }
+                if (Get-Command Test-DailyPlanItemFacts -ErrorAction SilentlyContinue) {
+                    if (-not (Test-DailyPlanItemFacts -Text ([string]$it.text) -Reason ([string]$it.reason) -SourceEntry $srcEntry).ok) {
+                        $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'grounding'; errorClass = 'grounding'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
+                    }
+                }
+            }
+            if (Get-Command Test-DailyPlanActionClaim -ErrorAction SilentlyContinue) {
+                if ((Test-DailyPlanActionClaim -Text ([string]$it.text)) -or (Test-DailyPlanActionClaim -Text ([string]$it.reason))) {
                     $sw.Stop(); return @{ ok = $false; reasonCode = 'invalid-output'; fallbackReason = 'grounding'; errorClass = 'grounding'; durationMs = $sw.ElapsedMilliseconds; itemCount = 0 }
                 }
             }

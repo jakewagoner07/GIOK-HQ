@@ -156,19 +156,28 @@ foreach ($cls in @('401', '403', '429', '500', 'network')) {
     $att = Get-ClaudeUnderstandingLastAttempt
     Assert-True ($r.engine -eq 'local' -and $att.status -eq 'fallback' -and $att.fallbackReason) ("HTTP {0}: degrades calmly to floor (fallbackReason='{1}', no content)" -f $cls, $att.fallbackReason)
 }
-# and the exact status->class mapping the driver relies on (claude-provider logic)
-if (Get-Command Get-ClaudeErrorInfo -ErrorAction SilentlyContinue) {
-    function New-HttpError { param([int]$Code)
-        $ex = New-Object System.Exception ("http $Code")
-        $ex | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $Code }) -Force
-        return (New-Object System.Management.Automation.ErrorRecord ($ex, 'x', 'NotSpecified', $null))
-    }
-    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 401)).class -eq 'auth-failed') '401 classifies as auth-failed'
-    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 403)).class -eq 'auth-failed') '403 classifies as auth-failed'
-    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 429)).class -eq 'rate-limited') '429 classifies as rate-limited'
-    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 500)).class -eq 'server-error') '500 classifies as server-error'
+# The exact status->class mapping the driver relies on (claude-provider logic). This
+# MUST be loaded and exercised - if claude-provider failed to load, the error-class
+# contract is UNVERIFIED, so FAIL LOUDLY here rather than skip with a note.
+Assert-True ([bool](Get-Command Get-ClaudeErrorInfo -ErrorAction SilentlyContinue)) 'claude-provider LOADED: Get-ClaudeErrorInfo present (error-class mapping is exercised, not skipped)'
+function New-HttpError { param([int]$Code)
+    $ex = New-Object System.Exception ("http $Code")
+    $ex | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $Code }) -Force
+    return (New-Object System.Management.Automation.ErrorRecord ($ex, 'x', 'NotSpecified', $null))
 }
-else { Write-TestNote 'Get-ClaudeErrorInfo not loaded in this harness; class mapping is claude-provider''s tested logic' }
+# a transport failure carries no HTTP Response/StatusCode at all
+function New-NetError {
+    $ex = New-Object System.Exception 'connection reset by peer'
+    return (New-Object System.Management.Automation.ErrorRecord ($ex, 'x', 'NotSpecified', $null))
+}
+if (Get-Command Get-ClaudeErrorInfo -ErrorAction SilentlyContinue) {
+    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 401)).class -eq 'auth-failed')  '401 -> auth-failed'
+    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 403)).class -eq 'auth-failed')  '403 -> auth-failed'
+    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 429)).class -eq 'rate-limited') '429 -> rate-limited'
+    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 500)).class -eq 'server-error') '500 -> server-error'
+    Assert-True ((Get-ClaudeErrorInfo (New-HttpError 529)).class -eq 'server-error') '529 -> server-error'
+    Assert-True ((Get-ClaudeErrorInfo (New-NetError)).class -eq 'network-error')     'network failure (no HTTP status) -> network-error'
+}
 
 # --- attribution truthfulness ---
 Set-MockClaude (New-ClaudeJson -Goals @((New-ClaudeItem 'Hit 500 policies by summer')))
@@ -206,18 +215,22 @@ function New-BoundedMock {
 function Req { New-ReasoningRequest -TaskId 'understanding.extract' -Payload (New-TestState) -MaxMs 200 }
 
 # timeout -> abandoned, floor, fallbackReason=timeout
+# the provider sleeps far past the deadline AND flips a shared flag when it finally
+# completes; the assertions below read that flag/state, never an absolute clock.
+$script:SlowProviderDone = $false
 $slow = New-BoundedMock 'slow' { param($j, $d) Start-Sleep -Milliseconds 1500; return @{ ok = $true; output = [pscustomobject]@{ x = 1 }; confidence = 0.9; clarifications = @(); reasonCode = 'ok'; requestId = 'x' } }
 Register-ReasoningProvider -Provider $slow
-$sw = [Diagnostics.Stopwatch]::StartNew()
 $r = Invoke-ReasoningTask -TaskId 'understanding.extract' -Payload (New-TestState) -MaxMs 150
-$sw.Stop()
-Assert-True ($r.engine -eq 'local' -and $r.fallbackReason -eq 'timeout') "TIMEOUT -> floor with fallbackReason=timeout"
-# well below the provider's 1500ms completion (margin for runspace-creation overhead
-# under full-suite load) - the point is the caller does NOT wait for the provider.
-Assert-True ($sw.ElapsedMilliseconds -lt 1200) "caller UNBLOCKED at the deadline, not at provider completion ($($sw.ElapsedMilliseconds)ms << 1500ms)"
-
-# late completion after timeout is discarded (never overwrites the floor result)
-Assert-True ((Get-ReasoningWorkerStats).inFlight -ge 1) 'a late/abandoned worker is tracked, its result never read (LATE COMPLETION discarded)'
+# BEHAVIOR-BASED (no fragile absolute-ms threshold): the caller comes back at the
+# deadline with the floor's answer + fallbackReason=timeout ...
+Assert-True ($r.engine -eq 'local' -and $r.fallbackReason -eq 'timeout') 'TIMEOUT -> floor with fallbackReason=timeout'
+# ... AND the 1500ms provider is still running at that moment (an in-flight abandoned
+# worker), which is only possible if the caller did NOT wait for it to complete. Had
+# the caller blocked to completion, nothing would be in flight.
+Assert-True ((Get-ReasoningWorkerStats).inFlight -ge 1) 'caller UNBLOCKED before the provider completes (its worker is still in-flight)'
+# ... AND the late result never overwrites the floor: the returned output is the floor
+# model, not the provider's sentinel { x = 1 }.
+Assert-True ($r.engine -eq 'local' -and -not ($r.output.PSObject.Properties.Name -contains 'x')) 'LATE COMPLETION discarded: floor output returned, provider result never read'
 Unregister-ReasoningProvider -Name 'slow'
 
 # stale requestId discarded
