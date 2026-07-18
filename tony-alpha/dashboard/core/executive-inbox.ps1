@@ -270,7 +270,7 @@ function Get-InboxSummary {
 # APPROVE: the OWNING module writes the real record, then the proposal leaves the
 # inbox (no second copy). Never auto-called - only from Jake's explicit action.
 function Approve-InboxItem {
-    param([Parameter(Mandatory)][string]$Id)
+    param([Parameter(Mandatory)][string]$Id, [string]$ApprovedBy = 'owner')
     $item = Get-InboxItemById -Id $Id
     if (-not $item) { return [pscustomobject]@{ ok = $false; message = 'Proposal not found.' } }
     if ($item.status -ne 'pending') { return [pscustomobject]@{ ok = $false; message = 'Proposal is not pending.' } }
@@ -284,7 +284,16 @@ function Approve-InboxItem {
     if (-not (Get-Command Invoke-ProposalExecution -ErrorAction SilentlyContinue)) {
         return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = 'The Action Engine is not available. Nothing was changed; the proposal is still pending.' }
     }
-    $exec = Invoke-ProposalExecution -Proposal $item
+    # approval metadata is grounded in THIS user approval event - who, when, from
+    # where, and a fingerprint of the proposal exactly as approved. The engine
+    # rejects execution if the proposal no longer matches the fingerprint.
+    $approval = [pscustomobject]@{
+        approvedBy  = $ApprovedBy
+        approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        source      = 'executive-inbox'
+        fingerprint = (Get-ProposalFingerprint -Proposal $item)
+    }
+    $exec = Invoke-ProposalExecution -Proposal $item -Approval $approval
     if ($exec.ok) {
         [void](Remove-InboxItem -Id $Id)   # data now lives in its owner; no copy kept
         return [pscustomobject]@{ ok = $true; destination = $exec.destination; newId = $exec.newId; message = $exec.message; executionId = $exec.executionId }

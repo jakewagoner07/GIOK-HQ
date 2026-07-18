@@ -48,22 +48,92 @@ $script:ExecNonTerminal = @('pending', 'validating', 'executing', 'verifying')
 function Get-ExecutionStates { return $script:ExecStates }
 
 # ---- durable audit store (gitignored; executions, not business data) ---
+# ARCHITECTURE (Epic 15.1): ATOMIC SNAPSHOT with last-known-good backup - the
+# smallest safe change from the existing whole-file JSON store. Every save writes
+# a temp file and atomically replaces the primary ([IO.File]::Replace), which
+# also refreshes execution_log.json.bak as the last-known-good copy. A corrupt
+# primary recovers from the backup and NEVER silently erases history; if BOTH are
+# unreadable the store FAILS CLOSED: reads report empty, and every write path
+# throws - so no execution can proceed unaudited. Writes are serialized by a
+# named mutex. Retention is bounded: the newest terminal records are kept up to
+# a cap; non-terminal records are NEVER pruned.
 function Get-ExecutionLogPath { return (Join-Path $PSScriptRoot '..\..\execution_log.json') }
-function Get-ExecutionLog {
-    $p = Get-ExecutionLogPath; $d = $null
-    if (Test-Path $p) { try { $d = Get-Content -Path $p -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $d = $null } }
-    if (-not $d) { $d = [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.1'; updated = '' }; executions = @() } }
-    if (-not ($d.PSObject.Properties.Name -contains 'executions') -or $null -eq $d.executions) { $d | Add-Member -NotePropertyName executions -NotePropertyValue @() -Force }
-    return $d
+$script:ExecutionLogRetention = 500     # newest terminal records kept; non-terminal never pruned
+$script:ExecLogMutex = $null
+function Get-ExecLogMutex {
+    if (-not $script:ExecLogMutex) { $script:ExecLogMutex = New-Object System.Threading.Mutex($false, 'Local\GiokExecutionLog') }
+    return $script:ExecLogMutex
 }
+function Read-ExecutionLogFile {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $null }
+    $raw = $null
+    try { $raw = Get-Content -Path $Path -Raw -Encoding UTF8 } catch { return $null }
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+    try {
+        $d = $raw | ConvertFrom-Json
+        if ($d -and ($d.PSObject.Properties.Name -contains 'executions')) { return $d }
+        return $null
+    }
+    catch { return $null }
+}
+function New-EmptyExecutionLog { return [pscustomobject]@{ meta = [pscustomobject]@{ version = '1.1'; updated = '' }; executions = @() } }
+# 'ok' | 'backup' (primary corrupt, recovered) | 'fresh' (no log yet) | 'failed'
+# (primary present but unreadable AND no readable backup -> fail closed).
+function Get-ExecutionLogState {
+    $p = Get-ExecutionLogPath
+    $hasPrimary = (Test-Path $p) -and -not [string]::IsNullOrWhiteSpace((Get-Content -Path $p -Raw -Encoding UTF8 -ErrorAction SilentlyContinue))
+    if (Read-ExecutionLogFile -Path $p) { return 'ok' }
+    if (Read-ExecutionLogFile -Path ($p + '.bak')) { return 'backup' }
+    if ($hasPrimary) { return 'failed' }
+    return 'fresh'
+}
+# Returns the log, or $NULL when the store is fail-closed (both copies unreadable).
+# Write paths treat $null as a hard stop; read paths degrade to empty.
+function Get-ExecutionLog {
+    $p = Get-ExecutionLogPath
+    $d = Read-ExecutionLogFile -Path $p
+    if ($d) { return $d }
+    $b = Read-ExecutionLogFile -Path ($p + '.bak')
+    if ($b) { return $b }   # corrupt/missing primary, healthy backup: history preserved
+    $state = Get-ExecutionLogState
+    if ($state -eq 'failed') { return $null }
+    $fresh = New-EmptyExecutionLog
+    if (-not ($fresh.PSObject.Properties.Name -contains 'executions') -or $null -eq $fresh.executions) { $fresh | Add-Member -NotePropertyName executions -NotePropertyValue @() -Force }
+    return $fresh
+}
+# Atomic, serialized, bounded save. THROWS on any failure (mutex timeout, disk,
+# fail-closed store) - callers treat a failed save as a hard stop, which is what
+# makes "no unaudited side effect" true.
 function Save-ExecutionLog {
     param([Parameter(Mandatory)] $Data)
     $Data.meta.updated = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    ($Data | ConvertTo-Json -Depth 12) | Set-Content -Path (Get-ExecutionLogPath) -Encoding UTF8
+    # retention: never prune non-terminal; keep the NEWEST terminal up to the cap
+    $all = @($Data.executions)
+    if ($all.Count -gt $script:ExecutionLogRetention) {
+        $nonTerminal = @($all | Where-Object { $script:ExecTerminal -notcontains [string]$_.state })
+        $terminal = @($all | Where-Object { $script:ExecTerminal -contains [string]$_.state })
+        $keepTerminal = [math]::Max(0, $script:ExecutionLogRetention - $nonTerminal.Count)
+        if ($terminal.Count -gt $keepTerminal) { $terminal = @($terminal | Select-Object -Last $keepTerminal) }
+        $Data.executions = @(@($nonTerminal) + @($terminal) | Sort-Object { [string]$_.id })
+    }
+    $mtx = Get-ExecLogMutex
+    $got = $false
+    try { $got = $mtx.WaitOne(3000) } catch [System.Threading.AbandonedMutexException] { $got = $true }
+    if (-not $got) { throw 'execution log is locked; save refused (fail closed)' }
+    try {
+        $p = Get-ExecutionLogPath; $tmp = $p + '.tmp'; $bak = $p + '.bak'
+        ($Data | ConvertTo-Json -Depth 12) | Set-Content -Path $tmp -Encoding UTF8
+        if (Test-Path $p) { [System.IO.File]::Replace($tmp, $p, $bak) }
+        else { Move-Item -Path $tmp -Destination $p -Force }
+    }
+    finally { try { $mtx.ReleaseMutex() } catch { } }
 }
 function Get-Executions {
     param([string]$State = 'all')
-    $all = @((Get-ExecutionLog).executions)
+    $log = Get-ExecutionLog
+    if (-not $log) { return @() }   # fail-closed store: reads degrade to empty; writes are blocked
+    $all = @($log.executions)
     if ($State -eq 'all') { return $all }
     return @($all | Where-Object { $_.state -eq $State })
 }
@@ -83,6 +153,7 @@ function Get-NextExecutionId {
 function New-ExecutionRecord {
     param([Parameter(Mandatory)] $Proposal)
     $log = Get-ExecutionLog
+    if (-not $log) { throw 'execution log unreadable; refusing to execute (fail closed)' }
     $id = Get-NextExecutionId -Log $log
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $rec = [pscustomobject]@{
@@ -99,6 +170,7 @@ function New-ExecutionRecord {
         updatedAt           = $now
         attempts            = 0
         idempotencyKey      = (Get-ExecutionIdempotencyKey -Proposal $Proposal)
+        approval            = $null   # { approvedBy; approvedAt; source; fingerprint } - grounded in the real approval event
         intent              = $null   # persisted BEFORE any side effect (15.1)
         result              = $null   # { ok; destination; newId; message }
         history             = @([pscustomobject]@{ state = 'pending'; at = $now; detail = 'execution created from approved proposal' })
@@ -114,6 +186,7 @@ function Update-ExecutionRecord {
     param([Parameter(Mandatory)] $Record)
     $Record.updatedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $log = Get-ExecutionLog
+    if (-not $log) { throw 'execution log unreadable; refusing to record (fail closed)' }
     $found = $false
     $log.executions = @(@($log.executions) | ForEach-Object { if ($_.id -eq $Record.id) { $found = $true; $Record } else { $_ } })
     if (-not $found) { $log.executions = @($log.executions) + $Record }
@@ -157,6 +230,7 @@ function Set-ExecutionState {
     $Record.history = @($Record.history) + [pscustomobject]@{ state = $State; at = $now; detail = [string]$Detail }
     # upsert into the log by id
     $log = Get-ExecutionLog
+    if (-not $log) { throw 'execution log unreadable; refusing to transition (fail closed)' }
     $found = $false
     $log.executions = @(@($log.executions) | ForEach-Object { if ($_.id -eq $Record.id) { $found = $true; $Record } else { $_ } })
     if (-not $found) { $log.executions = @($log.executions) + $Record }
@@ -240,28 +314,59 @@ function ConvertTo-ExecNormalizedTitle {
 #                 (documented limitation: a crash before the result persist
 #                 recovers to failed/retriable - safe, never a double write)
 $script:ExecFollowUpTypes = @('calendar', 'crm', 'communication', 'document')
+# Action-specific validation (Epic 15.1). Runs BEFORE the intent is persisted and
+# therefore before any owner write: a malformed payload fails validation, the
+# proposal stays pending, and no store is touched.
+$script:ExecAllowedPriorities = @('low', 'medium', 'high')
+# The normalized proposal schema. Unknown fields REJECT (not silently ignored):
+# a payload carrying properties the engine does not understand is not executed.
+$script:ExecAllowedProposalFields = @('id', 'discoveredBy', 'type', 'title', 'description',
+    'proposedDestination', 'evidence', 'confidence', 'status', 'created', 'source', 'sourceId')
+function Test-ExecTargetActionItem {
+    param([string]$Id)
+    if ([string]::IsNullOrWhiteSpace($Id)) { return $false }
+    if (-not (Get-Command Get-ActionItemsData -ErrorAction SilentlyContinue)) { return $false }
+    return (@((Get-ActionItemsData).items | Where-Object { [string]$_.id -eq $Id }).Count -gt 0)
+}
 function New-ExecutionIntent {
     param([Parameter(Mandatory)] $Proposal)
     $type = [string]$Proposal.type
     $title = [string]$Proposal.title
     $value = if ($Proposal.description) { [string]$Proposal.description } else { [string]$Proposal.proposedDestination }
+    # unknown proposal fields reject
+    foreach ($pn in $Proposal.PSObject.Properties.Name) {
+        if ($script:ExecAllowedProposalFields -notcontains $pn) {
+            return [pscustomobject]@{ valid = $false; reason = ("unsupported proposal field: {0}" -f $pn); intent = $null }
+        }
+    }
     $mk = { param($h) [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h } }
     switch ($type) {
         'reminder' {
+            # a valid, unambiguous timestamp with EXPLICIT timezone semantics: the
+            # intent stores ISO-8601 with the local UTC offset, so "when" survives
+            # restarts, DST edges, and future connector round-trips unambiguously.
+            $dt = [datetime]::MinValue
+            if (-not [datetime]::TryParse($value, [ref]$dt)) { return [pscustomobject]@{ valid = $false; reason = ("invalid reminder timestamp: '{0}'" -f $value); intent = $null } }
+            $when = $dt.ToString('yyyy-MM-ddTHH:mm:sszzz')
             $newId = if (Get-Command Get-NextActionId -ErrorAction SilentlyContinue) { Get-NextActionId -Data (Get-ActionItemsData) } else { $null }
             if (-not $newId) { return [pscustomobject]@{ valid = $false; reason = 'Action Items owner unavailable'; intent = $null } }
-            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = $newId; newId = $newId; field = 'remindAt'; expected = $value; title = $title; create = $true })
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = $newId; newId = $newId; field = 'remindAt'; expected = $when; title = $title; create = $true })
         }
         'set-priority' {
-            if (-not $Proposal.sourceId) { return [pscustomobject]@{ valid = $false; reason = 'no target action item id on the proposal'; intent = $null } }
-            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'priority'; expected = $value; title = $title; create = $false })
+            $pv = ([string]$value).Trim().ToLower()
+            if ($script:ExecAllowedPriorities -notcontains $pv) { return [pscustomobject]@{ valid = $false; reason = ("invalid priority '{0}' (allowed: {1})" -f $value, ($script:ExecAllowedPriorities -join ', ')); intent = $null } }
+            if (-not (Test-ExecTargetActionItem -Id ([string]$Proposal.sourceId))) { return [pscustomobject]@{ valid = $false; reason = 'target action item not found'; intent = $null } }
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'priority'; expected = $pv; title = $title; create = $false })
         }
         'defer' {
-            if (-not $Proposal.sourceId) { return [pscustomobject]@{ valid = $false; reason = 'no target action item id on the proposal'; intent = $null } }
-            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'deferredUntil'; expected = $value; title = $title; create = $false })
+            $dt = [datetime]::MinValue
+            if (-not [datetime]::TryParse($value, [ref]$dt)) { return [pscustomobject]@{ valid = $false; reason = ("invalid defer date: '{0}'" -f $value); intent = $null } }
+            if ($dt.Date -lt (Get-Date).Date) { return [pscustomobject]@{ valid = $false; reason = ("defer date is in the past: '{0}'" -f $value); intent = $null } }
+            if (-not (Test-ExecTargetActionItem -Id ([string]$Proposal.sourceId))) { return [pscustomobject]@{ valid = $false; reason = 'target action item not found'; intent = $null } }
+            return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'deferredUntil'; expected = $dt.ToString('yyyy-MM-dd'); title = $title; create = $false })
         }
         'archive' {
-            if (-not $Proposal.sourceId) { return [pscustomobject]@{ valid = $false; reason = 'no target action item id on the proposal'; intent = $null } }
+            if (-not (Test-ExecTargetActionItem -Id ([string]$Proposal.sourceId))) { return [pscustomobject]@{ valid = $false; reason = 'target action item not found'; intent = $null } }
             return (& $mk @{ mode = 'field'; destination = 'Action Items'; targetId = [string]$Proposal.sourceId; newId = ''; field = 'archived'; expected = 'True'; title = $title; create = $false })
         }
         { $_ -eq 'task' -or $script:ExecFollowUpTypes -contains $_ } {
@@ -512,8 +617,22 @@ function Resolve-ExecutionByVerification {
 # (from intent) -> terminal. Never throws: any failure transitions the record to
 # 'failed' with a truthful reason and returns a calm result.
 function Invoke-ProposalExecution {
-    param([Parameter(Mandatory)] $Proposal)
+    param([Parameter(Mandatory)] $Proposal, $Approval = $null)
     if (-not $Proposal -or -not $Proposal.id) { return [pscustomobject]@{ ok = $false; message = 'No proposal to execute.'; executionId = $null } }
+
+    # ---- approval-first (Epic 15.1): the approval must be REAL and CURRENT ----
+    # Execution requires explicit approval metadata whose fingerprint matches the
+    # proposal AS IT IS NOW. A missing approval fails safely (a direct call cannot
+    # bypass the approval path); a stale fingerprint means the proposal was edited
+    # after it was approved - the old approval no longer covers it.
+    if (-not $Approval -or -not ($Approval.PSObject.Properties.Name -contains 'fingerprint')) {
+        return [pscustomobject]@{ ok = $false; message = 'No approval metadata; execution requires an explicit user approval.'; executionId = $null }
+    }
+    $fpNow = $null
+    try { $fpNow = Get-ProposalFingerprint -Proposal $Proposal } catch { $fpNow = $null }
+    if (-not $fpNow -or ([string]$Approval.fingerprint) -ne $fpNow) {
+        return [pscustomobject]@{ ok = $false; message = 'The proposal changed after it was approved; approve the current version to execute it.'; executionId = $null }
+    }
 
     # ---- idempotency: one proposal -> at most one active/successful execution ----
     $key = $null
@@ -559,6 +678,12 @@ function Invoke-ProposalExecution {
         return [pscustomobject]@{ ok = $false; message = $iv.reason; executionId = $rec.id }
     }
     $rec.intent = $iv.intent
+    $rec.approval = [pscustomobject]@{
+        approvedBy  = [string]$Approval.approvedBy
+        approvedAt  = [string]$Approval.approvedAt
+        source      = [string]$Approval.source
+        fingerprint = [string]$Approval.fingerprint
+    }
     try { [void](Update-ExecutionRecord -Record $rec) }
     catch {
         try { [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'could not persist the execution intent') } catch { }

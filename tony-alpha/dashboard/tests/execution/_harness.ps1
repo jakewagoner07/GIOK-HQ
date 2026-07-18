@@ -102,3 +102,18 @@ function New-TestProposal {
     return (Add-InboxProposal -DiscoveredBy 'Tony' -Type $Type -Title $Title -Description $Description -Source $Source -SourceId $SourceId)
 }
 function Get-ExecHistoryStates { param([string]$Id) return @((Get-ExecutionById -Id $Id).history | ForEach-Object { [string]$_.state }) }
+# grounded approval metadata for DIRECT Invoke-ProposalExecution calls (the engine
+# requires explicit approval whose fingerprint matches the proposal as-is).
+function New-TestApproval {
+    param([Parameter(Mandatory)] $Proposal, [string]$By = 'test-owner')
+    return [pscustomobject]@{
+        approvedBy  = $By
+        approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        source      = 'test'
+        fingerprint = (Get-ProposalFingerprint -Proposal $Proposal)
+    }
+}
+function Invoke-TestExecution {
+    param([Parameter(Mandatory)] $Proposal)
+    return (Invoke-ProposalExecution -Proposal $Proposal -Approval (New-TestApproval -Proposal $Proposal))
+}

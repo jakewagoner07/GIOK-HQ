@@ -28,7 +28,7 @@ Write-TestSection 'verification is REQUIRED before success'
 # =====================================================================
 # a handler that claims success with an id the verifier will never find
 Register-ActionHandler -Type 'ghost' -Execute { param($rec) [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = 'AI-NEVER'; message = 'claims done' } } -Verify { param($rec) Test-ExecutionApplied -Destination 'Action Items' -NewId ([string]$rec.result.newId) }
-$g = Invoke-ProposalExecution -Proposal ([pscustomobject]@{ id = 'P-ghost'; type = 'ghost'; title = 'Ghost'; description = ''; source = ''; sourceId = ''; proposedDestination = '' })
+$g = Invoke-TestExecution -Proposal ([pscustomobject]@{ id = 'P-ghost'; type = 'ghost'; title = 'Ghost'; description = ''; source = ''; sourceId = ''; proposedDestination = '' })
 Assert-True (-not $g.ok) 'an unverifiable execution returns ok=false'
 Assert-True ((Get-ExecutionById -Id $g.executionId).state -eq 'failed') 'an unverifiable execution ends in failed'
 $gs = Get-ExecHistoryStates -Id $g.executionId
@@ -36,7 +36,7 @@ Assert-True (($gs -contains 'verifying') -and (-not ($gs -contains 'succeeded'))
 
 # a handler whose execute THROWS -> failed, engine never throws
 Register-ActionHandler -Type 'boom' -Execute { param($rec) throw 'kaboom' } -Verify { param($rec) $true }
-$b = Invoke-ProposalExecution -Proposal ([pscustomobject]@{ id = 'P-boom'; type = 'boom'; title = 'Boom'; description = ''; source = ''; sourceId = ''; proposedDestination = '' })
+$b = Invoke-TestExecution -Proposal ([pscustomobject]@{ id = 'P-boom'; type = 'boom'; title = 'Boom'; description = ''; source = ''; sourceId = ''; proposedDestination = '' })
 Assert-True ((-not $b.ok) -and (Get-ExecutionById -Id $b.executionId).state -eq 'failed') 'a throwing handler fails calmly (engine never throws)'
 
 # =====================================================================
@@ -62,7 +62,7 @@ Write-TestSection 'local action verbs (Action Items) - each execute + verify'
 $aid = (New-TestActionItems -Count 1 -Titles @('Existing task'))[0]
 # reminder (create)
 $rem = Approve-InboxItem -Id (New-TestProposal -Type 'reminder' -Title 'Renew license' -Description '2026-08-01').id
-Assert-True ($rem.ok -and (Get-ActionItemField -Id $rem.newId -Field 'remindAt') -eq '2026-08-01') 'reminder: creates an item with a verified remindAt'
+Assert-True ($rem.ok -and (Get-ActionItemField -Id $rem.newId -Field 'remindAt') -like '2026-08-01T00:00:00*') 'reminder: creates an item with a verified remindAt (ISO, explicit offset)'
 # set-priority (modify existing)
 $pri = Approve-InboxItem -Id (New-TestProposal -Type 'set-priority' -Title 'bump' -Description 'high' -SourceId $aid).id
 Assert-True ($pri.ok -and (Get-ActionItemField -Id $aid -Field 'priority') -eq 'high') 'set-priority: sets a verified priority on the target'
