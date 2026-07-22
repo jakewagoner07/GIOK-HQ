@@ -40,6 +40,9 @@ Write-TestSection 'ATOMICITY: crash after owner write, before result/state updat
 # result=null - then recover.
 $d = Get-ActionItemsData; [void](Add-ActionItem -Data $d -Title 'Landed create' -Id 'AI-801'); Save-ActionItemsData $d
 $null = Set-ActionItemFields -Id 'AI-801' -Fields @{ priority = 'high' }
+# owner-minted create: capture the intent (with its pre-write id baseline) BEFORE the
+# goal exists, then create the goal - a genuinely-new landed write.
+$goalIntent = (New-ExecutionIntent -Proposal ([pscustomobject]@{ id = 'P-80004'; type = 'goal'; title = 'Recovered goal'; description = ''; source = ''; sourceId = ''; proposedDestination = '' })).intent
 $g = Add-Goal -Title 'Recovered goal' -Reason 'x'
 $log = Get-ExecutionLog
 $mkStuck = { param($id, $type, $title, $intent) [pscustomobject]@{ id = $id; proposalId = "P-$id"; type = $type; title = $title; description = ''; source = ''; sourceId = ''; proposedDestination = ''; state = 'executing'; createdAt = 't'; updatedAt = 't'; attempts = 1; idempotencyKey = "k-$id"; approval = $null; intent = $intent; result = $null; history = @([pscustomobject]@{ state = 'executing'; at = 't'; detail = 'crash' }) } }
@@ -47,7 +50,7 @@ $log.executions = @($log.executions) +
 (& $mkStuck 'EXE-80001' 'task' 'Landed create' ([pscustomobject]@{ mode = 'create-id'; destination = 'Action Items'; targetId = 'AI-801'; newId = 'AI-801'; field = ''; expected = ''; title = 'Landed create'; create = $true })) +
 (& $mkStuck 'EXE-80002' 'set-priority' 'bump' ([pscustomobject]@{ mode = 'field'; destination = 'Action Items'; targetId = 'AI-801'; newId = ''; field = 'priority'; expected = 'high'; title = 'bump'; create = $false })) +
 (& $mkStuck 'EXE-80003' 'task' 'Never landed' ([pscustomobject]@{ mode = 'create-id'; destination = 'Action Items'; targetId = 'AI-999'; newId = 'AI-999'; field = ''; expected = ''; title = 'Never landed'; create = $true })) +
-(& $mkStuck 'EXE-80004' 'goal' 'Recovered goal' ([pscustomobject]@{ mode = 'title'; destination = 'Goals'; targetId = ''; newId = ''; field = ''; expected = ''; title = 'Recovered goal'; create = $true }))
+(& $mkStuck 'EXE-80004' 'goal' 'Recovered goal' $goalIntent)
 Save-ExecutionLog $log
 $aiBefore = @((Get-ActionItemsData).items).Count
 $rec = Restore-ActionEngine
@@ -59,6 +62,59 @@ Assert-True ((Get-ExecutionById -Id 'EXE-80004').state -eq 'succeeded') 'owner-m
 Assert-True (@((Get-ActionItemsData).items).Count -eq $aiBefore) 'recovery performed ZERO owner writes (no re-run, no double write)'
 $rec2 = Restore-ActionEngine
 Assert-True ($rec2.recovered -eq 0) 'recovery is idempotent (second pass is a no-op)'
+
+# =====================================================================
+Write-TestSection 'BLK-1: owner-minted title-mode verifies by identity, never mere title'
+# =====================================================================
+# a stuck title-mode execution whose intent baseline (preIds) is captured NOW, via the
+# real New-ExecutionIntent - exactly as a live approval would, before any owner write.
+function New-StuckTitle {
+    param([string]$Id, [string]$Type, [string]$Title, $Result = $null)
+    $intent = (New-ExecutionIntent -Proposal ([pscustomobject]@{ id = "P-$Id"; type = $Type; title = $Title; description = ''; source = 't'; sourceId = ''; proposedDestination = '' })).intent
+    return [pscustomobject]@{ id = $Id; proposalId = "P-$Id"; type = $Type; title = $Title; description = ''; source = 't'; sourceId = ''; proposedDestination = ''; state = 'executing'; createdAt = 't'; updatedAt = 't'; attempts = 1; idempotencyKey = "k-$Id"; approval = $null; intent = $intent; result = $Result; history = @([pscustomobject]@{ state = 'executing'; at = 't'; detail = 'crash' }) }
+}
+function Add-Stuck { param($Rec) $log = Get-ExecutionLog; $log.executions = @($log.executions) + $Rec; Save-ExecutionLog $log; [void](Restore-ActionEngine) }
+
+# (1) THE EXACT FABLE CASE: existing goal "Grow the agency"; a NEW proposal for the
+#     same title crashes BEFORE its owner write -> must NOT be marked succeeded.
+$existing = Add-Goal -Title 'Grow the agency' -Reason 'pre-existing'
+$gBefore = @(Get-GoalsList).Count
+Add-Stuck (New-StuckTitle 'EXE-B1A' 'goal' 'Grow the agency' $null)   # baseline = [existing]; no owner write
+Assert-True ((Get-ExecutionById -Id 'EXE-B1A').state -eq 'failed') 'FABLE COLLISION: pre-existing same title + no owner write -> recovered FAILED (never falsely succeeded)'
+Assert-True (@(Get-GoalsList).Count -eq $gBefore) 'the collision recovery performed ZERO owner writes'
+
+# (2) same title + a genuinely NEW owner record -> succeeded (delta evidence)
+$stuckB = New-StuckTitle 'EXE-B1B' 'goal' 'Grow the agency' $null    # baseline captured BEFORE the new write
+$landed = Add-Goal -Title 'Grow the agency' -Reason 'landed second'   # the owner write actually happened
+Add-Stuck $stuckB
+Assert-True ((Get-ExecutionById -Id 'EXE-B1B').state -eq 'succeeded') 'same title + a genuinely NEW owner record -> recovered SUCCEEDED (a new matching id appeared since the intent)'
+
+# (3) precise minted result.newId resolving to a real record -> succeeded
+$g3 = Add-Goal -Title 'Beta goal' -Reason 'x'
+Add-Stuck (New-StuckTitle 'EXE-B1C' 'goal' 'Beta goal' ([pscustomobject]@{ ok = $true; destination = 'Goals'; newId = [string]$g3.id; message = 'm' }))
+Assert-True ((Get-ExecutionById -Id 'EXE-B1C').state -eq 'succeeded') 'a precise minted result.newId that resolves to a real record -> SUCCEEDED'
+
+# (4) result.newId is BOGUS but the title exists (pre-existing) -> failed
+$g4 = Add-Goal -Title 'Gamma goal' -Reason 'x'                        # pre-existing Gamma
+Add-Stuck (New-StuckTitle 'EXE-B1D' 'goal' 'Gamma goal' ([pscustomobject]@{ ok = $true; destination = 'Goals'; newId = 'G-BOGUS-9999'; message = 'm' }))
+Assert-True ((Get-ExecutionById -Id 'EXE-B1D').state -eq 'failed') 'a BOGUS result.newId does not pass just because the title exists -> FAILED'
+
+# (5) retry after a failed collision is NOT silently deduped away as done
+$gPre5 = @(Get-GoalsList).Count
+$r5 = Invoke-TestExecution -Proposal (New-RawProposal -Type 'goal' -Title 'Grow the agency')
+Assert-True ($r5.ok -and (-not $r5.deduped) -and (@(Get-GoalsList).Count -eq $gPre5 + 1)) 'RETRY after a failed collision actually creates the action (never silently deduped as done)'
+
+# (6) recovery never re-runs a write; (7) repeated recovery is idempotent
+$gCount = @(Get-GoalsList).Count
+$rr = Restore-ActionEngine
+Assert-True (($rr.recovered -eq 0) -and (@(Get-GoalsList).Count -eq $gCount)) 'repeated recovery is idempotent and performs no owner writes'
+
+# (8) the Action-Item create-id path is unchanged: a fresh crash-window create recovers precisely
+$d8 = Get-ActionItemsData; [void](Add-ActionItem -Data $d8 -Title 'ci-check' -Id 'AI-880'); Save-ActionItemsData $d8
+$ci8 = [pscustomobject]@{ id = 'EXE-B1E'; proposalId = 'P-ci8'; type = 'task'; title = 'ci-check'; description = ''; source = ''; sourceId = ''; proposedDestination = ''; state = 'executing'; createdAt = 't'; updatedAt = 't'; attempts = 1; idempotencyKey = 'k-ci8'; approval = $null; intent = [pscustomobject]@{ mode = 'create-id'; destination = 'Action Items'; targetId = 'AI-880'; newId = 'AI-880'; field = ''; expected = ''; title = 'ci-check'; create = $true }; result = $null; history = @([pscustomobject]@{ state = 'executing'; at = 't'; detail = 'crash' }) }
+$aiC = @((Get-ActionItemsData).items).Count
+Add-Stuck $ci8
+Assert-True ((Get-ExecutionById -Id 'EXE-B1E').state -eq 'succeeded' -and @((Get-ActionItemsData).items).Count -eq $aiC) 'create-id (pre-allocated) recovery is unchanged: precise, zero re-write'
 
 # =====================================================================
 Write-TestSection 'HOSTILE HANDLERS: the engine alone controls state'

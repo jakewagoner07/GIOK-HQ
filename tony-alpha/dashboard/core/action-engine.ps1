@@ -278,28 +278,39 @@ function Test-ExecutionApplied {
     }
     catch { return $false }
 }
-# The normalized titles currently present at a destination - the verification
-# surface for owner-minted creates (goals / life items / memory), where the owner
-# assigns the id inside its own writer and the engine cannot pre-allocate one.
-function Get-DestinationTitleSet {
+# Owner-minted creates (goals / life items / memory) - the owner assigns the id
+# inside its own writer, so the engine cannot pre-allocate one. To verify a create
+# by STABLE IDENTITY (never mere title existence), the engine reads the {id,title}
+# records at a destination: it snapshots the matching-title ids BEFORE the write
+# (into the intent) and, at verify time, requires either the exact minted id OR a
+# matching-title id that did NOT exist before the intent. A pre-existing duplicate
+# title can never satisfy recovery. (Epic 15.1 BLK-1 fix.)
+function Get-DestinationRecords {
     param([string]$Destination)
-    $titles = @()
+    $recs = @()
     try {
         switch ($Destination) {
-            'Goals' { if (Get-Command Get-GoalsList -ErrorAction SilentlyContinue) { $titles = @(Get-GoalsList | ForEach-Object { [string]$_.title }) } }
-            'Tony Memory' { if (Get-Command Get-Memories -ErrorAction SilentlyContinue) { $titles = @(Get-Memories | ForEach-Object { [string]$_.value }) } }
+            'Goals' { if (Get-Command Get-GoalsList -ErrorAction SilentlyContinue) { $recs = @(Get-GoalsList | ForEach-Object { [pscustomobject]@{ id = [string]$_.id; title = [string]$_.title } }) } }
+            'Tony Memory' { if (Get-Command Get-Memories -ErrorAction SilentlyContinue) { $recs = @(Get-Memories | ForEach-Object { [pscustomobject]@{ id = [string]$_.id; title = [string]$_.value } }) } }
             default {
                 $dom = $script:ExecDestinationDomain[$Destination]
-                if ($dom -and (Get-Command Get-LifeItems -ErrorAction SilentlyContinue)) { $titles = @(Get-LifeItems -Domain $dom | ForEach-Object { [string]$_.title }) }
+                if ($dom -and (Get-Command Get-LifeItems -ErrorAction SilentlyContinue)) { $recs = @(Get-LifeItems -Domain $dom | ForEach-Object { [pscustomobject]@{ id = [string]$_.id; title = [string]$_.title } }) }
             }
         }
     }
-    catch { $titles = @() }
-    return @($titles | ForEach-Object { ConvertTo-ExecNormalizedTitle $_ })
+    catch { $recs = @() }
+    return @($recs)
 }
 function ConvertTo-ExecNormalizedTitle {
     param([string]$Text)
     return (([string]$Text) -replace '\s+', ' ').Trim().TrimEnd('.', ',', '!', '?', ';', ':').ToLower()
+}
+# The ids of records at a destination whose normalized title matches $Title.
+function Get-DestinationMatchingIds {
+    param([string]$Destination, [string]$Title)
+    $want = ConvertTo-ExecNormalizedTitle $Title
+    if (-not $want) { return @() }
+    return @(Get-DestinationRecords -Destination $Destination | Where-Object { (ConvertTo-ExecNormalizedTitle $_.title) -eq $want } | ForEach-Object { [string]$_.id })
 }
 
 # ---- the execution INTENT (Epic 15.1) ----------------------------------
@@ -308,8 +319,10 @@ function ConvertTo-ExecNormalizedTitle {
 # Modes:
 #   'field'     - an existing Action Item ($targetId) gains $field = $expected
 #   'create-id' - a NEW Action Item is created under the PRE-ALLOCATED id $newId
-#   'title'     - an owner-minted record (goal/life/memory) with $title appears
-#                 at $destination (the owner assigns the id inside its writer)
+#   'title'     - an owner-minted record (goal/life/memory) verified by STABLE IDENTITY:
+#                 the exact minted $result.newId, else a matching-title record whose id
+#                 did NOT exist before the intent ($preIds snapshot). Never mere title
+#                 membership - a pre-existing duplicate title cannot satisfy recovery.
 #   'result'    - a registered custom handler; verified from its persisted result
 #                 (documented limitation: a crash before the result persist
 #                 recovers to failed/retriable - safe, never a double write)
@@ -339,7 +352,13 @@ function New-ExecutionIntent {
             return [pscustomobject]@{ valid = $false; reason = ("unsupported proposal field: {0}" -f $pn); intent = $null }
         }
     }
-    $mk = { param($h) [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h } }
+    # For title-mode (owner-minted creates), snapshot the matching-title ids that
+    # ALREADY exist at the destination - captured here, before any owner write, so
+    # recovery can tell a genuinely-new record from a pre-existing duplicate title.
+    $mk = { param($h)
+        if ([string]$h.mode -eq 'title') { $h['preIds'] = @(Get-DestinationMatchingIds -Destination ([string]$h.destination) -Title ([string]$h.title)) }
+        [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h }
+    }
     switch ($type) {
         'reminder' {
             # a valid, unambiguous timestamp with EXPLICIT timezone semantics: the
@@ -402,9 +421,20 @@ function Test-ExecutionIntentApplied {
             }
             'create-id' { return (Test-ExecutionApplied -Destination ([string]$Intent.destination) -NewId ([string]$Intent.newId)) }
             'title' {
-                $want = ConvertTo-ExecNormalizedTitle ([string]$Intent.title)
-                if (-not $want) { return $false }
-                return ((Get-DestinationTitleSet -Destination ([string]$Intent.destination)) -contains $want)
+                $dest = [string]$Intent.destination
+                # PRECISE: an owner-minted id in the result that resolves to a real
+                # owner record - the authority whenever it is available.
+                if ($Result -and $Result.newId -and (Test-ExecutionApplied -Destination $dest -NewId ([string]$Result.newId))) { return $true }
+                # DELTA EVIDENCE: for the narrow window where the result/id was not
+                # persisted, require a matching-title record whose id did NOT exist
+                # before the intent. Mere title existence is never sufficient; without
+                # a pre-write baseline we FAIL CLOSED (only the precise id above can pass).
+                if (-not ($Intent.PSObject.Properties.Name -contains 'preIds')) { return $false }
+                $pre = @(@($Intent.preIds) | ForEach-Object { [string]$_ })
+                foreach ($id in @(Get-DestinationMatchingIds -Destination $dest -Title ([string]$Intent.title))) {
+                    if ($pre -notcontains [string]$id) { return $true }
+                }
+                return $false
             }
             'result' {
                 if (-not $Result -or -not $Result.newId) { return $false }
