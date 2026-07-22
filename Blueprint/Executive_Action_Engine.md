@@ -1,4 +1,4 @@
-# Executive Action Engine (Epic 15)
+# Executive Action Engine (Epic 15, hardened 15.1)
 
 The **sole execution authority** for Tony. Nothing in GIOK writes an owner store *as the
 result of an action* except through this engine, and every execution originates from an
@@ -7,87 +7,114 @@ result of an action* except through this engine, and every execution originates 
 ```
 reasoning proposes  ->  Executive Inbox (pending)  ->  human APPROVES  ->  Action Engine
                                                                               |
-     pending -> validating -> executing -> verifying -> succeeded            |
-                    |             |            |     \-> failed  <------------+
-                    +-------------+------------+--------> failed
+   idempotency -> validate -> INTENT persisted -> execute -> result persisted |
+   -> verify (from intent) -> succeeded                                       |
+                    |            |            |     \-> failed  <-------------+
+                    +------------+------------+---------> failed
 ```
 
-Reasoning **proposes**; the human **approves**; the engine **executes, verifies, and records**.
+Reasoning **proposes**; the human **approves**; the engine **records intent, executes, verifies,
+and records the outcome**.
 
 ## Why it exists
 
 Before Epic 15, `Approve-InboxItem` called `Invoke-InboxRoute` in one synchronous step: it
-wrote the owner store and removed the proposal, with no explicit states, no verification, and
-no audit trail. That is fine until executions can fail partway (a half-written store, a crash
-between write and confirmation, and — later — a live connector that a network can drop). The
-Action Engine makes execution a first-class, observable, recoverable process.
+wrote the owner store and removed the proposal, with no explicit states, no verification, and no
+audit trail. Epic 15 made execution a first-class state machine. Epic 15.1 (this hardening
+sprint) closed the gaps a CTO review found, so the guarantees below are true **under crash,
+retry, hostile-handler, and audit-log-failure scenarios** — the prerequisites for ever wiring a
+real external connector.
 
-## Guarantees
+## Guarantees (as enforced today)
 
-- **Sole execution authority.** No connector or module executes an approved action outside the
-  engine. Local actions run through it now; when live connectors (Calendar/Email/CRM) gain write
-  capability, they register as engine handlers — they never execute on their own.
-- **Approval-first.** The only trigger is `Approve-InboxItem`. An un-approved proposal produces
-  no execution and no owner write; a rejected proposal is never executed.
-- **Verification before success.** Success is *never* claimed until the engine confirms the owner
-  store actually changed (the new record exists by id, the field is set, the item is archived).
-  A handler that reports success with an id the verifier cannot find is marked **failed**.
-- **Complete audit trail.** Every execution is a durable record in `execution_log.json` with the
-  full state history (each transition timestamped with a reason). The log is the history *and*
-  the restart-recovery source.
-- **Restart safety.** On launch, any execution left non-terminal (a crash mid-flight) is resolved
-  by **re-verification**: if the owner change actually landed, it is marked succeeded; otherwise
-  failed (safe to re-propose). It is **never re-run blindly** — that is how a crash could
-  double-write.
-- **Single source of truth.** Approved data lives ONLY in its owner. The engine writes through the
-  owner's own functions and keeps no second copy of business data; the log records *executions*,
-  not the data. On verified success the proposal leaves the inbox (no copy). A failed execution
-  leaves the proposal **pending** so it can be retried.
+- **Sole execution authority — fail closed.** The engine is the only path from an approved
+  proposal to an owner write. `Approve-InboxItem` **has no fallback**: if the engine is
+  unavailable it returns a calm error and leaves the proposal pending. There is deliberately no
+  unvalidated/unaudited/unverified route.
+- **Approval-first, grounded.** Execution requires explicit approval metadata
+  (`approvedBy`, `approvedAt`, `source`, `fingerprint`) built from the real approval event. A
+  direct call without approval fails safely; a proposal **edited after approval** no longer
+  matches its fingerprint and is refused. Un-approved and rejected proposals never execute.
+- **Intent before side effect.** Before any owner write, the engine persists an immutable
+  **execution intent**: the action type, the target id — or a **pre-allocated new id** for
+  create-style actions — and the exact facts that will prove the change landed. A log that cannot
+  record intent blocks execution.
+- **Verification before success — engine-owned.** Success is claimed only after the engine's own
+  intent gate confirms the owner store changed. A handler's `verify` can add strictness but can
+  never grant success; `ok=false` can never become `succeeded`; `ok=true` without a verified
+  owner change fails.
+- **Engine-private state.** Handlers receive a **deep-cloned request DTO** (proposal facts +
+  intent — no `id`, `state`, or `history`). They cannot call `Set-ExecutionState`, and their
+  return is reduced to `{ok, destination, newId, message}` — forged `state`/`history`/`succeeded`
+  fields are dropped. The transition table permits only legal moves, and a terminal record is
+  immutable.
+- **Idempotency.** Every record carries an idempotency key (proposalId + content fingerprint). A
+  succeeded twin returns its stored result (no second write); a non-terminal twin is resolved by
+  verification, not re-executed; only a failed twin permits a deliberate retry. The key lives in
+  the log, so idempotency survives restart. Duplicate approval clicks and repeated direct calls
+  produce at most one owner write.
+- **Restart safety.** On launch, any non-terminal execution is resolved by **verifying its
+  persisted intent**: the intended change exists → succeeded; it does not → failed (safe to
+  re-propose). Recovery **never re-runs a write** and is idempotent (a second pass is a no-op).
+- **Durable, corruption-aware audit.** `execution_log.json` is written by **atomic snapshot**
+  (temp file + `[IO.File]::Replace`) with a `.bak` last-known-good copy, serialized by a named
+  mutex. A corrupt primary recovers from the backup and **history is never silently erased**; if
+  **both** copies are unreadable the store **fails closed** (reads empty, writes throw), so no
+  execution proceeds unaudited and a log-write failure before a side effect prevents it.
+  Retention is bounded (newest 500 terminal records; **non-terminal records are never pruned**).
+- **Single source of truth.** Approved data lives ONLY in its owner; the log records *executions*,
+  not business data. On verified success the proposal leaves the inbox (no copy); a failed
+  execution leaves it pending.
 - **Deterministic.** No AI, no network in `action-engine.ps1`; pure local dispatch.
-- **No direct writes by reasoning providers.** Unchanged: reasoning still only proposes.
+- **No direct writes by reasoning providers.** Reasoning still only proposes.
 
 ## Execution states
 
 `pending -> validating -> executing -> verifying -> succeeded | failed`
-(`succeeded`/`failed` are terminal). Persisted at every transition, so the state is durable.
+(`succeeded`/`failed` are terminal; `failed` is reachable from any non-terminal state). The
+`Set-ExecutionState` transition table is the only legal set of moves; skipping a stage or
+re-entering a terminal record is refused.
 
-## Local actions (supported first)
+## Local actions (supported first) and action-specific validation
 
-Executed against the Action Items owner store, each with an execute step **and** a verifier:
+Validated **before** the intent is persisted (so a malformed payload writes nothing):
 
-| Verb (proposal type) | Execute | Verify |
-|---|---|---|
-| `task` / owner types | route through the owner's writer (`Invoke-InboxRoute`) | the owner record exists by id (`Test-ExecutionApplied`) |
-| `reminder` | create an Action Item carrying `remindAt` | the item exists **and** has `remindAt` |
-| `set-priority` | set `priority` on the target Action Item (`sourceId`) | the target's `priority` equals the requested value |
-| `defer` | set `deferredUntil` on the target Action Item | the target has `deferredUntil` |
-| `archive` | archive the target Action Item | the target is `archived = true` |
+| Verb | Execute (from the persisted intent) | Validation | Verify (engine intent gate) |
+|---|---|---|---|
+| `task` / connector follow-up | create an Action Item under a **pre-allocated id** | non-empty title | the pre-allocated id exists |
+| `reminder` | create the pre-allocated item with `remindAt` | valid timestamp → normalized ISO-8601 **with explicit UTC offset** | id exists and `remindAt` set |
+| `set-priority` | set `priority` on the target (`sourceId`) | value in `low\|medium\|high`; target exists | target `priority` == value |
+| `defer` | set `deferredUntil` on the target | valid, **non-past** date; target exists | target has `deferredUntil` |
+| `archive` | archive the target | target exists | target `archived == true` |
+| owner-minted (`goal`/`project`/life/`memory`) | owner's own writer | (owner's own) | the normalized **title** appears in the owner store |
 
-Owner-routed proposals (goal / project / life domains / memory / connector follow-ups) also flow
-through the engine and are verified by looking the new record up in its owner
-(`Get-ActionItemsData`, `Get-GoalsList`, `Get-LifeItemById`, `Get-Memories`).
+Unknown proposal fields are **rejected**, not silently ignored.
 
 ## Public surface (`core/action-engine.ps1`)
 
-- `Invoke-ProposalExecution -Proposal` — the one execution path (validate → execute → verify).
-  Never throws; any failure transitions to `failed` with a truthful reason.
-- `Restore-ActionEngine` — startup recovery of non-terminal executions by re-verification.
-- `Register-ActionHandler -Type -Execute -Verify` — register a local action verb (or, later, a
-  connector) as an engine handler.
-- `Test-ExecutionApplied -Destination -NewId` — the verification gate (owner-store lookup).
-- Audit reads: `Get-Executions`, `Get-ExecutionById`, `Get-ExecutionHistory`, `Get-ExecutionSummary`.
-
-`Approve-InboxItem` delegates to `Invoke-ProposalExecution`; if the engine module is absent it
-falls back to the direct owner route, so approval is never a hard dependency on the engine.
+- `Invoke-ProposalExecution -Proposal -Approval` — the one execution path (idempotency → validate
+  → persist intent → execute → persist result → verify). Never throws.
+- `Restore-ActionEngine` — startup recovery of non-terminal executions by verifying persisted intent.
+- `Register-ActionHandler -Type -Execute -Verify` — register a local verb (or, later, a connector).
+- `Get-ProposalFingerprint` / `Get-ExecutionIdempotencyKey` — identity + dedup.
+- Audit reads: `Get-Executions`, `Get-ExecutionById`, `Get-ExecutionHistory`, `Get-ExecutionSummary`,
+  `Get-ExecutionLogState` (`ok`/`backup`/`fresh`/`failed`).
 
 ## Store
 
-`execution_log.json` (gitignored) — the audit trail and restart-recovery state. It records
-*executions*, not business data (which remains solely in its owner). Like the Executive Inbox, it
-can reference private titles, so it is local-only and never committed.
+`execution_log.json` plus its `.bak`/`.tmp` companions (all gitignored) — the audit trail and
+restart-recovery state. It records *executions*, not business data (which remains solely in its
+owner), and can reference private titles, so it is local-only and never committed.
 
-## Permanent decision
+## Permanent decisions (Epic 15.1)
 
-**Execution is a verified, audited, approval-gated process — never a silent side effect.** The
-Action Engine is the only path from an approved proposal to an owner write, success is claimed only
-after verification, and a crash is recovered by re-verification, never by a blind re-run.
+- **The Action Engine fails closed** if unavailable — there is no legacy direct-write fallback.
+- **Intent is persisted before any side effect**; recovery re-verifies the persisted intent and
+  **never blindly re-runs** a write.
+- **Handlers cannot control execution state** — state, history, terminal status, and result
+  persistence are engine-only; handler returns are sanitized.
+- **One proposal maps to one idempotent execution.**
+- **Audit persistence is atomic and corruption-aware**, fails closed when unreadable, and never
+  silently erases history.
+- **External connectors (Calendar/Gmail) remain blocked** until these guarantees are exercised
+  against a real side-effecting connector; the local handlers are their template.

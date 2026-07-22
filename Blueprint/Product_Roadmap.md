@@ -270,3 +270,23 @@ anticipation (automation) — but only after there's real data worth anticipatin
 slotted early because it's cheap, retires debt, and makes every downstream judgment sharper. Write
 actions come last and slowest, deliberately: trust is the product, so Tony earns the right to *act*
 only after he has proven he can *understand* — and always by asking first.
+
+---
+
+## Epic 15 — Executive Action Engine (the first write capability)
+
+Phase 3 "write actions" begins here, deliberately last and slowest. The **Executive Action Engine**
+(`core/action-engine.ps1`) is the **sole, approval-gated, verified, audited** path from an approved
+Executive Inbox proposal to an owner-store write. Epic 15 built the state machine; **Epic 15.1**
+hardened it against crash / retry / hostile-handler / audit-failure so its guarantees are true
+before any external side effect:
+
+- ✅ intent persisted before side effect; recovery re-verifies intent, never blindly re-runs
+- ✅ engine-private state (handlers cannot forge `succeeded`); idempotent (one proposal → one write)
+- ✅ fail-closed sole authority (no legacy direct-write fallback)
+- ✅ atomic, corruption-aware, bounded audit log
+- ✅ action-specific validation + grounded approval fingerprints
+
+**Connectors are gated.** ⬜ **Calendar**, then ⬜ **Gmail** connect as engine handlers **only after**
+the hardened guarantees are exercised against a real side-effecting connector. Calendar is the safer
+first external write (idempotent-keyable, reversible) before irreversible Gmail sends.

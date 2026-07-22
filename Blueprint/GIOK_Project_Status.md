@@ -578,3 +578,34 @@ multi-account, priority-ranked, and time-aware) so it is ready the instant GIOK 
 Phase-3 "ahead of you" capability. It has rich signals worth pre-computing: the D18 Executive Priority
 Engine and the D19 Executive Timeline (both integrated in RC2). See `Product_Roadmap.md` for the full
 ordering.
+
+---
+
+## Epic 15 — Executive Action Engine (+ 15.1 hardening)
+
+**Where it lives:** `feature/executive-action-engine` (Epic 15) → hardened on
+`fix/executive-action-engine-hardening` (Epic 15.1), branched from the Epic 15 HEAD (Epic 15 was
+not merged to `main`; the CTO review returned CHANGES REQUESTED, and 15.1 addresses them).
+
+**What it is:** the **sole execution authority**. Every approved Executive Inbox proposal executes
+through `core/action-engine.ps1` — validate → persist immutable intent → execute → persist result
+→ verify against intent → succeeded/failed — with a durable, corruption-aware audit trail
+(`execution_log.json`, gitignored). Local actions first (task, reminder, set-priority, defer,
+archive on Action Items; goal/project/life/memory via their owners). No AI/network in the engine.
+
+**15.1 hardened guarantees (all enforced + tested):** intent persisted before any side effect and
+recovery re-verifies it (crash-after-write recovers to succeeded, absent write to failed, never a
+blind re-run); execution state is engine-private (handlers get a deep-cloned DTO, cannot set state,
+forged succeeded/history dropped, terminal records immutable); engine-level idempotency (one
+proposal → at most one owner write, survives restart); `Approve-InboxItem` **fails closed** (no
+legacy direct-write fallback); atomic audit save with `.bak` recovery and fail-closed on double
+corruption, bounded retention that never prunes non-terminal; action-specific validation
+(priority set, non-past dates, ISO timestamps with offset, unknown fields rejected); grounded
+approval metadata with a proposal fingerprint that invalidates on edit.
+
+**Tests:** execution suite green — `action-engine.tests.ps1` (26) + `hardening.tests.ps1` (53
+adversarial: crash-window recovery, hostile handlers, idempotency, audit failure, validation,
+approval). Mutation: **8/8** protections caught. Reasoning suite remains green (8/8).
+
+**Gate:** external connectors (Calendar/Gmail) remain **blocked** until these guarantees are
+exercised against a real side-effecting connector. The local handlers are their template.
