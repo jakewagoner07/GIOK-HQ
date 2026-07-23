@@ -49,6 +49,7 @@ function ConvertTo-NormalizedInboxItem {
     $conf = 0.0; if ((& $has 'confidence') -and $null -ne $It.confidence) { try { $conf = [double]$It.confidence } catch { $conf = 0.0 } }
     return [pscustomobject]@{
         id                  = [string]$It.id
+        uid                 = $(if (& $has 'uid') { [string]$It.uid } else { '' })
         discoveredBy        = $(if (& $has 'discoveredBy') { [string]$It.discoveredBy } else { 'Tony' })
         type                = $(if (& $has 'type') { [string]$It.type } else { 'task' })
         title               = [string]$It.title
@@ -92,8 +93,12 @@ function Add-InboxProposal {
     $data = Get-InboxData
     $max = 0; foreach ($x in @($data.items)) { if ($x.id -match '^INBOX-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    # uid (Epic 16A): a durable, per-instance unique token. INBOX-NNN ids are REUSED
+    # after a proposal leaves the inbox, so the uid - not the reusable id - is what
+    # uniquely and stably identifies this proposal instance for idempotency and for the
+    # engine's deterministic target-id derivation.
     $new = [pscustomobject]@{
-        id = ('INBOX-{0:000}' -f ($max + 1)); discoveredBy = $DiscoveredBy.Trim(); type = $Type; title = $Title.Trim()
+        id = ('INBOX-{0:000}' -f ($max + 1)); uid = ([guid]::NewGuid().ToString('N')); discoveredBy = $DiscoveredBy.Trim(); type = $Type; title = $Title.Trim()
         description = $Description.Trim(); proposedDestination = $ProposedDestination.Trim(); evidence = @($Evidence)
         confidence = [math]::Round([math]::Max(0.0, [math]::Min(1.0, $Confidence)), 2); status = 'pending'; created = $now
         source = $Source.Trim(); sourceId = $SourceId.Trim()

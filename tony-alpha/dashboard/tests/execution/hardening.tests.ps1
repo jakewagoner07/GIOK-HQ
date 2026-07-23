@@ -40,10 +40,10 @@ Write-TestSection 'ATOMICITY: crash after owner write, before result/state updat
 # result=null - then recover.
 $d = Get-ActionItemsData; [void](Add-ActionItem -Data $d -Title 'Landed create' -Id 'AI-801'); Save-ActionItemsData $d
 $null = Set-ActionItemFields -Id 'AI-801' -Fields @{ priority = 'high' }
-# owner-minted create: capture the intent (with its pre-write id baseline) BEFORE the
-# goal exists, then create the goal - a genuinely-new landed write.
+# owner-minted create (Epic 16A: now a create-id intent with a pre-allocated id):
+# capture the intent, then create the goal UNDER that exact id - a genuinely-landed write.
 $goalIntent = (New-ExecutionIntent -Proposal ([pscustomobject]@{ id = 'P-80004'; type = 'goal'; title = 'Recovered goal'; description = ''; source = ''; sourceId = ''; proposedDestination = '' })).intent
-$g = Add-Goal -Title 'Recovered goal' -Reason 'x'
+$g = Add-Goal -Title 'Recovered goal' -Reason 'x' -Id $goalIntent.newId
 $log = Get-ExecutionLog
 $mkStuck = { param($id, $type, $title, $intent) [pscustomobject]@{ id = $id; proposalId = "P-$id"; type = $type; title = $title; description = ''; source = ''; sourceId = ''; proposedDestination = ''; state = 'executing'; createdAt = 't'; updatedAt = 't'; attempts = 1; idempotencyKey = "k-$id"; approval = $null; intent = $intent; result = $null; history = @([pscustomobject]@{ state = 'executing'; at = 't'; detail = 'crash' }) } }
 $log.executions = @($log.executions) +
@@ -58,16 +58,16 @@ Assert-True ($rec.recovered -eq 4) 'recovery processed all four crash-window rec
 Assert-True ((Get-ExecutionById -Id 'EXE-80001').state -eq 'succeeded') 'CREATE landed + result=null -> recovered SUCCEEDED (B1 closed)'
 Assert-True ((Get-ExecutionById -Id 'EXE-80002').state -eq 'succeeded') 'UPDATE landed + result=null -> recovered SUCCEEDED'
 Assert-True ((Get-ExecutionById -Id 'EXE-80003').state -eq 'failed') 'absent change -> recovered FAILED (retriable)'
-Assert-True ((Get-ExecutionById -Id 'EXE-80004').state -eq 'succeeded') 'owner-minted (title-mode) landed -> recovered SUCCEEDED'
+Assert-True ((Get-ExecutionById -Id 'EXE-80004').state -eq 'succeeded') 'owner-minted create landed under its pre-allocated id -> recovered SUCCEEDED (by exact id)'
 Assert-True (@((Get-ActionItemsData).items).Count -eq $aiBefore) 'recovery performed ZERO owner writes (no re-run, no double write)'
 $rec2 = Restore-ActionEngine
 Assert-True ($rec2.recovered -eq 0) 'recovery is idempotent (second pass is a no-op)'
 
 # =====================================================================
-Write-TestSection 'BLK-1: owner-minted title-mode verifies by identity, never mere title'
+Write-TestSection 'BLK-1 (Epic 16A): owner-minted creates verify by EXACT pre-allocated id'
 # =====================================================================
-# a stuck title-mode execution whose intent baseline (preIds) is captured NOW, via the
-# real New-ExecutionIntent - exactly as a live approval would, before any owner write.
+# title-mode is retired: New-ExecutionIntent now yields a create-id intent with a
+# deterministic pre-allocated id, so recovery verifies by that exact owner-record id.
 function New-StuckTitle {
     param([string]$Id, [string]$Type, [string]$Title, $Result = $null)
     $intent = (New-ExecutionIntent -Proposal ([pscustomobject]@{ id = "P-$Id"; type = $Type; title = $Title; description = ''; source = 't'; sourceId = ''; proposedDestination = '' })).intent
@@ -76,28 +76,30 @@ function New-StuckTitle {
 function Add-Stuck { param($Rec) $log = Get-ExecutionLog; $log.executions = @($log.executions) + $Rec; Save-ExecutionLog $log; [void](Restore-ActionEngine) }
 
 # (1) THE EXACT FABLE CASE: existing goal "Grow the agency"; a NEW proposal for the
-#     same title crashes BEFORE its owner write -> must NOT be marked succeeded.
+#     same title crashes BEFORE its owner write -> the pre-allocated id was never
+#     created, so recovery must FAIL (a same title can never satisfy it).
 $existing = Add-Goal -Title 'Grow the agency' -Reason 'pre-existing'
 $gBefore = @(Get-GoalsList).Count
-Add-Stuck (New-StuckTitle 'EXE-B1A' 'goal' 'Grow the agency' $null)   # baseline = [existing]; no owner write
+Add-Stuck (New-StuckTitle 'EXE-B1A' 'goal' 'Grow the agency' $null)   # pre-allocated id NOT created
 Assert-True ((Get-ExecutionById -Id 'EXE-B1A').state -eq 'failed') 'FABLE COLLISION: pre-existing same title + no owner write -> recovered FAILED (never falsely succeeded)'
 Assert-True (@(Get-GoalsList).Count -eq $gBefore) 'the collision recovery performed ZERO owner writes'
 
-# (2) same title + a genuinely NEW owner record -> succeeded (delta evidence)
-$stuckB = New-StuckTitle 'EXE-B1B' 'goal' 'Grow the agency' $null    # baseline captured BEFORE the new write
-$landed = Add-Goal -Title 'Grow the agency' -Reason 'landed second'   # the owner write actually happened
+# (2) the owner create LANDED under its exact pre-allocated id -> succeeded (by identity)
+$stuckB = New-StuckTitle 'EXE-B1B' 'goal' 'Grow the agency'
+$landed = Add-Goal -Title 'Grow the agency' -Reason 'landed second' -Id $stuckB.intent.newId   # created under the intent's exact id
 Add-Stuck $stuckB
-Assert-True ((Get-ExecutionById -Id 'EXE-B1B').state -eq 'succeeded') 'same title + a genuinely NEW owner record -> recovered SUCCEEDED (a new matching id appeared since the intent)'
+Assert-True ((Get-ExecutionById -Id 'EXE-B1B').state -eq 'succeeded') 'owner create landed under its exact pre-allocated id -> recovered SUCCEEDED'
 
-# (3) precise minted result.newId resolving to a real record -> succeeded
-$g3 = Add-Goal -Title 'Beta goal' -Reason 'x'
-Add-Stuck (New-StuckTitle 'EXE-B1C' 'goal' 'Beta goal' ([pscustomobject]@{ ok = $true; destination = 'Goals'; newId = [string]$g3.id; message = 'm' }))
-Assert-True ((Get-ExecutionById -Id 'EXE-B1C').state -eq 'succeeded') 'a precise minted result.newId that resolves to a real record -> SUCCEEDED'
+# (3) a same-title record with a DIFFERENT id must NOT satisfy verification
+$stuckC = New-StuckTitle 'EXE-B1C' 'goal' 'Delta title'
+$other = Add-Goal -Title 'Delta title' -Reason 'a different id'   # sequential id, NOT the intent's pre-allocated id
+Add-Stuck $stuckC
+Assert-True ((Get-ExecutionById -Id 'EXE-B1C').state -eq 'failed') 'a same-title record with a DIFFERENT id does not satisfy verification -> FAILED'
 
-# (4) result.newId is BOGUS but the title exists (pre-existing) -> failed
-$g4 = Add-Goal -Title 'Gamma goal' -Reason 'x'                        # pre-existing Gamma
+# (4) a forged/absent id does not pass just because a same-title record exists -> failed
+$g4 = Add-Goal -Title 'Gamma goal' -Reason 'x'                        # pre-existing Gamma (sequential id)
 Add-Stuck (New-StuckTitle 'EXE-B1D' 'goal' 'Gamma goal' ([pscustomobject]@{ ok = $true; destination = 'Goals'; newId = 'G-BOGUS-9999'; message = 'm' }))
-Assert-True ((Get-ExecutionById -Id 'EXE-B1D').state -eq 'failed') 'a BOGUS result.newId does not pass just because the title exists -> FAILED'
+Assert-True ((Get-ExecutionById -Id 'EXE-B1D').state -eq 'failed') 'the pre-allocated id was never created (a same title is not proof) -> FAILED'
 
 # (5) retry after a failed collision is NOT silently deduped away as done
 $gPre5 = @(Get-GoalsList).Count
