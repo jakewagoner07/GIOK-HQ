@@ -33,6 +33,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\identity.ps1')
 . (Join-Path $PSScriptRoot 'core\life-os.ps1')
 . (Join-Path $PSScriptRoot 'core\executive-inbox.ps1')
+. (Join-Path $PSScriptRoot 'core\action-engine.ps1')
 . (Join-Path $PSScriptRoot 'core\conversational-capture.ps1')
 . (Join-Path $PSScriptRoot 'core\end-of-day-audit.ps1')
 . (Join-Path $PSScriptRoot 'core\first-conversation.ps1')
@@ -85,6 +86,10 @@ $script:HeadlessRender = [bool]$Screenshot
 if (Get-Command Set-AsyncDashboardRoot -ErrorAction SilentlyContinue) { Set-AsyncDashboardRoot $PSScriptRoot }
 # Where the bounded reasoning worker (Epic 13 Claude driver) loads its modules from.
 if (Get-Command Set-ReasoningDashboardRoot -ErrorAction SilentlyContinue) { Set-ReasoningDashboardRoot $PSScriptRoot }
+# Executive Action Engine (Epic 15): recover any execution interrupted mid-flight by a
+# previous crash. Each non-terminal record is re-verified against its owner store and
+# resolved to succeeded/failed - never re-run blindly. Best-effort; never blocks launch.
+if (Get-Command Restore-ActionEngine -ErrorAction SilentlyContinue) { try { [void](Restore-ActionEngine) } catch { } }
 $startNow = if ($PSBoundParameters.ContainsKey('Now')) { $Now } else { Get-Date }
 # First Conversation replaces onboarding: until it's completed, it is the landing view.
 $startView = if ($PSBoundParameters.ContainsKey('View')) { $View }

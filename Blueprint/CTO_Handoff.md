@@ -324,3 +324,27 @@ See `Product_Roadmap.md` for the prioritized plan and the reasoning behind the o
    `GIOK_Project_Status.md` and `Product_Roadmap.md`.
 7. **Verify before claiming done** — render headless screenshots and/or run a harness test; report
    faithfully (failures included).
+
+---
+
+## Epic 15 / 15.1 — Executive Action Engine (permanent decisions)
+
+The **Executive Action Engine** (`core/action-engine.ps1`) is GIOK's **sole execution authority**:
+the only path from an approved Executive Inbox proposal to an owner-store write. Permanent decisions
+(Epic 15.1 hardening — do not regress):
+
+1. **Fails closed** if unavailable — there is **no** legacy direct-write fallback in `Approve-InboxItem`.
+2. **Intent is persisted before any side effect;** recovery re-verifies the persisted intent and
+   **never blindly re-runs** a write.
+3. **Handlers cannot control execution state** — state/history/terminal/result are engine-only; a
+   handler receives a deep-cloned DTO and its return is sanitized to `{ok,destination,newId,message}`.
+4. **One proposal maps to one idempotent execution** (key persisted; survives restart).
+5. **Audit persistence is atomic + corruption-aware** (temp+replace, `.bak` recovery, fail-closed on
+   double corruption, never silently erases history, bounded retention that never prunes non-terminal).
+6. **`ok=false` can never become `succeeded`; `ok=true` without owner verification fails.**
+7. **External connectors (Calendar/Gmail) are blocked** until these guarantees are exercised against a
+   real side-effecting connector.
+
+**Stopping point:** Epic 15 on `feature/executive-action-engine`; hardening on
+`fix/executive-action-engine-hardening` (branched from Epic 15 HEAD — Epic 15 not merged to `main`).
+Execution suite (26 + 53 adversarial) green; 8/8 mutation; reasoning suite green. Not pushed.

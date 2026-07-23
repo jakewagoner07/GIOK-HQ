@@ -20,7 +20,10 @@
 
 $ErrorActionPreference = 'Stop'
 
-$script:InboxTypes = @('goal', 'project', 'task', 'non-negotiable', 'family', 'health', 'financial', 'agency', 'learning', 'calendar', 'crm', 'communication', 'document', 'memory')
+# The last four are LOCAL ACTION verbs executed by the Executive Action Engine
+# (Epic 15) against the Action Items store: reminder (create), set-priority / defer
+# (modify an existing item by sourceId), archive (retire an existing item).
+$script:InboxTypes = @('goal', 'project', 'task', 'non-negotiable', 'family', 'health', 'financial', 'agency', 'learning', 'calendar', 'crm', 'communication', 'document', 'memory', 'reminder', 'set-priority', 'defer', 'archive')
 function Get-InboxTypes { return $script:InboxTypes }
 
 function Get-InboxPath { return (Join-Path $PSScriptRoot '..\..\executive_inbox.json') }
@@ -267,14 +270,33 @@ function Get-InboxSummary {
 # APPROVE: the OWNING module writes the real record, then the proposal leaves the
 # inbox (no second copy). Never auto-called - only from Jake's explicit action.
 function Approve-InboxItem {
-    param([Parameter(Mandatory)][string]$Id)
+    param([Parameter(Mandatory)][string]$Id, [string]$ApprovedBy = 'owner')
     $item = Get-InboxItemById -Id $Id
     if (-not $item) { return [pscustomobject]@{ ok = $false; message = 'Proposal not found.' } }
     if ($item.status -ne 'pending') { return [pscustomobject]@{ ok = $false; message = 'Proposal is not pending.' } }
-    $route = Invoke-InboxRoute -Item $item
-    if ($route.ok) {
-        [void](Remove-InboxItem -Id $Id)   # data now lives in its owner; no copy kept
-        return [pscustomobject]@{ ok = $true; destination = $route.destination; newId = $route.newId; message = $route.message }
+    # Approval is the ONLY gate that starts an execution, and the Executive Action
+    # Engine is the ONLY executor (PERMANENT DECISION, Epic 15.1): it validates,
+    # persists the execution intent, executes through the owner's writer, VERIFIES
+    # the owner store actually changed, and records the full audit trail. If the
+    # engine is unavailable, approval FAILS CLOSED - the proposal stays pending
+    # with a calm message, and there is NO direct owner-route fallback: an
+    # unvalidated, unaudited, unverified execution path must not exist.
+    if (-not (Get-Command Invoke-ProposalExecution -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = 'The Action Engine is not available. Nothing was changed; the proposal is still pending.' }
     }
-    return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = $route.message }
+    # approval metadata is grounded in THIS user approval event - who, when, from
+    # where, and a fingerprint of the proposal exactly as approved. The engine
+    # rejects execution if the proposal no longer matches the fingerprint.
+    $approval = [pscustomobject]@{
+        approvedBy  = $ApprovedBy
+        approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        source      = 'executive-inbox'
+        fingerprint = (Get-ProposalFingerprint -Proposal $item)
+    }
+    $exec = Invoke-ProposalExecution -Proposal $item -Approval $approval
+    if ($exec.ok) {
+        [void](Remove-InboxItem -Id $Id)   # data now lives in its owner; no copy kept
+        return [pscustomobject]@{ ok = $true; destination = $exec.destination; newId = $exec.newId; message = $exec.message; executionId = $exec.executionId }
+    }
+    return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = $exec.message; executionId = $exec.executionId }
 }

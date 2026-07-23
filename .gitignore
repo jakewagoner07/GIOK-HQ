@@ -26,6 +26,14 @@ tony-alpha/executive_inbox.json
 **/executive_inbox.json
 **/memory-export-*.json
 
+# Executive Action Engine audit trail (Epic 15) - execution history + restart-recovery
+# state, plus its atomic-save companions (.bak last-known-good, .tmp staging).
+# Records executions (not business data); can reference private titles. Local only.
+tony-alpha/execution_log.json
+**/execution_log.json
+tony-alpha/execution_log.json.*
+**/execution_log.json.*
+
 # Local diagnostics logs — runtime only, never committed.
 tony-alpha/logs/
 **/tony-diagnostics.log
