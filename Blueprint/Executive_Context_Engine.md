@@ -120,6 +120,13 @@ exists), a real projects model (the `project` field is already wired), a documen
 assembler; the executive summary shape stays the stable contract everything downstream relies on. A
 future model can even *inform* the summary - but the dimensions and value priorities stay Tony's.
 
+**Calendar writes stay out of the read path (Epic 17).** The Executive Context Engine remains
+read-and-assemble only. Calendar *changes* never originate here: a calendar recommendation becomes a
+pending Executive Inbox proposal, and only an approved proposal executed by the Executive Action
+Engine's Google Calendar connector ever writes an event. The read side (schedule signals from the
+read-only provider) and the write side (the connector) share credentials-family but are separate
+responsibilities; context assembly never triggers a write.
+
 ## Constraints honored
 
 No cloud, no new integrations, no new workspaces, no new settings, no registry changes, no duplicate

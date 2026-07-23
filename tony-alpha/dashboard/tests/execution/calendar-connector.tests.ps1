@@ -21,23 +21,26 @@ Assert-Sandboxed
 # ---- in-memory provider (replaces the four Google API seams) -----------------
 $script:Prov = @{ events = @{}; insertCalls = 0; getCalls = 0; patchCalls = 0; deleteCalls = 0
     token = [pscustomobject]@{ ok = $true; token = 'mock-token'; account = 'jake@example.com'; state = 'connected'; detail = 'ok' }
-    dropWrites = $false; misdirect = $false }
+    dropWrites = $false; misdirect = $false; throwBefore = $false; throwAfterStore = $false; nullEvent = $false }
 function New-MockHttpError { param([int]$Status)
     $ex = New-Object System.Exception ("mock http {0}" -f $Status)
     $resp = New-Object psobject; $resp | Add-Member NoteProperty StatusCode $Status
     $ex | Add-Member NoteProperty Response $resp -Force
     return $ex
 }
-function Reset-Prov { $script:Prov.events = @{}; $script:Prov.insertCalls = 0; $script:Prov.getCalls = 0; $script:Prov.patchCalls = 0; $script:Prov.deleteCalls = 0; $script:Prov.dropWrites = $false; $script:Prov.misdirect = $false; $script:Prov.token = [pscustomobject]@{ ok = $true; token = 'mock-token'; account = 'jake@example.com'; state = 'connected'; detail = 'ok' } }
+function Reset-Prov { $script:Prov.events = @{}; $script:Prov.insertCalls = 0; $script:Prov.getCalls = 0; $script:Prov.patchCalls = 0; $script:Prov.deleteCalls = 0; $script:Prov.dropWrites = $false; $script:Prov.misdirect = $false; $script:Prov.throwBefore = $false; $script:Prov.throwAfterStore = $false; $script:Prov.nullEvent = $false; $script:Prov.token = [pscustomobject]@{ ok = $true; token = 'mock-token'; account = 'jake@example.com'; state = 'connected'; detail = 'ok' } }
 # seam overrides (defined AFTER the connector dot-source, so they win)
 function Get-GCalWriteAccessToken { param([string]$AccountId = '') return $script:Prov.token }
 function Invoke-GCalInsert { param($Token, $CalendarId, $Body)
     $script:Prov.insertCalls++
+    if ($script:Prov.throwBefore) { throw (New-MockHttpError -Status 503) }   # provider unavailable BEFORE any side effect
     $storeId = if ($script:Prov.misdirect) { ([string]$Body.id + 'X') } else { [string]$Body.id }
     $key = ("{0}/{1}" -f $CalendarId, $storeId)
     if ($script:Prov.events.ContainsKey(("{0}/{1}" -f $CalendarId, [string]$Body.id))) { throw (New-MockHttpError -Status 409) }
     $ev = [pscustomobject]@{ id = $storeId; summary = [string]$Body.summary; start = $Body.start; end = $Body.end; status = 'confirmed'; etag = '"v1"' }
     if (-not $script:Prov.dropWrites) { $script:Prov.events[$key] = $ev }
+    if ($script:Prov.throwAfterStore) { throw (New-MockHttpError -Status 500) }   # side effect landed, THEN the response is lost
+    if ($script:Prov.nullEvent) { return $null }
     return $ev
 }
 function Invoke-GCalGet { param($Token, $CalendarId, $EventId)
@@ -352,5 +355,97 @@ $m = Get-GCalWriteSettingsModel
 Assert-True ([string]$m.scope -eq 'https://www.googleapis.com/auth/calendar.events') 'settings model reports the least-privilege write scope'
 Assert-True (@('connected', 'not-connected', 'not-configured', 'needs-attention') -contains [string]$m.state) 'settings state is one of the known truthful states'
 Assert-True (($m | ConvertTo-Json -Depth 6) -notmatch 'token|secret|Bearer') 'settings model contains no token/secret material'
+
+# =====================================================================
+Write-TestSection 'AUTH: unconfigured / expired write auth -> fail closed, no side effect, no token leak'
+# =====================================================================
+Reset-Prov
+$script:Prov.token = [pscustomobject]@{ ok = $false; token = $null; account = $null; state = 'not-configured'; detail = 'not configured' }
+$au1 = Invoke-CalExec -Proposal (New-CalProposal -Payload (New-CreatePayload -Title 'A'))
+Assert-True ((-not $au1.ok) -and $script:Prov.insertCalls -eq 0) 'unconfigured write auth -> failed, no insert'
+Reset-Prov
+$script:Prov.token = [pscustomobject]@{ ok = $false; token = $null; account = 'jake@example.com'; state = 'needs-attention'; detail = 'expired' }
+$au2 = Invoke-CalExec -Proposal (New-CalProposal -Payload (New-CreatePayload -Title 'B'))
+Assert-True ((-not $au2.ok) -and $script:Prov.insertCalls -eq 0) 'expired/revoked write auth -> failed, no insert'
+# no token leakage anywhere in the audit trail
+Reset-Prov
+$leakP = New-CalProposal -Payload (New-CreatePayload -Title 'Leak check')
+$leakR = Invoke-CalExec -Proposal $leakP
+$auditJson = (Get-ExecutionById -Id $leakR.executionId) | ConvertTo-Json -Depth 12
+Assert-True ($auditJson -notmatch 'mock-token' -and $auditJson -notmatch 'Bearer') 'no access token / auth header appears in the audit record'
+
+# =====================================================================
+Write-TestSection 'HOSTILE provider: throw before side effect / null event -> failed, no phantom success'
+# =====================================================================
+Reset-Prov
+$script:Prov.throwBefore = $true
+$h1 = Invoke-CalExec -Proposal (New-CalProposal -Payload (New-CreatePayload -Title 'H1'))
+Assert-True ((-not $h1.ok) -and (@($script:Prov.events.Keys).Count -eq 0)) 'a provider error before the side effect -> failed, nothing created'
+Reset-Prov
+$script:Prov.nullEvent = $true
+$h2 = Invoke-CalExec -Proposal (New-CalProposal -Payload (New-CreatePayload -Title 'H2'))
+Assert-True (-not $h2.ok) 'a null/malformed provider response -> failed (never a claimed success)'
+
+# =====================================================================
+Write-TestSection 'HOSTILE: side effect landed then response lost -> retry is idempotent (one event)'
+# =====================================================================
+Reset-Prov
+$rp = New-CalProposal -Payload (New-CreatePayload -Title 'Retry me')
+$script:Prov.throwAfterStore = $true
+$try1 = Invoke-CalExec -Proposal $rp   # event stored, then 500 -> engine records failed
+Assert-True (-not $try1.ok) 'the throw-after-store attempt reports failed (truthful)'
+Assert-True (@($script:Prov.events.Keys).Count -eq 1) 'the event did land once'
+$script:Prov.throwAfterStore = $false
+$try2 = Invoke-CalExec -Proposal $rp   # failed twin -> retry allowed; deterministic id -> 409 -> read back
+Assert-True ($try2.ok) 'the retry reconciles to success via the deterministic id (409 read-back)'
+Assert-True (@($script:Prov.events.Keys).Count -eq 1) 'still exactly ONE event after the retry (no duplicate)'
+Assert-True ($script:Prov.insertCalls -eq 2) 'the retry re-attempted insert (and got 409), proving idempotency by id'
+
+# =====================================================================
+Write-TestSection 'HOSTILE connector: engine sanitizes forged result + requires real verification'
+# =====================================================================
+# A hostile connector on a throwaway type: it claims success and forges engine
+# fields, but provides no verifiable provider state. The engine must fail it.
+Register-ActionConnector -Types @('x.hostile-create') `
+    -BuildIntent { param($Proposal) [pscustomobject]@{ valid = $true; reason = ''; fields = @{ connector = 'hostile'; connectorAction = 'create'; calendarId = 'primary'; safeCalendarRef = 'cal:primary'; clientEventId = 'giokhostile00'; title = 'H'; start = '2026-08-01T09:00:00-07:00'; end = '2026-08-01T10:00:00-07:00'; timezone = 'America/Los_Angeles' } } } `
+    -Execute { param($Request) $Request.executionId = 'FORGED'; return [pscustomobject]@{ ok = $true; state = 'succeeded'; history = @('forged'); destination = 'cal:primary'; newId = 'giokhostile00'; message = 'totally done' } } `
+    -Verify { param($Intent, $Result) return $false }   # cannot actually confirm
+$hp = [pscustomobject]@{ id = 'INBOX-H'; uid = 'uid-hostile'; type = 'x.hostile-create'; title = 'H'; description = ''; source = 't'; sourceId = ''; proposedDestination = ''; created = '2026-08-01 09:00:00'; payload = ([pscustomobject]@{ x = 1 }) }
+$hr = Invoke-ProposalExecution -Proposal $hp -Approval (New-TestApproval -Proposal $hp)
+Assert-True (-not $hr.ok) 'a hostile connector claiming success without verifiable state is FAILED'
+Assert-True ((Get-ExecutionById -Id $hr.executionId).state -eq 'failed') 'the engine verify gate held against the forged success'
+Assert-True ([string](Get-ExecutionById -Id $hr.executionId).id -ne 'FORGED') 'the forged executionId did not corrupt the engine record'
+
+# =====================================================================
+Write-TestSection 'APPROVAL: a rejected proposal never executes'
+# =====================================================================
+Reset-Prov
+$rj = Add-InboxProposal -DiscoveredBy 'Tony' -Type 'calendar.create-event' -Title 'Reject me' -Payload ([pscustomobject]@{ calendarId = 'primary'; title = 'Reject me'; start = '2026-08-03T09:00:00-07:00'; end = '2026-08-03T10:00:00-07:00'; timezone = 'America/Los_Angeles' })
+[void](Reject-InboxItem -Id $rj.id)
+$rjr = Approve-InboxItem -Id $rj.id
+Assert-True (-not $rjr.ok) 'approving a rejected/removed proposal fails'
+Assert-True ($script:Prov.insertCalls -eq 0) 'a rejected proposal writes nothing to the calendar'
+
+# =====================================================================
+Write-TestSection 'VALIDATION: unauthorized calendar id + attendees are refused before any side effect'
+# =====================================================================
+Reset-Prov
+$vc1 = Invoke-CalExec -Proposal (New-CalProposal -Payload @{ calendarId = 'not a cal id'; title = 'X'; start = '2026-08-03T09:00:00-07:00'; end = '2026-08-03T10:00:00-07:00'; timezone = 'America/Los_Angeles' })
+Assert-True (-not $vc1.ok) 'a malformed calendarId is refused'
+$vc2 = Invoke-CalExec -Proposal (New-CalProposal -Payload @{ calendarId = 'primary'; title = 'X'; start = '2026-08-03T09:00:00-07:00'; end = '2026-08-03T10:00:00-07:00'; timezone = 'America/Los_Angeles'; attendees = @('a@b.com') })
+Assert-True (-not $vc2.ok) 'attendees are refused in V1'
+Assert-True ($script:Prov.insertCalls -eq 0) 'no invalid payload reached the provider'
+
+# =====================================================================
+Write-TestSection 'RECOVERY: repeated recovery is idempotent (no duplicate, terminal untouched)'
+# =====================================================================
+Reset-Prov
+$rr = New-CalProposal -Payload (New-CreatePayload -Title 'Idem recover')
+$rrr = Invoke-CalExec -Proposal $rr
+$evCountAfter = @($script:Prov.events.Keys).Count
+$null = Restore-ActionEngine
+$null = Restore-ActionEngine
+Assert-True ((Get-ExecutionById -Id $rrr.executionId).state -eq 'succeeded') 'a terminal calendar execution stays succeeded across repeated recovery'
+Assert-True (@($script:Prov.events.Keys).Count -eq $evCountAfter) 'repeated recovery created no additional events'
 
 Complete-TestFile 'calendar-connector'

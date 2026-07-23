@@ -368,6 +368,29 @@ decisions (do not regress):
 6. **Connector creates must use provider-side ids and idempotency keys** (Calendar event id, Gmail
    message id) — never title/delta inference.
 
-**Stopping point:** Epic 16A on `feature/deterministic-owner-create-ids` (from `main` @ `13f1b18`).
-Execution suite (26 + 61 + 51 + 93) green; 7/7 mutation; reasoning 8/8. Not pushed. Connectors
-(Calendar, then Gmail) are the next work, each on its own provider-id contract.
+**Stopping point:** Epic 16A merged to `main` (`b83fb0b`).
+
+## Epic 17 — Google Calendar Connector (permanent decisions)
+
+GIOK's **first external side-effecting connector** — the write path (create/update/cancel events),
+scope `calendar.events`, a **separate consent + token store** from the read-only provider. Full
+contract in [Google_Calendar_Connector.md](Google_Calendar_Connector.md). Permanent decisions:
+
+1. **Google Calendar writes occur only through the Action Engine.** No parallel path; no direct write
+   from Tony, Claude, Daily Plan, Briefing, Inbox UI, Calendar view, reasoning, n8n, or any helper.
+2. **Approval binds to the exact proposal instance** (uid + id + content fingerprint), not content
+   alone — this closes NB-1 and is a permanent engine guarantee for external connectors.
+3. **Create actions use provider-safe idempotency** — a deterministic client-specified event id
+   (`giok` + hex of the idempotency key; base32hex) — never title/delta. A duplicate insert (409) is
+   read back and treated as created; no duplicate event across retry/crash/restart.
+4. **Success requires an exact provider event-id read-back.** An HTTP 200 without verified provider
+   state is a failure (engine-owned `connector` verify mode).
+5. **Recovery reconciles by exact provider id; it never blindly repeats a write** (windows A-E).
+6. **Least-privilege write scope**, separate token store (`calendar.write.tokens.json`, gitignored);
+   no calendar data flows to Claude merely because Calendar is connected.
+7. **Gmail remains blocked** until a send-specific idempotency/verify contract exists.
+
+**Stopping point:** Epic 17 on `feature/google-calendar-connector` (from `main` @ `b83fb0b`).
+Execution suite 26 + **82** + 106 + 61 + 51 green; **7/7 connector mutation**; reasoning 8/8; 7/7
+render. Not pushed. **Live test-calendar verification is pending** (needs the user's explicit
+approval + real OAuth credentials on a dedicated test calendar — never the primary calendar).

@@ -637,7 +637,40 @@ effect, and recovery/verification are by **exact identity** — a matching title
 required cross-owner collision case id-A/B/C, idempotency + id stability), plus the updated
 hardening suite (61). Mutation: **7/7** protections caught (supplied-id persistence, deterministic
 id, exact-id verify, duplicate reject, title-mode retirement, restart id stability, no-blind-rerun
-recovery). Execution suite 26+61+51+93; reasoning 8/8.
+recovery). Execution suite 26+61+51+93; reasoning 8/8. **Merged to `main` (`b83fb0b`).**
+
+## Epic 17 — Google Calendar Connector (first external write)
+
+**Where:** `feature/google-calendar-connector`, branched from `main` @ `b83fb0b`.
+
+**What:** GIOK's first external side-effecting connector — create / update / cancel Google Calendar
+events, executed **only** through the Executive Action Engine (no parallel path). Write scope
+`calendar.events` on a **separate consent + token store** from the read-only `calendar.readonly`
+provider (installed-desktop OAuth: PKCE + loopback + offline refresh, on the shared
+`core/google-oauth.ps1`). Contract: [Google_Calendar_Connector.md](Google_Calendar_Connector.md).
+
+- **Module:** `core/connectors/google-calendar.ps1` — all Google API knowledge; plugs in via
+  `Register-ActionConnector` (BuildIntent/Execute/Verify) + a new engine `connector` intent mode.
+- **Idempotency:** deterministic client-specified event id (base32hex) from the execution idempotency
+  key; duplicate insert (409) read back and treated as created — no duplicate across retry/crash.
+- **Verification:** engine-owned `connector` mode requires an **independent read-back by exact
+  provider id**; an HTTP 200 without verified state fails. Recovery reconciles by that id (windows
+  A-E), never re-sending a write.
+- **Approval-instance binding (NB-1 closed):** approval binds uid + id + fingerprint; a reused
+  approval with a different uid is refused; connector actions require an instance-bound approval.
+- **Validation:** IANA timezone (never guessed), explicit-UTC-offset DST rule, end>start, no
+  attendees/notifications in V1; stale-version protection on updates; no-op updates refused.
+- **Files (gitignored):** `calendar.write.tokens.json` (write tokens), `calendar.write.prefs.json`
+  (default calendar). Audit redacts titles/tokens (safe calendar ref + provider id only).
+- **UI:** Settings "Google Calendar (write)" card (Connect/Test/Disconnect, separate consent);
+  Executive Inbox approval shows action/calendar/title/when/timezone/changes/notify.
+
+**Tests:** calendar-connector (**82** mocked assertions: auth, create/update/cancel, idempotency,
+verification, hostile provider + hostile connector, recovery A-E, validation, approval binding).
+Mutation: **7/7** caught (approval-instance binding, deterministic-id idempotency, read-back verify,
+exact-id recovery, stale-version, token redaction, fail-closed availability). Execution suite
+26+82+106+61+51; reasoning 8/8; 7/7 render. **Live test-calendar verification pending** (explicit
+user approval + real credentials on a dedicated test calendar). **Not pushed. Gmail still blocked.**
 
 **Next:** external connectors are now unblocked at the engine level — **Calendar** first (idempotent,
 reversible; connector event-id + idempotency key), then **Gmail**.

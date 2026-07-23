@@ -31,10 +31,14 @@ real external connector.
   proposal to an owner write. `Approve-InboxItem` **has no fallback**: if the engine is
   unavailable it returns a calm error and leaves the proposal pending. There is deliberately no
   unvalidated/unaudited/unverified route.
-- **Approval-first, grounded.** Execution requires explicit approval metadata
-  (`approvedBy`, `approvedAt`, `source`, `fingerprint`) built from the real approval event. A
-  direct call without approval fails safely; a proposal **edited after approval** no longer
-  matches its fingerprint and is refused. Un-approved and rejected proposals never execute.
+- **Approval-first, grounded, instance-bound.** Execution requires explicit approval metadata
+  (`approvedBy`, `approvedAt`, `source`, `fingerprint`, and — Epic 17 — the proposal `uid` + `id`)
+  built from the real approval event. A direct call without approval fails safely; a proposal
+  **edited after approval** no longer matches its fingerprint and is refused. Un-approved and
+  rejected proposals never execute. **Approval binds to the exact proposal instance** (NB-1 closed):
+  a reused approval object carrying a different `uid`/`id` is refused even when the content matches,
+  so a direct caller can never execute one instance with another's approval. External connector
+  actions **require** an instance-bound approval.
 - **Intent before side effect.** Before any owner write, the engine persists an immutable
   **execution intent**: the action type, the target id — or a **pre-allocated new id** for
   create-style actions — and the exact facts that will prove the change landed. A log that cannot
@@ -94,6 +98,27 @@ Validated **before** the intent is persisted (so a malformed payload writes noth
 
 Unknown proposal fields are **rejected**, not silently ignored.
 
+## External connectors (Epic 17: Google Calendar is the first)
+
+An external, side-effecting connector plugs into this **one** execution path — never a parallel one —
+via `Register-ActionConnector -Types -BuildIntent -Execute -Verify`:
+
+- **BuildIntent** validates + normalizes the connector's own payload (before any side effect) and
+  returns the fields that will **prove the change landed by exact provider id** — for a create, a
+  **deterministic client-specified id** derived from the execution idempotency key. These become the
+  immutable `connector`-mode intent.
+- **Execute** performs the approved external request and returns sanitized `{ok, destination, newId,
+  message}` (the provider id in `newId`). It cannot change execution state.
+- **Verify** is the engine's **authoritative** gate for `connector` mode: an **independent provider
+  read-back by exact id**. The engine *requires* it — a missing connector/verifier or a non-true
+  verdict fails closed, so an HTTP 200 without verified provider state can never reach `succeeded`.
+
+The connector proposal carries a structured `payload`; a payload edit changes the fingerprint (so a
+prior approval is invalid). Recovery re-verifies by the exact provider id in the intent and **never
+re-runs** the write. Google-specific knowledge lives entirely in the connector
+(`core/connectors/google-calendar.ps1`); the engine stays deterministic and network-free. See
+[Google_Calendar_Connector.md](Google_Calendar_Connector.md).
+
 ## Public surface (`core/action-engine.ps1`)
 
 - `Invoke-ProposalExecution -Proposal -Approval` — the one execution path (idempotency → validate
@@ -131,5 +156,10 @@ owner), and can reference private titles, so it is local-only and never committe
 - **One proposal maps to one idempotent execution.**
 - **Audit persistence is atomic and corruption-aware**, fails closed when unreadable, and never
   silently erases history.
-- **External connectors (Calendar/Gmail) remain blocked** until these guarantees are exercised
-  against a real side-effecting connector; the local handlers are their template.
+- **Google Calendar is the first external connector (Epic 17).** Calendar writes occur **only**
+  through the Action Engine; create actions use a **provider-safe deterministic client event id**
+  (never title/delta); success requires an **exact provider event-id read-back**; recovery reconciles
+  by that id and never blindly repeats a write; approval **binds to the exact proposal instance**.
+- **Gmail remains blocked** until a send-specific idempotency/verify contract exists (a Gmail send is
+  irreversible and has no natural idempotency key; Calendar — idempotent-keyable and reversible — is
+  deliberately first). The local handlers and the Calendar connector are the template.
