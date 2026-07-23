@@ -609,3 +609,35 @@ approval). Mutation: **8/8** protections caught. Reasoning suite remains green (
 
 **Gate:** external connectors (Calendar/Gmail) remain **blocked** until these guarantees are
 exercised against a real side-effecting connector. The local handlers are their template.
+
+---
+
+## Epic 16A — Deterministic Owner-Created IDs
+
+**Where:** `feature/deterministic-owner-create-ids`, branched from `main` @ `13f1b18`.
+
+**What:** retires the last constrained title-mode recovery path in the Executive Action Engine.
+Every supported owner create (goal / project / non-negotiable / family / health / financial /
+agency / learning / memory) now gets a **deterministic pre-allocated stable id** before any side
+effect, and recovery/verification are by **exact identity** — a matching title is never evidence.
+
+- **Owner API:** `Add-Goal -Id`, `Add-LifeItem -Id`, `Approve-Memory -Id` (Add-ActionItem already).
+  Supplied id is persisted exactly after two gates (well-formed for the owner + not a duplicate);
+  omitted id keeps the unchanged sequential behaviour. Owners remain the only writers.
+- **ID format:** `<PREFIX>-X<8 hex of MD5(idempotency key)>` — deterministic (stable across
+  restart/retry), unique, non-numeric so it can never collide with a sequential id, no
+  human-sensitive data.
+- **Identity fix:** inbox `INBOX-NNN` ids are reused; each proposal now carries a durable `uid` used
+  as the idempotency/id seed, so distinct proposal instances get distinct ids while a retry of the
+  same proposal reuses its id.
+- **Title-mode retired:** `create-id` intents for all owner creates; verify by exact id; the `title`
+  branch is a fail-closed, precise-id-only remnant.
+
+**Tests:** owner-create-ids (51), deterministic-ids (93 — per-owner crash matrix A/B/C/D, the
+required cross-owner collision case id-A/B/C, idempotency + id stability), plus the updated
+hardening suite (61). Mutation: **7/7** protections caught (supplied-id persistence, deterministic
+id, exact-id verify, duplicate reject, title-mode retirement, restart id stability, no-blind-rerun
+recovery). Execution suite 26+61+51+93; reasoning 8/8.
+
+**Next:** external connectors are now unblocked at the engine level — **Calendar** first (idempotent,
+reversible; connector event-id + idempotency key), then **Gmail**.

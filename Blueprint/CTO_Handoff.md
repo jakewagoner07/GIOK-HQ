@@ -348,3 +348,26 @@ the only path from an approved Executive Inbox proposal to an owner-store write.
 **Stopping point:** Epic 15 on `feature/executive-action-engine`; hardening on
 `fix/executive-action-engine-hardening` (branched from Epic 15 HEAD — Epic 15 not merged to `main`).
 Execution suite (26 + 53 adversarial) green; 8/8 mutation; reasoning suite green. Not pushed.
+
+---
+
+## Epic 16A — Deterministic Owner-Created IDs (permanent decisions)
+
+The pre-connector hardening that retires title-mode from the Executive Action Engine. Permanent
+decisions (do not regress):
+
+1. **Every production create uses a pre-allocated stable id.** The engine derives a deterministic
+   owner-format id (`<PREFIX>-X<8 hex of MD5(idempotency key)>`) before any side effect and passes it
+   to the owner writer via `-Id`.
+2. **Verification is exact-id based.** Recovery and runtime verify the exact owner-record id.
+3. **Title-mode is retired** from all supported Action Engine create paths (a fail-closed, precise-id
+   remnant survives only for legacy records).
+4. **Recovery never infers success from titles** — a matching or pre-existing title is never evidence.
+5. **A durable per-proposal `uid`** (not the reusable `INBOX-NNN` id) seeds identity/idempotency, so
+   distinct proposal instances get distinct stable ids and retries of the same proposal reuse theirs.
+6. **Connector creates must use provider-side ids and idempotency keys** (Calendar event id, Gmail
+   message id) — never title/delta inference.
+
+**Stopping point:** Epic 16A on `feature/deterministic-owner-create-ids` (from `main` @ `13f1b18`).
+Execution suite (26 + 61 + 51 + 93) green; 7/7 mutation; reasoning 8/8. Not pushed. Connectors
+(Calendar, then Gmail) are the next work, each on its own provider-id contract.

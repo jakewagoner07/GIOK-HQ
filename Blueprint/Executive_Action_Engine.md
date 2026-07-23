@@ -53,14 +53,13 @@ real external connector.
   verification, not re-executed; only a failed twin permits a deliberate retry. The key lives in
   the log, so idempotency survives restart. Duplicate approval clicks and repeated direct calls
   produce at most one owner write.
-- **Restart safety — by stable identity, never mere title.** On launch, any non-terminal
-  execution is resolved by **verifying its persisted intent** against the owner store, and success
-  is proven by **stable identity**: the pre-allocated/created id for Action Items, or — for
-  owner-minted creates — the exact minted id in the persisted result, else **delta evidence** (a
-  matching-title record whose id did **not** exist before the intent, snapshotted in the intent
-  before the write). A pre-existing duplicate title is **never** sufficient. So the intended change
-  actually landed → succeeded; it did not → failed (safe to re-propose). Recovery **never re-runs a
-  write** and is idempotent (a second pass is a no-op).
+- **Restart safety — by stable identity (Epic 16A: exact-id for every create).** On launch, any
+  non-terminal execution is resolved by **verifying its persisted intent** against the owner store,
+  and success is proven by the **exact pre-allocated id**: every create — Action Items *and* owner-
+  minted (goal/project/life/memory) — is a `create-id` intent whose deterministic id the owner
+  persists. Recovery verifies that exact id exists. A matching **title is never evidence** (title-
+  mode is retired). So the intended record actually landed → succeeded; it did not → failed (safe to
+  re-propose). Recovery **never re-runs a write** and is idempotent (a second pass is a no-op).
 - **Durable, corruption-aware audit.** `execution_log.json` is written by **atomic snapshot**
   (temp file + `[IO.File]::Replace`) with a `.bak` last-known-good copy, serialized by a named
   mutex. A corrupt primary recovers from the backup and **history is never silently erased**; if
@@ -91,7 +90,7 @@ Validated **before** the intent is persisted (so a malformed payload writes noth
 | `set-priority` | set `priority` on the target (`sourceId`) | value in `low\|medium\|high`; target exists | target `priority` == value |
 | `defer` | set `deferredUntil` on the target | valid, **non-past** date; target exists | target has `deferredUntil` |
 | `archive` | archive the target | target exists | target `archived == true` |
-| owner-minted (`goal`/`project`/life/`memory`) | owner's own writer | (owner's own) | the exact minted `result.newId` exists, **else** a matching-title record whose id is new since the intent (delta evidence) — **never** mere title membership |
+| owner-minted (`goal`/`project`/life/`memory`) | owner writer with a **pre-allocated `-Id`** (`Add-Goal -Id` / `Add-LifeItem -Id` / `Approve-Memory -Id`) | non-empty title; owner validates id format + duplicate | the **exact pre-allocated id** exists in the owner store — never title |
 
 Unknown proposal fields are **rejected**, not silently ignored.
 
@@ -114,13 +113,17 @@ owner), and can reference private titles, so it is local-only and never committe
 ## Permanent decisions (Epic 15.1)
 
 - **The Action Engine fails closed** if unavailable — there is no legacy direct-write fallback.
-- **Recovery verifies STABLE IDENTITY, never mere title.** Success is proven by a pre-allocated/
-  minted id, or (for owner-minted creates) by delta evidence — a matching-title record whose id did
-  not exist before the intent. A pre-existing duplicate title can never satisfy recovery. Title-mode
-  is thereby **constrained** (not a general success criterion); the remaining limitation is only
-  that owner-minted creates cannot yet pre-allocate ids, so the null-result window relies on
-  same-title delta evidence rather than a direct id — retired entirely once owner writers accept
-  deterministic ids (a future `create-id` for every create).
+- **Every production create uses a pre-allocated stable id (Epic 16A).** The engine derives a
+  deterministic owner-format id (`<PREFIX>-X<8 hex of MD5(idempotency key)>`) before any side
+  effect, persists it in the immutable intent, passes it to the owner writer (`-Id`), and verifies
+  by that **exact id**. The id is stable across restart/retry and never regenerated. A durable
+  per-proposal `uid` seeds the identity so distinct proposal instances get distinct ids even though
+  inbox ids are reused.
+- **Verification is exact-id based; recovery never infers success from titles.** Title-mode is
+  **retired** from every supported create path (a fail-closed, precise-id-only remnant remains for
+  any legacy record). A pre-existing or same-title record can never satisfy recovery.
+- **Connector creates must use provider-side ids and idempotency keys** — a Calendar event id, a
+  Gmail message id — never title/delta inference. The local owner-create-id contract is their template.
 - **Intent is persisted before any side effect**; recovery re-verifies the persisted intent and
   **never blindly re-runs** a write.
 - **Handlers cannot control execution state** — state, history, terminal status, and result
