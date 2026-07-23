@@ -451,7 +451,36 @@ function Invoke-GCalConnectorExecute {
             Write-GCalDiag -Message ("event created ({0})." -f $i.safeCalendarRef)
             return [pscustomobject]@{ ok = $true; destination = [string]$i.safeCalendarRef; newId = [string]$ev.id; message = ('Calendar event created (' + [string]$i.safeCalendarRef + ').') }
         }
-        return [pscustomobject]@{ ok = $false; message = ("calendar action not enabled in this stage: {0}" -f $action) }
+        if ($action -eq 'update') {
+            # read the current event: for the stale-version guard, no-op detection,
+            # and to fail cleanly if it is gone.
+            $cur = $null
+            try { $cur = Invoke-GCalGet -Token $tok.token -CalendarId ([string]$i.calendarId) -EventId ([string]$i.eventId) }
+            catch { $cls = Get-GCalSafeErrorClass -ErrorRecord $_; return [pscustomobject]@{ ok = $false; message = ("Calendar event not found for update ({0})." -f $cls) } }
+            if (-not $cur -or -not $cur.id) { return [pscustomobject]@{ ok = $false; message = 'Calendar event not found for update.' } }
+            # stale-version protection: refuse to overwrite a newer external change.
+            if (-not [string]::IsNullOrWhiteSpace([string]$i.expectedProviderVersion)) {
+                $curVer = Get-GCalEventVersion -Ev $cur
+                if ($curVer -ne [string]$i.expectedProviderVersion) { return [pscustomobject]@{ ok = $false; message = 'Calendar event changed since approval (stale); it was not overwritten.' } }
+            }
+            if (Test-GCalNoOpUpdate -Current $cur -Changes $i.changes) { return [pscustomobject]@{ ok = $false; message = 'No-op update: nothing would change.' } }
+            $body = New-GCalPatchBody -Changes $i.changes
+            $ev = Invoke-GCalPatch -Token $tok.token -CalendarId ([string]$i.calendarId) -EventId ([string]$i.eventId) -Body $body
+            if (-not $ev -or -not $ev.id) { return [pscustomobject]@{ ok = $false; message = 'Calendar patch returned no event.' } }
+            Write-GCalDiag -Message ("event updated ({0})." -f $i.safeCalendarRef)
+            return [pscustomobject]@{ ok = $true; destination = [string]$i.safeCalendarRef; newId = [string]$i.eventId; message = ('Calendar event updated (' + [string]$i.safeCalendarRef + ').') }
+        }
+        if ($action -eq 'cancel') {
+            try { [void](Invoke-GCalDelete -Token $tok.token -CalendarId ([string]$i.calendarId) -EventId ([string]$i.eventId)) }
+            catch {
+                $cls = Get-GCalSafeErrorClass -ErrorRecord $_
+                if ($cls -ne 'not-found' -and $cls -ne 'gone') { return [pscustomobject]@{ ok = $false; message = ("Calendar cancel failed ({0})." -f $cls) } }
+                # already gone -> idempotent success
+            }
+            Write-GCalDiag -Message ("event cancelled ({0})." -f $i.safeCalendarRef)
+            return [pscustomobject]@{ ok = $true; destination = [string]$i.safeCalendarRef; newId = [string]$i.eventId; message = ('Calendar event cancelled (' + [string]$i.safeCalendarRef + ').') }
+        }
+        return [pscustomobject]@{ ok = $false; message = ("unsupported calendar action: {0}" -f $action) }
     }
     catch {
         $cls = Get-GCalSafeErrorClass -ErrorRecord $_
@@ -487,9 +516,71 @@ function Test-GCalConnectorVerify {
             if (($ev.PSObject.Properties.Name -contains 'summary') -and ([string]$ev.summary -ne [string]$Intent.title)) { return $false }
             return $true
         }
+        if ($action -eq 'update') {
+            $ev = $null
+            try { $ev = Invoke-GCalGet -Token $tok.token -CalendarId ([string]$Intent.calendarId) -EventId ([string]$Intent.eventId) } catch { return $false }
+            if (-not $ev -or -not $ev.id) { return $false }
+            if (($ev.PSObject.Properties.Name -contains 'status') -and ([string]$ev.status -eq 'cancelled')) { return $false }
+            # every intended change must be reflected in the event now
+            $ch = $Intent.changes
+            foreach ($cn in @($ch.PSObject.Properties.Name)) {
+                if ($cn -eq 'title') { if (([string]$ev.summary) -ne [string]$ch.title) { return $false } }
+                elseif ($cn -eq 'start') { $es = if ($ev.start -and ($ev.start.PSObject.Properties.Name -contains 'dateTime')) { [string]$ev.start.dateTime } else { '' }; if (-not (Test-GCalInstantsEqual -A $es -B ([string]$ch.start))) { return $false } }
+                elseif ($cn -eq 'end') { $ee = if ($ev.end -and ($ev.end.PSObject.Properties.Name -contains 'dateTime')) { [string]$ev.end.dateTime } else { '' }; if (-not (Test-GCalInstantsEqual -A $ee -B ([string]$ch.end))) { return $false } }
+                elseif ($cn -eq 'description') { if (([string]$ev.description) -ne [string]$ch.description) { return $false } }
+                elseif ($cn -eq 'location') { if (([string]$ev.location) -ne [string]$ch.location) { return $false } }
+                # 'timezone' is proven by the start/end instants
+            }
+            return $true
+        }
+        if ($action -eq 'cancel') {
+            $ev = $null
+            try { $ev = Invoke-GCalGet -Token $tok.token -CalendarId ([string]$Intent.calendarId) -EventId ([string]$Intent.eventId) }
+            catch { $cls = Get-GCalSafeErrorClass -ErrorRecord $_; if ($cls -eq 'not-found' -or $cls -eq 'gone') { return $true } return $false }
+            if (-not $ev) { return $true }   # absent -> deleted
+            if (($ev.PSObject.Properties.Name -contains 'status') -and ([string]$ev.status -eq 'cancelled')) { return $true }
+            return $false
+        }
         return $false
     }
     catch { return $false }
+}
+
+# The event's opaque version token for optimistic concurrency (stale-update
+# protection): etag, else the updated timestamp, else the sequence number.
+function Get-GCalEventVersion {
+    param($Ev)
+    if (($Ev.PSObject.Properties.Name -contains 'etag') -and $Ev.etag) { return [string]$Ev.etag }
+    if (($Ev.PSObject.Properties.Name -contains 'updated') -and $Ev.updated) { return [string]$Ev.updated }
+    if ($Ev.PSObject.Properties.Name -contains 'sequence') { return ('seq:' + [string]$Ev.sequence) }
+    return ''
+}
+# A change set is a no-op if every intended field already equals the current value.
+function Test-GCalNoOpUpdate {
+    param($Current, $Changes)
+    foreach ($cn in @($Changes.PSObject.Properties.Name)) {
+        if ($cn -eq 'title') { if (([string]$Current.summary) -ne [string]$Changes.title) { return $false } }
+        elseif ($cn -eq 'start') { $cs = if ($Current.start -and ($Current.start.PSObject.Properties.Name -contains 'dateTime')) { [string]$Current.start.dateTime } else { '' }; if (-not (Test-GCalInstantsEqual -A $cs -B ([string]$Changes.start))) { return $false } }
+        elseif ($cn -eq 'end') { $ce = if ($Current.end -and ($Current.end.PSObject.Properties.Name -contains 'dateTime')) { [string]$Current.end.dateTime } else { '' }; if (-not (Test-GCalInstantsEqual -A $ce -B ([string]$Changes.end))) { return $false } }
+        elseif ($cn -eq 'description') { if (([string]$Current.description) -ne [string]$Changes.description) { return $false } }
+        elseif ($cn -eq 'location') { if (([string]$Current.location) -ne [string]$Changes.location) { return $false } }
+        # 'timezone' alone does not constitute a change
+    }
+    return $true
+}
+# Build the Google patch body from the normalized change set.
+function New-GCalPatchBody {
+    param($Changes)
+    $body = [pscustomobject]@{}
+    $names = @($Changes.PSObject.Properties.Name)
+    if ($names -contains 'title') { $body | Add-Member -NotePropertyName summary -NotePropertyValue ([string]$Changes.title) -Force }
+    if (($names -contains 'start') -and ($names -contains 'end') -and ($names -contains 'timezone')) {
+        $body | Add-Member -NotePropertyName start -NotePropertyValue ([pscustomobject]@{ dateTime = [string]$Changes.start; timeZone = [string]$Changes.timezone }) -Force
+        $body | Add-Member -NotePropertyName end -NotePropertyValue ([pscustomobject]@{ dateTime = [string]$Changes.end; timeZone = [string]$Changes.timezone }) -Force
+    }
+    if ($names -contains 'description') { $body | Add-Member -NotePropertyName description -NotePropertyValue ([string]$Changes.description) -Force }
+    if ($names -contains 'location') { $body | Add-Member -NotePropertyName location -NotePropertyValue ([string]$Changes.location) -Force }
+    return $body
 }
 
 # Two RFC3339 instants are equal if they denote the same moment (offset-aware),
@@ -505,11 +596,11 @@ function Test-GCalInstantsEqual {
 }
 
 # ---- registration: plug the connector into the ONE execution path ------------
-# Registers ONLY the create types in this stage (Stage 2). Update/cancel types are
-# registered in Stage 3 once their execute/verify land.
+# Registers ALL six V1 action types (create x4, update, cancel) on the ONE
+# execution path. The engine learns no Google specifics - only the three seams.
 function Register-GCalConnector {
     if (-not (Get-Command Register-ActionConnector -ErrorAction SilentlyContinue)) { return $false }
-    Register-ActionConnector -Types $script:GCalCreateTypes `
+    Register-ActionConnector -Types $script:GCalActionTypes `
         -BuildIntent { param($Proposal) New-GCalIntent -Proposal $Proposal } `
         -Execute     { param($Request) Invoke-GCalConnectorExecute -Request $Request } `
         -Verify      { param($Intent, $Result) Test-GCalConnectorVerify -Intent $Intent -Result $Result }

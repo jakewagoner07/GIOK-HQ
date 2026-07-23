@@ -315,13 +315,14 @@ function Approve-InboxItem {
         return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = 'The Action Engine is not available. Nothing was changed; the proposal is still pending.' }
     }
     # approval metadata is grounded in THIS user approval event - who, when, from
-    # where, and a fingerprint of the proposal exactly as approved. The engine
-    # rejects execution if the proposal no longer matches the fingerprint.
-    $approval = [pscustomobject]@{
-        approvedBy  = $ApprovedBy
-        approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-        source      = 'executive-inbox'
-        fingerprint = (Get-ProposalFingerprint -Proposal $item)
+    # where, a fingerprint of the proposal exactly as approved, AND the proposal
+    # INSTANCE binding (uid + id, Epic 17). The engine rejects execution if the
+    # proposal no longer matches the fingerprint or the approval was minted for a
+    # different instance.
+    $approval = if (Get-Command New-ProposalApproval -ErrorAction SilentlyContinue) {
+        New-ProposalApproval -Proposal $item -ApprovedBy $ApprovedBy -Source 'executive-inbox'
+    } else {
+        [pscustomobject]@{ approvedBy = $ApprovedBy; approvedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); source = 'executive-inbox'; fingerprint = (Get-ProposalFingerprint -Proposal $item) }
     }
     $exec = Invoke-ProposalExecution -Proposal $item -Approval $approval
     if ($exec.ok) {

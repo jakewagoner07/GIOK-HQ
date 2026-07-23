@@ -529,6 +529,23 @@ function Get-ProposalFingerprint {
     $md5 = [System.Security.Cryptography.MD5]::Create()
     return (([System.BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material))) -replace '-', '').Substring(0, 16))
 }
+# Build approval metadata BOUND to a specific proposal instance (Epic 17, NB-1).
+# It carries the durable uid and the proposal id in addition to the content
+# fingerprint, so the engine can refuse an approval that was minted for a
+# different instance. The one place approvals are constructed - the inbox and the
+# tests both use this - so binding is consistent everywhere.
+function New-ProposalApproval {
+    param([Parameter(Mandatory)] $Proposal, [string]$ApprovedBy = 'owner', [string]$Source = 'executive-inbox')
+    return [pscustomobject]@{
+        approvedBy  = $ApprovedBy
+        approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        source      = $Source
+        uid         = $(if (($Proposal.PSObject.Properties.Name -contains 'uid') -and $Proposal.uid) { [string]$Proposal.uid } else { '' })
+        proposalId  = [string]$Proposal.id
+        type        = [string]$Proposal.type
+        fingerprint = (Get-ProposalFingerprint -Proposal $Proposal)
+    }
+}
 function Get-ExecutionIdempotencyKey {
     param([Parameter(Mandatory)] $Proposal)
     # The proposal INSTANCE identity. Prefer the durable per-instance uid (INBOX ids
@@ -737,6 +754,26 @@ function Invoke-ProposalExecution {
         return [pscustomobject]@{ ok = $false; message = 'The proposal changed after it was approved; approve the current version to execute it.'; executionId = $null }
     }
 
+    # ---- approval-INSTANCE binding (Epic 17, closes NB-1) ----
+    # Content matching is not enough: the approval must be for THIS proposal
+    # INSTANCE. A reused approval object carrying a different uid or id is refused,
+    # so a direct caller can never execute proposal B with proposal A's approval,
+    # and editing a proposal (new fingerprint above, same uid) is already refused.
+    # For an EXTERNAL connector a uid-bound approval is REQUIRED - no bare-content
+    # approval may drive a side-effecting external write.
+    $propUid = if (($Proposal.PSObject.Properties.Name -contains 'uid') -and $Proposal.uid) { [string]$Proposal.uid } else { '' }
+    $apUid = if ($Approval.PSObject.Properties.Name -contains 'uid') { [string]$Approval.uid } else { '' }
+    $apPid = if ($Approval.PSObject.Properties.Name -contains 'proposalId') { [string]$Approval.proposalId } else { '' }
+    if ($propUid -and $apUid -and ($apUid -ne $propUid)) {
+        return [pscustomobject]@{ ok = $false; message = 'This approval was for a different proposal (instance mismatch); approve the current one.'; executionId = $null }
+    }
+    if ($apPid -and ([string]$Proposal.id) -and ($apPid -ne [string]$Proposal.id)) {
+        return [pscustomobject]@{ ok = $false; message = 'This approval was for a different proposal (id mismatch); approve the current one.'; executionId = $null }
+    }
+    if ((Get-ActionConnector -Type ([string]$Proposal.type)) -and (-not $propUid -or -not $apUid -or ($apUid -ne $propUid))) {
+        return [pscustomobject]@{ ok = $false; message = 'External calendar actions require an approval bound to this proposal instance.'; executionId = $null }
+    }
+
     # ---- idempotency: one proposal -> at most one active/successful execution ----
     $key = $null
     try { $key = Get-ExecutionIdempotencyKey -Proposal $Proposal } catch { $key = $null }
@@ -786,6 +823,8 @@ function Invoke-ProposalExecution {
         approvedAt  = [string]$Approval.approvedAt
         source      = [string]$Approval.source
         fingerprint = [string]$Approval.fingerprint
+        uid         = $apUid
+        proposalId  = $apPid
     }
     try { [void](Update-ExecutionRecord -Record $rec) }
     catch {

@@ -184,4 +184,130 @@ $rb3 = Invoke-CalExec -Proposal $bad3
 Assert-True (-not $rb3.ok) 'end<=start is rejected'
 Assert-True ($script:Prov.insertCalls -eq 0) 'NOT ONE malformed payload reached the provider'
 
+# =====================================================================
+Write-TestSection 'update: valid update -> succeeded, verified by exact intended fields'
+# =====================================================================
+Reset-Prov
+$uc = New-CalProposal -Payload (New-CreatePayload -Title 'Orig title')
+$urc = Invoke-CalExec -Proposal $uc
+$eid = $urc.newId
+$pu = New-CalProposal -Type 'calendar.update-event' -Payload @{ calendarId = 'primary'; eventId = $eid; changes = ([pscustomobject]@{ title = 'Renamed title' }) }
+$ru = Invoke-CalExec -Proposal $pu
+Assert-True ($ru.ok) 'valid update succeeds'
+Assert-True ([string]$script:Prov.events[('primary/{0}' -f $eid)].summary -eq 'Renamed title') 'the event now carries the intended new title'
+Assert-True ($script:Prov.patchCalls -eq 1) 'exactly one patch was sent'
+
+# =====================================================================
+Write-TestSection 'update: stale expectedProviderVersion -> rejected, not overwritten'
+# =====================================================================
+Reset-Prov
+$sc = New-CalProposal -Payload (New-CreatePayload -Title 'Keep me')
+$src = Invoke-CalExec -Proposal $sc
+$eid2 = $src.newId
+$before = [string]$script:Prov.events[('primary/{0}' -f $eid2)].summary
+$ps = New-CalProposal -Type 'calendar.update-event' -Payload @{ calendarId = 'primary'; eventId = $eid2; expectedProviderVersion = '"STALE-OLD"'; changes = ([pscustomobject]@{ title = 'Should not apply' }) }
+$rs = Invoke-CalExec -Proposal $ps
+Assert-True (-not $rs.ok) 'a stale-version update is refused'
+Assert-True ($script:Prov.patchCalls -eq 0) 'no patch was sent for a stale update'
+Assert-True ([string]$script:Prov.events[('primary/{0}' -f $eid2)].summary -eq $before) 'the newer external state was NOT overwritten'
+
+# =====================================================================
+Write-TestSection 'update: missing event and no-op update are refused'
+# =====================================================================
+Reset-Prov
+$pm = New-CalProposal -Type 'calendar.update-event' -Payload @{ calendarId = 'primary'; eventId = 'giokdoesnotexist99'; changes = ([pscustomobject]@{ title = 'X' }) }
+$rm = Invoke-CalExec -Proposal $pm
+Assert-True (-not $rm.ok) 'update of a missing event fails'
+$nc = New-CalProposal -Payload (New-CreatePayload -Title 'Same')
+$nrc = Invoke-CalExec -Proposal $nc
+$pn = New-CalProposal -Type 'calendar.update-event' -Payload @{ calendarId = 'primary'; eventId = $nrc.newId; changes = ([pscustomobject]@{ title = 'Same' }) }
+$rn = Invoke-CalExec -Proposal $pn
+Assert-True (-not $rn.ok) 'a no-op update (nothing changes) is refused'
+
+# =====================================================================
+Write-TestSection 'update window C: response lost after patch -> recovery verifies, succeeds'
+# =====================================================================
+Reset-Prov
+$wc = New-CalProposal -Payload (New-CreatePayload -Title 'Before')
+$wrc = Invoke-CalExec -Proposal $wc
+$eidC = $wrc.newId
+$puC = New-CalProposal -Type 'calendar.update-event' -Payload @{ calendarId = 'primary'; eventId = $eidC; changes = ([pscustomobject]@{ title = 'After' }) }
+$ivC = New-ExecutionIntent -Proposal $puC
+# the patch LANDED (event already renamed) but the response was lost mid-flight
+$script:Prov.events[('primary/{0}' -f $eidC)].summary = 'After'
+$log = Get-ExecutionLog
+$log.executions = @($log.executions) + [pscustomobject]@{ id = 'EXE-CAL-C'; proposalId = $puC.id; type = $puC.type; title = $puC.title; description = ''; source = 't'; sourceId = ''; proposedDestination = ''; state = 'executing'; createdAt = 't'; updatedAt = 't'; attempts = 1; idempotencyKey = (Get-ExecutionIdempotencyKey -Proposal $puC); approval = $null; intent = $ivC.intent; result = $null; history = @([pscustomobject]@{ state = 'executing'; at = 't'; detail = 'crash' }) }
+Save-ExecutionLog $log
+$script:Prov.patchCalls = 0
+$null = Restore-ActionEngine
+Assert-True ((Get-ExecutionById -Id 'EXE-CAL-C').state -eq 'succeeded') 'window C: recovery sees the intended change and succeeds'
+Assert-True ($script:Prov.patchCalls -eq 0) 'window C: recovery never re-sent the patch'
+
+# =====================================================================
+Write-TestSection 'cancel: valid cancel -> succeeded, event gone; already-gone is idempotent'
+# =====================================================================
+Reset-Prov
+$cc = New-CalProposal -Payload (New-CreatePayload -Title 'Cancel me')
+$crc = Invoke-CalExec -Proposal $cc
+$eidX = $crc.newId
+$pcancel = New-CalProposal -Type 'calendar.cancel-event' -Payload @{ calendarId = 'primary'; eventId = $eidX }
+$rcancel = Invoke-CalExec -Proposal $pcancel
+Assert-True ($rcancel.ok) 'valid cancel succeeds'
+Assert-True (-not $script:Prov.events.ContainsKey(('primary/{0}' -f $eidX))) 'the event is gone from the provider'
+# a fresh proposal cancelling an already-absent event is idempotent success
+$pcancel2 = New-CalProposal -Type 'calendar.cancel-event' -Payload @{ calendarId = 'primary'; eventId = $eidX }
+$rcancel2 = Invoke-CalExec -Proposal $pcancel2
+Assert-True ($rcancel2.ok) 'cancelling an already-gone event is idempotent success'
+
+# =====================================================================
+Write-TestSection 'cancel window D: response lost after delete -> recovery verifies cancelled/gone'
+# =====================================================================
+Reset-Prov
+$wd = New-CalProposal -Payload (New-CreatePayload -Title 'Doomed')
+$wdrc = Invoke-CalExec -Proposal $wd
+$eidD = $wdrc.newId
+$pcD = New-CalProposal -Type 'calendar.cancel-event' -Payload @{ calendarId = 'primary'; eventId = $eidD }
+$ivD = New-ExecutionIntent -Proposal $pcD
+# the delete LANDED (event gone) but the response was lost
+$script:Prov.events.Remove(('primary/{0}' -f $eidD)) | Out-Null
+$log = Get-ExecutionLog
+$log.executions = @($log.executions) + [pscustomobject]@{ id = 'EXE-CAL-D'; proposalId = $pcD.id; type = $pcD.type; title = $pcD.title; description = ''; source = 't'; sourceId = ''; proposedDestination = ''; state = 'executing'; createdAt = 't'; updatedAt = 't'; attempts = 1; idempotencyKey = (Get-ExecutionIdempotencyKey -Proposal $pcD); approval = $null; intent = $ivD.intent; result = $null; history = @([pscustomobject]@{ state = 'executing'; at = 't'; detail = 'crash' }) }
+Save-ExecutionLog $log
+$script:Prov.deleteCalls = 0
+$null = Restore-ActionEngine
+Assert-True ((Get-ExecutionById -Id 'EXE-CAL-D').state -eq 'succeeded') 'window D: recovery confirms the cancelled/gone state and succeeds'
+Assert-True ($script:Prov.deleteCalls -eq 0) 'window D: recovery never re-sent the delete'
+
+# =====================================================================
+Write-TestSection 'approval-instance binding (NB-1): a reused approval cannot execute another instance'
+# =====================================================================
+Reset-Prov
+$binPayload = New-CreatePayload -Title 'Identical'
+$b1 = New-CalProposal -Payload $binPayload -Uid 'uid-ONE' -Title 'Identical'
+$b2 = New-CalProposal -Payload $binPayload -Uid 'uid-TWO' -Title 'Identical'
+$b2.id = $b1.id   # reused inbox id; identical content -> identical fingerprint
+Assert-True ((Get-ProposalFingerprint -Proposal $b1) -eq (Get-ProposalFingerprint -Proposal $b2)) 'the two instances have identical content fingerprints'
+$ap1 = New-TestApproval -Proposal $b1
+$reuse = Invoke-ProposalExecution -Proposal $b2 -Approval $ap1   # b1's approval, b2's proposal
+Assert-True (-not $reuse.ok) 'a reused approval with a different uid is REFUSED (instance mismatch)'
+Assert-True ($script:Prov.insertCalls -eq 0) 'the reused-approval attempt wrote nothing'
+# a connector action REQUIRES an instance-bound approval (bare-content approval refused)
+$bareAp = [pscustomobject]@{ approvedBy = 'x'; approvedAt = '2026-08-01 09:00:00'; source = 'test'; fingerprint = (Get-ProposalFingerprint -Proposal $b1) }
+$bare = Invoke-ProposalExecution -Proposal $b1 -Approval $bareAp
+Assert-True (-not $bare.ok) 'a calendar action with a non-instance-bound approval is refused'
+# the correctly-bound approval works
+$good = Invoke-ProposalExecution -Proposal $b1 -Approval (New-TestApproval -Proposal $b1)
+Assert-True ($good.ok) 'the correctly instance-bound approval executes'
+
+# =====================================================================
+Write-TestSection 'approval binding: editing the payload after approval invalidates it'
+# =====================================================================
+Reset-Prov
+$ed = New-CalProposal -Payload (New-CreatePayload -Title 'Original') -Uid 'uid-EDIT'
+$apEd = New-TestApproval -Proposal $ed
+$ed.payload.title = 'Edited after approval'   # content change -> fingerprint change
+$redit = Invoke-ProposalExecution -Proposal $ed -Approval $apEd
+Assert-True (-not $redit.ok) 'a payload edit after approval invalidates the approval (fingerprint)'
+Assert-True ($script:Prov.insertCalls -eq 0) 'the edited-after-approval attempt wrote nothing'
+
 Complete-TestFile 'calendar-connector'
