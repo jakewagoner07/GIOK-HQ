@@ -290,3 +290,21 @@ before any external side effect:
 **Connectors are gated.** ⬜ **Calendar**, then ⬜ **Gmail** connect as engine handlers **only after**
 the hardened guarantees are exercised against a real side-effecting connector. Calendar is the safer
 first external write (idempotent-keyable, reversible) before irreversible Gmail sends.
+
+---
+
+## Epic 16A — Deterministic Owner-Created IDs (retire title-mode)
+
+The pre-connector hardening step Fable required. Every supported owner create now uses a
+**deterministic pre-allocated stable id** and is verified by **exact identity**; title-mode
+recovery is retired.
+
+- ✅ owner create-with-id contracts (`Add-Goal -Id`, `Add-LifeItem -Id`, `Approve-Memory -Id`)
+- ✅ engine pre-allocates a deterministic id (`<PREFIX>-X<hash>`), persists it in the intent, passes
+  it to the owner, verifies by exact id
+- ✅ durable per-proposal `uid` (inbox ids are reused) → distinct instances get distinct stable ids
+- ✅ recovery never infers success from titles; 7/7 mutation coverage
+
+**Connectors now unblocked (still gated on their own contract):** ⬜ **Calendar** first — idempotent
+and reversible, using a connector event-id + idempotency key (never title/delta). ⬜ **Gmail** after
+a send-specific intent/verify contract (provider message-id captured before send).

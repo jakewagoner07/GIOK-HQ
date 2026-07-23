@@ -86,18 +86,29 @@ function Get-MemoryContextLines {
 # ---- WRITE PATH (permission-gated) --------------------------------
 # The ONLY way a permanent memory is created. Calling this IS the user's
 # approval - the UI calls it only after the user chooses "Remember".
+# -Id (Epic 16A): optional caller-supplied STABLE id. Omitted -> unchanged sequential
+# MEM-NNN. Supplied -> the EXACT id after two gates: well-formed MEM- id and not a
+# duplicate. Owner stays the only writer.
 function Approve-Memory {
     param(
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$Value,
         [string]$Why = '',
-        [string]$Source = 'conversation'
+        [string]$Source = 'conversation',
+        [string]$Id = ''
     )
     if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
     $cat = if ($Category -in (Get-MemoryCategories)) { $Category } else { 'Preferences' }
     $store = Get-MemoryStore
+    $useId = ''
+    if ($Id) {
+        if ($Id -notmatch '^MEM-[A-Za-z0-9]+$') { return $null }                                       # invalid id -> reject
+        if (@($store.memories | Where-Object { [string]$_.id -eq $Id }).Count -gt 0) { return $null }  # duplicate id -> reject
+        $useId = $Id
+    }
+    else { $useId = Get-NextMemoryId -Store $store }
     $mem = [pscustomobject]@{
-        id         = Get-NextMemoryId -Store $store
+        id         = $useId
         category   = $cat
         value      = $Value.Trim()
         why        = $Why.Trim()

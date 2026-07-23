@@ -49,6 +49,7 @@ function ConvertTo-NormalizedInboxItem {
     $conf = 0.0; if ((& $has 'confidence') -and $null -ne $It.confidence) { try { $conf = [double]$It.confidence } catch { $conf = 0.0 } }
     return [pscustomobject]@{
         id                  = [string]$It.id
+        uid                 = $(if (& $has 'uid') { [string]$It.uid } else { '' })
         discoveredBy        = $(if (& $has 'discoveredBy') { [string]$It.discoveredBy } else { 'Tony' })
         type                = $(if (& $has 'type') { [string]$It.type } else { 'task' })
         title               = [string]$It.title
@@ -92,8 +93,12 @@ function Add-InboxProposal {
     $data = Get-InboxData
     $max = 0; foreach ($x in @($data.items)) { if ($x.id -match '^INBOX-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    # uid (Epic 16A): a durable, per-instance unique token. INBOX-NNN ids are REUSED
+    # after a proposal leaves the inbox, so the uid - not the reusable id - is what
+    # uniquely and stably identifies this proposal instance for idempotency and for the
+    # engine's deterministic target-id derivation.
     $new = [pscustomobject]@{
-        id = ('INBOX-{0:000}' -f ($max + 1)); discoveredBy = $DiscoveredBy.Trim(); type = $Type; title = $Title.Trim()
+        id = ('INBOX-{0:000}' -f ($max + 1)); uid = ([guid]::NewGuid().ToString('N')); discoveredBy = $DiscoveredBy.Trim(); type = $Type; title = $Title.Trim()
         description = $Description.Trim(); proposedDestination = $ProposedDestination.Trim(); evidence = @($Evidence)
         confidence = [math]::Round([math]::Max(0.0, [math]::Min(1.0, $Confidence)), 2); status = 'pending'; created = $now
         source = $Source.Trim(); sourceId = $SourceId.Trim()
@@ -161,11 +166,36 @@ function Get-InboxDestinationLabel {
     }
 }
 
+# The proposal type -> owner-store id PREFIX, for deterministic pre-allocation. The
+# inbox already owns the type->owner routing, so it also owns the id-format map; the
+# Action Engine never needs to know a store's id internals. Types that create an
+# Action Item (task + read-only connector follow-ups) use the Action Items prefix.
+$script:InboxTypePrefix = @{
+    'goal' = 'G'; 'project' = 'PRJ'; 'non-negotiable' = 'NN'; 'family' = 'FAM'; 'health' = 'HL'
+    'financial' = 'FN'; 'agency' = 'AG'; 'learning' = 'LR'; 'memory' = 'MEM'
+    'task' = 'AI'; 'calendar' = 'AI'; 'crm' = 'AI'; 'document' = 'AI'; 'communication' = 'AI'
+}
+# A stable, deterministic owner-format create id from a seed (the execution's
+# idempotency key). Format: <PREFIX>-X<8 hex of MD5(seed)>. The 'X' guarantees the id
+# is NOT of the form <PREFIX>-<digits>, so it can never collide with a sequentially
+# minted id and is excluded from the owner's max-id computation. Deterministic ->
+# stable across restart and retry; carries no human-sensitive data.
+function Get-InboxCreateId {
+    param([Parameter(Mandatory)][string]$Type, [Parameter(Mandatory)][string]$Seed)
+    if (-not $script:InboxTypePrefix.ContainsKey($Type)) { return '' }
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $hex = ([System.BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Seed))) -replace '-', '').Substring(0, 8).ToLower()
+    return ('{0}-X{1}' -f $script:InboxTypePrefix[$Type], $hex)
+}
+
 # Route an approved proposal to the OWNING module's writer. The inbox NEVER
 # writes the data itself. Returns { ok; destination; newId; message }.
+# $Item.targetId (Epic 16A), when present, is the pre-allocated stable id the owner
+# must persist - so execution verifies by exact identity, never by title.
 function Invoke-InboxRoute {
     param($Item)
     $title = [string]$Item.title; $desc = [string]$Item.description
+    $tid = if ($Item.PSObject.Properties.Name -contains 'targetId') { [string]$Item.targetId } else { '' }
     $addTask = {
         param($t)
         if (-not (Get-Command Add-ActionItem -ErrorAction SilentlyContinue)) { return $null }
@@ -179,15 +209,15 @@ function Invoke-InboxRoute {
     }
     try {
         switch ($Item.type) {
-            'goal'           { if (Get-Command Add-Goal -EA SilentlyContinue) { $r = Add-Goal -Title $title -Reason $desc; return [pscustomobject]@{ ok = $true; destination = 'Goals'; newId = $r.id; message = ("Added goal {0}." -f $r.id) } } }
-            'project'        { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'projects' -Fields @{ title = $title; outcome = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Home Projects'; newId = $r.id; message = ("Added project {0}." -f $r.id) } } }
-            'non-negotiable' { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'nonNegotiables' -Fields @{ title = $title; purpose = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Non-Negotiables'; newId = $r.id; message = ("Added non-negotiable {0}." -f $r.id) } } }
-            'family'         { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'family' -Fields @{ kind = 'commitment'; title = $title; detail = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Family'; newId = $r.id; message = ("Added family item {0}." -f $r.id) } } }
-            'health'         { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'health' -Fields @{ kind = 'next-action'; title = $title; detail = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Health'; newId = $r.id; message = ("Added health item {0}." -f $r.id) } } }
-            'financial'      { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'financial' -Fields @{ kind = 'target'; title = $title; detail = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Financial'; newId = $r.id; message = ("Added financial item {0}." -f $r.id) } } }
-            'agency'         { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'agency' -Fields @{ kind = 'next-step'; title = $title; detail = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Agency'; newId = $r.id; message = ("Added agency item {0}." -f $r.id) } } }
-            'learning'       { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'learning' -Fields @{ title = $title; resource = $desc }; return [pscustomobject]@{ ok = $true; destination = 'Learning'; newId = $r.id; message = ("Added learning item {0}." -f $r.id) } } }
-            'memory'         { if (Get-Command Approve-Memory -EA SilentlyContinue) { $cat = if ($Item.proposedDestination -in (Get-MemoryCategories)) { $Item.proposedDestination } else { 'Preferences' }; $r = Approve-Memory -Category $cat -Value $title -Why $desc -Source $(if ($Item.source) { $Item.source } else { 'conversation' }); if ($r) { return [pscustomobject]@{ ok = $true; destination = 'Tony Memory'; newId = $r.id; message = ("Approved memory {0}." -f $r.id) } } } }
+            'goal'           { if (Get-Command Add-Goal -EA SilentlyContinue) { $r = Add-Goal -Title $title -Reason $desc -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Goals'; newId = $null; message = 'Goal owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Goals'; newId = $r.id; message = ("Added goal {0}." -f $r.id) } } }
+            'project'        { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'projects' -Fields @{ title = $title; outcome = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Home Projects'; newId = $null; message = 'Project owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Home Projects'; newId = $r.id; message = ("Added project {0}." -f $r.id) } } }
+            'non-negotiable' { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'nonNegotiables' -Fields @{ title = $title; purpose = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Non-Negotiables'; newId = $null; message = 'Non-negotiable owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Non-Negotiables'; newId = $r.id; message = ("Added non-negotiable {0}." -f $r.id) } } }
+            'family'         { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'family' -Fields @{ kind = 'commitment'; title = $title; detail = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Family'; newId = $null; message = 'Family owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Family'; newId = $r.id; message = ("Added family item {0}." -f $r.id) } } }
+            'health'         { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'health' -Fields @{ kind = 'next-action'; title = $title; detail = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Health'; newId = $null; message = 'Health owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Health'; newId = $r.id; message = ("Added health item {0}." -f $r.id) } } }
+            'financial'      { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'financial' -Fields @{ kind = 'target'; title = $title; detail = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Financial'; newId = $null; message = 'Financial owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Financial'; newId = $r.id; message = ("Added financial item {0}." -f $r.id) } } }
+            'agency'         { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'agency' -Fields @{ kind = 'next-step'; title = $title; detail = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Agency'; newId = $null; message = 'Agency owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Agency'; newId = $r.id; message = ("Added agency item {0}." -f $r.id) } } }
+            'learning'       { if (Get-Command Add-LifeItem -EA SilentlyContinue) { $r = Add-LifeItem -Domain 'learning' -Fields @{ title = $title; resource = $desc } -Id $tid; if (-not $r) { return [pscustomobject]@{ ok = $false; destination = 'Learning'; newId = $null; message = 'Learning owner rejected the create (id).' } } return [pscustomobject]@{ ok = $true; destination = 'Learning'; newId = $r.id; message = ("Added learning item {0}." -f $r.id) } } }
+            'memory'         { if (Get-Command Approve-Memory -EA SilentlyContinue) { $cat = if ($Item.proposedDestination -in (Get-MemoryCategories)) { $Item.proposedDestination } else { 'Preferences' }; $r = Approve-Memory -Category $cat -Value $title -Why $desc -Source $(if ($Item.source) { $Item.source } else { 'conversation' }) -Id $tid; if ($r) { return [pscustomobject]@{ ok = $true; destination = 'Tony Memory'; newId = $r.id; message = ("Approved memory {0}." -f $r.id) } } return [pscustomobject]@{ ok = $false; destination = 'Tony Memory'; newId = $null; message = 'Memory owner rejected the create (id).' } } }
             default {
                 # task / communication / calendar / crm / document: read-only providers
                 # cannot be written, so approval creates an honest follow-up Action Item.

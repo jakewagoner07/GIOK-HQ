@@ -333,7 +333,7 @@ $script:ExecFollowUpTypes = @('calendar', 'crm', 'communication', 'document')
 $script:ExecAllowedPriorities = @('low', 'medium', 'high')
 # The normalized proposal schema. Unknown fields REJECT (not silently ignored):
 # a payload carrying properties the engine does not understand is not executed.
-$script:ExecAllowedProposalFields = @('id', 'discoveredBy', 'type', 'title', 'description',
+$script:ExecAllowedProposalFields = @('id', 'uid', 'discoveredBy', 'type', 'title', 'description',
     'proposedDestination', 'evidence', 'confidence', 'status', 'created', 'source', 'sourceId')
 function Test-ExecTargetActionItem {
     param([string]$Id)
@@ -352,13 +352,11 @@ function New-ExecutionIntent {
             return [pscustomobject]@{ valid = $false; reason = ("unsupported proposal field: {0}" -f $pn); intent = $null }
         }
     }
-    # For title-mode (owner-minted creates), snapshot the matching-title ids that
-    # ALREADY exist at the destination - captured here, before any owner write, so
-    # recovery can tell a genuinely-new record from a pre-existing duplicate title.
-    $mk = { param($h)
-        if ([string]$h.mode -eq 'title') { $h['preIds'] = @(Get-DestinationMatchingIds -Destination ([string]$h.destination) -Title ([string]$h.title)) }
-        [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h }
-    }
+    $mk = { param($h) [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h } }
+    # Owner-minted creates (Epic 16A): every one is now a create-id intent with a
+    # deterministic PRE-ALLOCATED id in the owner's format, so verification is by exact
+    # identity - title-mode is retired for production creates.
+    $ownerDest = @{ 'goal' = 'Goals'; 'project' = 'Home Projects'; 'non-negotiable' = 'Non-Negotiables'; 'family' = 'Family'; 'health' = 'Health'; 'financial' = 'Financial'; 'agency' = 'Agency'; 'learning' = 'Learning'; 'memory' = 'Tony Memory' }
     switch ($type) {
         'reminder' {
             # a valid, unambiguous timestamp with EXPLICIT timezone semantics: the
@@ -394,15 +392,17 @@ function New-ExecutionIntent {
             if (-not $newId) { return [pscustomobject]@{ valid = $false; reason = 'Action Items owner unavailable'; intent = $null } }
             return (& $mk @{ mode = 'create-id'; destination = 'Action Items'; targetId = $newId; newId = $newId; field = ''; expected = ''; title = $t; create = $true })
         }
-        'goal'           { return (& $mk @{ mode = 'title'; destination = 'Goals'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'project'        { return (& $mk @{ mode = 'title'; destination = 'Home Projects'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'non-negotiable' { return (& $mk @{ mode = 'title'; destination = 'Non-Negotiables'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'family'         { return (& $mk @{ mode = 'title'; destination = 'Family'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'health'         { return (& $mk @{ mode = 'title'; destination = 'Health'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'financial'      { return (& $mk @{ mode = 'title'; destination = 'Financial'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'agency'         { return (& $mk @{ mode = 'title'; destination = 'Agency'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'learning'       { return (& $mk @{ mode = 'title'; destination = 'Learning'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
-        'memory'         { return (& $mk @{ mode = 'title'; destination = 'Tony Memory'; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $true }) }
+        { $ownerDest.ContainsKey($_) } {
+            # required field: a non-empty title/value (the owner also validates)
+            if ([string]::IsNullOrWhiteSpace($title)) { return [pscustomobject]@{ valid = $false; reason = 'create requires a non-empty title'; intent = $null } }
+            if (-not (Get-Command Get-InboxCreateId -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ valid = $false; reason = 'owner id allocator unavailable'; intent = $null } }
+            # deterministic, stable target id from the execution identity (proposal +
+            # fingerprint). Same proposal -> same id on retry/restart; never regenerated.
+            $seed = Get-ExecutionIdempotencyKey -Proposal $Proposal
+            $newId = Get-InboxCreateId -Type $type -Seed $seed
+            if (-not $newId) { return [pscustomobject]@{ valid = $false; reason = ("no owner create id available for type: {0}" -f $type); intent = $null } }
+            return (& $mk @{ mode = 'create-id'; destination = $ownerDest[$type]; targetId = $newId; newId = $newId; field = ''; expected = ''; title = $title; create = $true; route = $true })
+        }
         default          { return (& $mk @{ mode = 'result'; destination = ''; targetId = ''; newId = ''; field = ''; expected = ''; title = $title; create = $false }) }
     }
 }
@@ -421,19 +421,12 @@ function Test-ExecutionIntentApplied {
             }
             'create-id' { return (Test-ExecutionApplied -Destination ([string]$Intent.destination) -NewId ([string]$Intent.newId)) }
             'title' {
-                $dest = [string]$Intent.destination
-                # PRECISE: an owner-minted id in the result that resolves to a real
-                # owner record - the authority whenever it is available.
-                if ($Result -and $Result.newId -and (Test-ExecutionApplied -Destination $dest -NewId ([string]$Result.newId))) { return $true }
-                # DELTA EVIDENCE: for the narrow window where the result/id was not
-                # persisted, require a matching-title record whose id did NOT exist
-                # before the intent. Mere title existence is never sufficient; without
-                # a pre-write baseline we FAIL CLOSED (only the precise id above can pass).
-                if (-not ($Intent.PSObject.Properties.Name -contains 'preIds')) { return $false }
-                $pre = @(@($Intent.preIds) | ForEach-Object { [string]$_ })
-                foreach ($id in @(Get-DestinationMatchingIds -Destination $dest -Title ([string]$Intent.title))) {
-                    if ($pre -notcontains [string]$id) { return $true }
-                }
+                # TITLE-MODE IS RETIRED (Epic 16A). No production create emits it; every
+                # owner create is now a create-id intent verified by exact identity. This
+                # branch survives only to FAIL CLOSED for any legacy title record: it can
+                # succeed ONLY on a precise result.newId that resolves to a real owner
+                # record - never by title membership or title-count delta.
+                if ($Result -and $Result.newId -and (Test-ExecutionApplied -Destination ([string]$Intent.destination) -NewId ([string]$Result.newId))) { return $true }
                 return $false
             }
             'result' {
@@ -499,7 +492,13 @@ function Get-ProposalFingerprint {
 }
 function Get-ExecutionIdempotencyKey {
     param([Parameter(Mandatory)] $Proposal)
-    return ('{0}|{1}' -f [string]$Proposal.id, (Get-ProposalFingerprint -Proposal $Proposal))
+    # The proposal INSTANCE identity. Prefer the durable per-instance uid (INBOX ids
+    # are reused, so id alone cannot distinguish two separate proposals); fall back to
+    # id + created for legacy/hand-built proposals. The content fingerprint is included
+    # so a content edit is a new intent. Deterministic and stable across restart.
+    $instance = if (($Proposal.PSObject.Properties.Name -contains 'uid') -and $Proposal.uid) { [string]$Proposal.uid }
+    else { ('{0}|{1}' -f [string]$Proposal.id, [string]$Proposal.created) }
+    return ('{0}|{1}' -f $instance, (Get-ProposalFingerprint -Proposal $Proposal))
 }
 
 # ---- engine-private state: what a handler is allowed to see -------------
@@ -605,14 +604,17 @@ function Invoke-IntentCreateExecute {
     return [pscustomobject]@{ ok = $true; destination = 'Action Items'; newId = [string]$i.newId; message = ("Added action item {0}." -f $i.newId) }
 }
 # Owner-minted creates (goal / project / life domains / memory): route through the
-# owner's existing writer. The intent's TITLE is the recovery-verification surface,
-# because the owner assigns the id inside its own function.
+# owner's existing writer, passing the intent's PRE-ALLOCATED targetId so the owner
+# persists that exact id and verification is by exact identity (Epic 16A).
 function Invoke-DefaultActionExecute {
     param($Record)
     if (-not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) { return [pscustomobject]@{ ok = $false; message = 'Inbox router unavailable.' } }
-    $item = [pscustomobject]@{ id = $Record.proposalId; type = $Record.type; title = $Record.title; description = $Record.description; source = $Record.source; sourceId = $Record.sourceId; proposedDestination = $Record.proposedDestination }
+    $tid = if ($Record.intent -and ($Record.intent.PSObject.Properties.Name -contains 'newId')) { [string]$Record.intent.newId } else { '' }
+    $item = [pscustomobject]@{ id = $Record.proposalId; type = $Record.type; title = $Record.title; description = $Record.description; source = $Record.source; sourceId = $Record.sourceId; proposedDestination = $Record.proposedDestination; targetId = $tid }
     $route = Invoke-InboxRoute -Item $item
     if (-not $route.ok) { return [pscustomobject]@{ ok = $false; message = [string]$route.message } }
+    # the owner must have persisted the exact pre-allocated id
+    if ($tid -and ([string]$route.newId) -ne $tid) { return [pscustomobject]@{ ok = $false; message = ("owner did not persist the pre-allocated id ({0})" -f $tid) } }
     return [pscustomobject]@{ ok = $true; destination = [string]$route.destination; newId = [string]$route.newId; message = [string]$route.message }
 }
 
@@ -720,7 +722,10 @@ function Invoke-ProposalExecution {
         return [pscustomobject]@{ ok = $false; message = 'The execution intent could not be recorded; nothing was changed.'; executionId = $rec.id }
     }
     $handler = Get-ActionHandler -Type ([string]$rec.type)
-    if (-not $handler -and [string]$rec.intent.mode -eq 'title' -and -not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) {
+    # an owner-minted create-id routes through the owner's writer (Invoke-InboxRoute);
+    # everything else create-id is an Action Item created internally by the engine.
+    $isOwnerRoute = (-not $handler -and [string]$rec.intent.mode -eq 'create-id' -and ($rec.intent.PSObject.Properties.Name -contains 'route') -and [bool]$rec.intent.route)
+    if ((-not $handler) -and ($isOwnerRoute -or [string]$rec.intent.mode -eq 'result') -and -not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) {
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'no owner router available')
         return [pscustomobject]@{ ok = $false; message = 'The owning module is not available; left pending.'; executionId = $rec.id }
     }
@@ -731,6 +736,7 @@ function Invoke-ProposalExecution {
     try {
         $request = New-ActionRequest -Record $rec
         $raw = if ($handler) { & $handler.execute $request }
+        elseif ($isOwnerRoute) { Invoke-DefaultActionExecute -Record $rec }
         elseif ([string]$rec.intent.mode -eq 'create-id') { Invoke-IntentCreateExecute -Request $request }
         else { Invoke-DefaultActionExecute -Record $rec }
         $result = ConvertTo-SanitizedActionResult -Raw $raw

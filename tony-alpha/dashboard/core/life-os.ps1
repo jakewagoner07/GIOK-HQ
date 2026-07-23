@@ -96,14 +96,26 @@ function Get-NextLifeId {
 # Create a record. $Fields is a hashtable of domain field keys -> values.
 # Unknown keys are ignored; missing fields default. Title (when the domain has
 # one) must be non-empty. Returns the new normalized item, or $null.
+# -Id (Epic 16A): optional caller-supplied STABLE id. Omitted -> unchanged sequential
+# <prefix>-NNN. Supplied -> the EXACT id after two gates: it must be a well-formed id
+# for THIS domain's prefix and must not already exist in the domain. Owner stays the
+# only writer; unrelated fields are untouched.
 function Add-LifeItem {
-    param([Parameter(Mandatory)][string]$Domain, [Parameter(Mandatory)][hashtable]$Fields)
+    param([Parameter(Mandatory)][string]$Domain, [Parameter(Mandatory)][hashtable]$Fields, [string]$Id = '')
     if (-not $script:LifeOsDomains.Contains($Domain)) { return $null }
     $fieldKeys = Get-LifeOsDomainFields $Domain
     if ($fieldKeys -contains 'title' -and [string]::IsNullOrWhiteSpace([string]$Fields['title'])) { return $null }
     $data = Get-LifeOsData
+    $useId = ''
+    if ($Id) {
+        $prefix = $script:LifeOsDomains[$Domain].prefix
+        if ($Id -notmatch ('^' + [regex]::Escape($prefix) + '-[A-Za-z0-9]+$')) { return $null }        # invalid id -> reject
+        if (@($data.$Domain | Where-Object { [string]$_.id -eq $Id }).Count -gt 0) { return $null }     # duplicate id -> reject
+        $useId = $Id
+    }
+    else { $useId = Get-NextLifeId -Domain $Domain -Data $data }
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    $rec = [ordered]@{ id = (Get-NextLifeId -Domain $Domain -Data $data); active = $true; created = $now; updated = $now }
+    $rec = [ordered]@{ id = $useId; active = $true; created = $now; updated = $now }
     foreach ($f in $fieldKeys) {
         if ($f -eq 'progress') { $v = 0; if ($Fields.ContainsKey('progress')) { try { $v = [int]$Fields['progress'] } catch { $v = 0 } }; if ($v -lt 0) { $v = 0 } elseif ($v -gt 100) { $v = 100 }; $rec[$f] = $v }
         else { $rec[$f] = $(if ($Fields.ContainsKey($f) -and $null -ne $Fields[$f]) { ([string]$Fields[$f]).Trim() } else { '' }) }
