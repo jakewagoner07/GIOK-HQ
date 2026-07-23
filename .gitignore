@@ -53,6 +53,9 @@ tony-alpha/calendar.tokens.json
 # per-account access/refresh tokens, PRIVATE, local only, never committed.
 tony-alpha/calendar.write.tokens.json
 **/calendar.write.tokens.json
+# Local write preferences (default writable calendar) - no secrets, but local.
+tony-alpha/calendar.write.prefs.json
+**/calendar.write.prefs.json
 
 # Gmail OAuth client config + tokens — PRIVATE, local only, never committed.
 # Same rule as Calendar: only the safe example is tracked; tokens never on GitHub.

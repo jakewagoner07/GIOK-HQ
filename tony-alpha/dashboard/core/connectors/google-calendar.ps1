@@ -595,6 +595,108 @@ function Test-GCalInstantsEqual {
     return ($da.UtcDateTime -eq $db.UtcDateTime)
 }
 
+# =====================================================================
+# UI MODELS (pure) - Settings status + Executive Inbox approval summary
+# ---------------------------------------------------------------------
+# The UI stays thin: it renders these models. No WPF here. No token/secret ever
+# appears in a model. The APPROVAL summary shows the real title/time to the user
+# who is approving (that is what he is deciding on); only the AUDIT log redacts.
+# =====================================================================
+
+# Default writable calendar preference (gitignored, local). 'primary' unless set.
+function Get-GCalWritePrefsPath { return (Join-Path $PSScriptRoot '..\..\..\calendar.write.prefs.json') }
+function Get-GCalDefaultCalendar {
+    $p = Get-GCalWritePrefsPath
+    if (Test-Path $p) { try { $d = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json; if ($d -and $d.defaultCalendar) { return [string]$d.defaultCalendar } } catch { } }
+    return 'primary'
+}
+function Set-GCalDefaultCalendar {
+    param([Parameter(Mandatory)][string]$CalendarId)
+    if (-not (Test-GCalCalendarId -CalendarId $CalendarId)) { return $false }
+    ([pscustomobject]@{ defaultCalendar = $CalendarId } | ConvertTo-Json) | Set-Content -Path (Get-GCalWritePrefsPath) -Encoding UTF8
+    return $true
+}
+
+# The Settings-card model. state is the truthful availability; label maps it to the
+# calm UX strings. Never leaks a token or a raw OAuth error.
+function Get-GCalWriteSettingsModel {
+    $av = Get-GCalWriteAvailability
+    $label = switch ([string]$av.state) {
+        'connected'      { 'Connected' }
+        'not-connected'  { 'Not connected' }
+        'not-configured' { 'Not configured' }
+        'needs-attention' { 'Authorization expired' }
+        default          { 'Needs attention' }
+    }
+    return [pscustomobject]@{
+        state = [string]$av.state; label = $label; detail = [string]$av.detail
+        accounts = @($av.accounts); connected = [bool]$av.ok
+        defaultCalendar = (Get-GCalDefaultCalendar); scope = $script:GCalWriteScope
+    }
+}
+
+# A friendly "when" line from two RFC3339 instants (with explicit offset).
+function Format-GCalWhen {
+    param([string]$Start, [string]$End)
+    $ds = [DateTimeOffset]::MinValue; $de = [DateTimeOffset]::MinValue
+    $st = [System.Globalization.DateTimeStyles]::RoundtripKind; $ci = [System.Globalization.CultureInfo]::InvariantCulture
+    if (-not [DateTimeOffset]::TryParse($Start, $ci, $st, [ref]$ds)) { return ([string]$Start + ' - ' + [string]$End) }
+    if (-not [DateTimeOffset]::TryParse($End, $ci, $st, [ref]$de)) { return ([string]$Start + ' - ' + [string]$End) }
+    $sameDay = ($ds.Date -eq $de.Date)
+    $offset = $ds.ToString('zzz')
+    if ($sameDay) { return ('{0}, {1} - {2} (UTC{3})' -f $ds.ToString('ddd MMM d, yyyy'), $ds.ToString('h:mm tt'), $de.ToString('h:mm tt'), $offset) }
+    return ('{0} {1} - {2} {3} (UTC{4})' -f $ds.ToString('ddd MMM d'), $ds.ToString('h:mm tt'), $de.ToString('ddd MMM d'), $de.ToString('h:mm tt'), $offset)
+}
+
+# The Executive Inbox approval summary: what Jake is approving, in plain rows. He
+# is deciding on this action, so it shows the real title/calendar/time (not the
+# redacted audit form). V1 never notifies anyone. Returns an ORDERED array of
+# { label; value } rows; an invalid payload surfaces a 'Problem' row.
+function Get-GCalApprovalSummary {
+    param([Parameter(Mandatory)] $Proposal)
+    $rows = @()
+    $type = [string]$Proposal.type
+    if (-not (Test-GCalActionType -Type $type)) { return $rows }
+    $actionLabel = switch ($type) {
+        'calendar.create-event'        { 'Create calendar event' }
+        'calendar.create-focus-block'  { 'Create focus block' }
+        'calendar.create-follow-up-block' { 'Create follow-up block' }
+        'calendar.protect-family-time' { 'Protect family time' }
+        'calendar.update-event'        { 'Update calendar event' }
+        'calendar.cancel-event'        { 'Cancel calendar event' }
+        default                        { $type }
+    }
+    $rows += [pscustomobject]@{ label = 'Action'; value = $actionLabel }
+    if (-not ($Proposal.PSObject.Properties.Name -contains 'payload') -or -not $Proposal.payload) { $rows += [pscustomobject]@{ label = 'Problem'; value = 'missing calendar details' }; return $rows }
+    $v = Test-GCalPayload -ActionType $type -Payload $Proposal.payload
+    if (-not $v.valid) { $rows += [pscustomobject]@{ label = 'Problem'; value = [string]$v.reason }; return $rows }
+    $p = $v.payload
+    $rows += [pscustomobject]@{ label = 'Calendar'; value = [string]$p.calendarId }
+    if ($p.action -eq 'create') {
+        $rows += [pscustomobject]@{ label = 'Title'; value = [string]$p.title }
+        $rows += [pscustomobject]@{ label = 'When'; value = (Format-GCalWhen -Start $p.start -End $p.end) }
+        $rows += [pscustomobject]@{ label = 'Time zone'; value = [string]$p.timezone }
+        if (-not [string]::IsNullOrWhiteSpace([string]$p.location)) { $rows += [pscustomobject]@{ label = 'Location'; value = [string]$p.location } }
+    }
+    elseif ($p.action -eq 'update') {
+        $rows += [pscustomobject]@{ label = 'Event'; value = [string]$p.eventId }
+        $desc = @()
+        foreach ($cn in @($p.changes.PSObject.Properties.Name)) {
+            if ($cn -eq 'title') { $desc += ('title -> "' + [string]$p.changes.title + '"') }
+            elseif ($cn -eq 'start') { $desc += ('new time ' + (Format-GCalWhen -Start $p.changes.start -End $p.changes.end)) }
+            elseif ($cn -eq 'end' -or $cn -eq 'timezone') { }
+            elseif ($cn -eq 'location') { $desc += ('location -> "' + [string]$p.changes.location + '"') }
+            elseif ($cn -eq 'description') { $desc += 'description updated' }
+        }
+        $rows += [pscustomobject]@{ label = 'Changes'; value = ($desc -join '; ') }
+    }
+    elseif ($p.action -eq 'cancel') {
+        $rows += [pscustomobject]@{ label = 'Event'; value = [string]$p.eventId }
+    }
+    $rows += [pscustomobject]@{ label = 'Notifies'; value = 'No one (V1 sends no invitations)' }
+    return $rows
+}
+
 # ---- registration: plug the connector into the ONE execution path ------------
 # Registers ALL six V1 action types (create x4, update, cancel) on the ONE
 # execution path. The engine learns no Google specifics - only the three seams.

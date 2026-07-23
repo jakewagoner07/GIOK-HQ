@@ -310,4 +310,47 @@ $redit = Invoke-ProposalExecution -Proposal $ed -Approval $apEd
 Assert-True (-not $redit.ok) 'a payload edit after approval invalidates the approval (fingerprint)'
 Assert-True ($script:Prov.insertCalls -eq 0) 'the edited-after-approval attempt wrote nothing'
 
+# =====================================================================
+Write-TestSection 'inbox integration: payload preserved; Approve-InboxItem drives the connector'
+# =====================================================================
+Reset-Prov
+$prop = Add-InboxProposal -DiscoveredBy 'Tony' -Type 'calendar.create-event' -Title 'Prospecting block' -Payload ([pscustomobject]@{ calendarId = 'primary'; title = 'Prospecting block'; start = '2026-08-03T07:30:00-07:00'; end = '2026-08-03T09:00:00-07:00'; timezone = 'America/Los_Angeles' })
+Assert-True ($null -ne $prop) 'a calendar proposal with a payload is accepted'
+$reloaded = Get-InboxItemById -Id $prop.id
+Assert-True ($null -ne $reloaded.payload -and [string]$reloaded.payload.calendarId -eq 'primary') 'the structured payload survives inbox normalization/round-trip'
+$ar = Approve-InboxItem -Id $prop.id
+Assert-True ($ar.ok) 'Approve-InboxItem executes the calendar action through the engine+connector'
+$expIdInbox = Get-GCalClientEventId -Seed (Get-ExecutionIdempotencyKey -Proposal $reloaded)
+Assert-True ($script:Prov.events.ContainsKey(('primary/{0}' -f $expIdInbox))) 'the event was created by the approved inbox proposal'
+Assert-True ($null -eq (Get-InboxItemById -Id $prop.id)) 'the proposal left the inbox on verified success (no copy)'
+
+# a connector proposal with NO payload is refused at the inbox
+$noPay = Add-InboxProposal -DiscoveredBy 'Tony' -Type 'calendar.create-event' -Title 'No payload'
+Assert-True ($null -eq $noPay) 'a calendar proposal without a payload is refused'
+
+# =====================================================================
+Write-TestSection 'approval summary: safe, complete rows for the Executive Inbox card'
+# =====================================================================
+$sp = New-CalProposal -Payload (New-CreatePayload -Title 'Renewal call' -Start '2026-08-03T10:00:00-07:00' -End '2026-08-03T11:00:00-07:00')
+$sum = Get-GCalApprovalSummary -Proposal $sp
+$labels = @($sum | ForEach-Object { [string]$_.label })
+Assert-True ($labels -contains 'Action' -and $labels -contains 'Calendar' -and $labels -contains 'Title' -and $labels -contains 'When' -and $labels -contains 'Time zone' -and $labels -contains 'Notifies') 'create summary has action/calendar/title/when/timezone/notifies'
+$notify = @($sum | Where-Object { $_.label -eq 'Notifies' })[0].value
+Assert-True ($notify -match 'No one') 'the summary states no one is notified in V1'
+$titleRow = @($sum | Where-Object { $_.label -eq 'Title' })[0].value
+Assert-True ($titleRow -eq 'Renewal call') 'the summary shows the real event title for the approver'
+# update summary lists the change
+$up = New-CalProposal -Type 'calendar.update-event' -Payload @{ calendarId = 'primary'; eventId = 'giokabc12345'; changes = ([pscustomobject]@{ title = 'Moved call' }) }
+$usum = Get-GCalApprovalSummary -Proposal $up
+$changes = @($usum | Where-Object { $_.label -eq 'Changes' })[0].value
+Assert-True ($changes -match 'Moved call') 'the update summary describes the change'
+
+# =====================================================================
+Write-TestSection 'settings model: truthful state, no secrets'
+# =====================================================================
+$m = Get-GCalWriteSettingsModel
+Assert-True ([string]$m.scope -eq 'https://www.googleapis.com/auth/calendar.events') 'settings model reports the least-privilege write scope'
+Assert-True (@('connected', 'not-connected', 'not-configured', 'needs-attention') -contains [string]$m.state) 'settings state is one of the known truthful states'
+Assert-True (($m | ConvertTo-Json -Depth 6) -notmatch 'token|secret|Bearer') 'settings model contains no token/secret material'
+
 Complete-TestFile 'calendar-connector'
