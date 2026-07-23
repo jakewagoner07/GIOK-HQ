@@ -132,4 +132,65 @@ $idBefore = (New-ExecutionIntent -Proposal $pe).intent.newId
 $pe.title = 'Edited title'
 Assert-True ((New-ExecutionIntent -Proposal $pe).intent.newId -ne $idBefore) 'an edited proposal (new fingerprint) derives a NEW target id'
 
+# =====================================================================
+Write-TestSection 'uid is LOAD-BEARING: reused INBOX id must not collide two proposals'
+# =====================================================================
+# The exact original risk: a removed INBOX-NNN id is REUSED for a later, separate
+# proposal with identical content. Without the durable uid, both would derive the same
+# idempotency key -> the same target id -> silent dedup / silent loss. These fixtures
+# deliberately hold id, created, type, and content IDENTICAL and vary ONLY the uid, so
+# the assertions can attribute any difference to the uid alone (no timestamp/random
+# variance). They exercise the REAL Get-ExecutionIdempotencyKey and New-ExecutionIntent.
+#
+# MUTATION COVERAGE (permanent): disabling the uid branch of Get-ExecutionIdempotencyKey
+# (so identity falls back to reusable id+created) makes the two instances collapse onto
+# one key / target id and turns the collision assertions below RED - proven live in the
+# 16A re-review. This is the "uid ignored/removed -> failure" mutation.
+$SHARED = @{ id = 'INBOX-050'; created = '2026-07-01 09:00:00'; type = 'goal'; title = 'Reused id goal'; description = 'same body'; source = 't'; sourceId = ''; proposedDestination = '' }
+function New-SharedProposal { param([string]$Uid) $h = $SHARED.Clone(); $h['uid'] = $Uid; return [pscustomobject]$h }
+$c1 = New-SharedProposal 'uid-instance-AAAA'
+$c2 = New-SharedProposal 'uid-instance-BBBB'
+# same id/created/type/content, different uid ->
+Assert-True ((Get-ExecutionIdempotencyKey -Proposal $c1) -ne (Get-ExecutionIdempotencyKey -Proposal $c2)) 'reused id, identical content, different uid -> DIFFERENT idempotency keys'
+$cid1 = (New-ExecutionIntent -Proposal $c1).intent.newId
+$cid2 = (New-ExecutionIntent -Proposal $c2).intent.newId
+Assert-True ($cid1 -match '^G-X[0-9a-f]{8}$' -and $cid2 -match '^G-X[0-9a-f]{8}$' -and $cid1 -ne $cid2) 'reused id, identical content, different uid -> DIFFERENT deterministic target ids'
+$goalsBefore = @(Get-GoalsList).Count
+$execBefore = @(Get-Executions -State 'all').Count
+$e1 = Invoke-ProposalExecution -Proposal $c1 -Approval (New-TestApproval -Proposal $c1)
+$e2 = Invoke-ProposalExecution -Proposal $c2 -Approval (New-TestApproval -Proposal $c2)
+Assert-True ($e1.ok -and $e2.ok -and (-not $e1.deduped) -and (-not $e2.deduped)) 'the later same-content proposal is NOT deduplicated against the earlier one'
+Assert-True ($e1.executionId -ne $e2.executionId -and (@(Get-Executions -State 'all').Count - $execBefore) -eq 2) 'two DISTINCT executions are created (no collapse onto one)'
+Assert-True ((@(Get-GoalsList).Count - $goalsBefore) -eq 2 -and (@(Get-GoalsList | Where-Object { $_.id -eq $cid1 }).Count -eq 1) -and (@(Get-GoalsList | Where-Object { $_.id -eq $cid2 }).Count -eq 1)) 'each intended owner record is created exactly once (both, distinct ids)'
+# and re-running the first instance is still deduped (its own uid) - one write, not three
+$e1b = Invoke-ProposalExecution -Proposal $c1 -Approval (New-TestApproval -Proposal $c1)
+Assert-True ($e1b.deduped -and $e1b.executionId -eq $e1.executionId -and (@(Get-GoalsList).Count - $goalsBefore) -eq 2) 're-running one instance still dedups to its own execution (no third owner write)'
+
+# =====================================================================
+Write-TestSection 'reverse control: SAME uid + content -> one identity, one execution, one write'
+# =====================================================================
+$s = New-SharedProposal 'uid-stable-CCCC'
+Assert-True ((Get-ExecutionIdempotencyKey -Proposal $s) -eq (Get-ExecutionIdempotencyKey -Proposal $s)) 'same uid + content -> IDENTICAL idempotency key across calls'
+Assert-True ((New-ExecutionIntent -Proposal $s).intent.newId -eq (New-ExecutionIntent -Proposal $s).intent.newId) 'same uid + content -> IDENTICAL target id across calls'
+$gB2 = @(Get-GoalsList).Count
+$exB2 = @(Get-Executions -State 'all').Count
+$s1 = Invoke-ProposalExecution -Proposal $s -Approval (New-TestApproval -Proposal $s)
+$s2 = Invoke-ProposalExecution -Proposal $s -Approval (New-TestApproval -Proposal $s)
+Assert-True ($s1.ok -and $s2.deduped -and $s2.executionId -eq $s1.executionId) 'repeated invocation with the same uid reuses the ONE execution'
+Assert-True ((@(Get-GoalsList).Count - $gB2) -eq 1 -and (@(Get-Executions -State 'all').Count - $exB2) -eq 1) 'exactly ONE owner write and ONE execution for the same uid'
+
+# =====================================================================
+Write-TestSection 'legacy fallback: a proposal with NO uid gets a stable id+created key'
+# =====================================================================
+# LEGACY ONLY (pre-16A / hand-built proposals). Production proposals always carry a uid;
+# this fallback keys on id+created so a legacy record still has a stable, deterministic
+# identity. It cannot distinguish two legacy proposals that reuse an id in the same
+# second with identical content - the documented limitation the uid closes for all new
+# proposals.
+$legacy = [pscustomobject]@{ id = 'INBOX-060'; type = 'goal'; title = 'Legacy no-uid'; description = 'b'; source = 't'; sourceId = ''; proposedDestination = ''; created = '2026-07-01 11:00:00' }
+$kL = Get-ExecutionIdempotencyKey -Proposal $legacy
+Assert-True ($kL -eq (Get-ExecutionIdempotencyKey -Proposal $legacy)) 'legacy (no uid): key is stable across calls'
+Assert-True ($kL.StartsWith('INBOX-060|2026-07-01 11:00:00|')) 'legacy (no uid): identity falls back to id+created (documented legacy-only path)'
+Assert-True ((New-ExecutionIntent -Proposal $legacy).intent.newId -match '^G-X[0-9a-f]{8}$') 'legacy (no uid): still derives a valid deterministic owner id'
+
 Complete-TestFile 'deterministic-ids'
