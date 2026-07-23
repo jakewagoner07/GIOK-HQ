@@ -143,16 +143,30 @@ function Get-GoalsList   { return @(@((Get-GoalStore).goals) | ForEach-Object { 
 function Get-ActiveGoals { return @(Get-GoalsList | Where-Object { $_.status -in @('active', 'paused') }) }
 function Get-GoalById    { param([string]$Id) return @(Get-GoalsList | Where-Object { $_.id -eq $Id })[0] }
 
+# -Id (Epic 16A): an optional caller-supplied STABLE id. When omitted, behaviour is
+# unchanged (sequential G-NNN). When supplied, the EXACT id is persisted after two
+# safety gates - it must be a well-formed goal id (G-...) and must not already exist -
+# so the Action Engine can pre-allocate a deterministic id and verify by exact identity.
+# The owner remains the only writer of its store.
 function Add-Goal {
-    param([string]$Title, [string]$Domain = 'personal', [string]$Reason = '', [string]$TargetDate = '', [string]$NextStep = '', [string]$Notes = '', [int]$Progress = 0)
+    param([string]$Title, [string]$Domain = 'personal', [string]$Reason = '', [string]$TargetDate = '', [string]$NextStep = '', [string]$Notes = '', [int]$Progress = 0, [string]$Id = '')
     if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
     if ($script:GoalDomains -notcontains $Domain) { $Domain = 'personal' }
     $store = Get-GoalStore
-    $max = 0; foreach ($x in @($store.goals)) { if ($x.id -match '^G-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
+    $newId = ''
+    if ($Id) {
+        if ($Id -notmatch '^G-[A-Za-z0-9]+$') { return $null }                                  # invalid id -> reject
+        if (@($store.goals | Where-Object { [string]$_.id -eq $Id }).Count -gt 0) { return $null }  # duplicate id -> reject
+        $newId = $Id
+    }
+    else {
+        $max = 0; foreach ($x in @($store.goals)) { if ($x.id -match '^G-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
+        $newId = ('G-{0:000}' -f ($max + 1))
+    }
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     if ($Progress -lt 0) { $Progress = 0 } elseif ($Progress -gt 100) { $Progress = 100 }
     $new = [pscustomobject]@{
-        id = ('G-{0:000}' -f ($max + 1)); title = $Title.Trim(); domain = $Domain; reason = $Reason.Trim()
+        id = $newId; title = $Title.Trim(); domain = $Domain; reason = $Reason.Trim()
         target = ''; targetDate = $TargetDate.Trim(); progress = $Progress; status = $(if ($Progress -ge 100) { 'done' } else { 'active' })
         nextStep = $NextStep.Trim(); notes = $Notes.Trim(); created = $now; updated = $now
     }
