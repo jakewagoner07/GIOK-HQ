@@ -334,7 +334,7 @@ $script:ExecAllowedPriorities = @('low', 'medium', 'high')
 # The normalized proposal schema. Unknown fields REJECT (not silently ignored):
 # a payload carrying properties the engine does not understand is not executed.
 $script:ExecAllowedProposalFields = @('id', 'uid', 'discoveredBy', 'type', 'title', 'description',
-    'proposedDestination', 'evidence', 'confidence', 'status', 'created', 'source', 'sourceId')
+    'proposedDestination', 'evidence', 'confidence', 'status', 'created', 'source', 'sourceId', 'payload')
 function Test-ExecTargetActionItem {
     param([string]$Id)
     if ([string]::IsNullOrWhiteSpace($Id)) { return $false }
@@ -353,6 +353,24 @@ function New-ExecutionIntent {
         }
     }
     $mk = { param($h) [pscustomobject]@{ valid = $true; reason = ''; intent = [pscustomobject]$h } }
+    # External connector (Epic 17): the connector validates + normalizes its own
+    # payload and returns the fields that will PROVE the change landed by exact
+    # provider id. The engine wraps them into a 'connector'-mode intent; it learns
+    # no Google specifics. Built before any side effect, so a malformed connector
+    # payload fails validation and writes nothing.
+    $connector = Get-ActionConnector -Type $type
+    if ($connector) {
+        $built = $null
+        try { $built = & $connector.buildIntent $Proposal } catch { return [pscustomobject]@{ valid = $false; reason = ("connector rejected the payload: {0}" -f $_.Exception.Message); intent = $null } }
+        if (-not $built -or -not $built.valid) {
+            $why = if ($built -and $built.reason) { [string]$built.reason } else { 'connector payload invalid' }
+            return [pscustomobject]@{ valid = $false; reason = $why; intent = $null }
+        }
+        $h = @{ mode = 'connector'; connectorType = $type }
+        foreach ($pn in $built.fields.Keys) { $h[$pn] = $built.fields[$pn] }
+        if (-not $h.ContainsKey('connector') -or [string]::IsNullOrWhiteSpace([string]$h['connector'])) { return [pscustomobject]@{ valid = $false; reason = 'connector intent missing connector id'; intent = $null } }
+        return (& $mk $h)
+    }
     # Owner-minted creates (Epic 16A): every one is now a create-id intent with a
     # deterministic PRE-ALLOCATED id in the owner's format, so verification is by exact
     # identity - title-mode is retired for production creates.
@@ -420,6 +438,19 @@ function Test-ExecutionIntentApplied {
                 return ($null -ne $actual -and [string]$actual -eq [string]$Intent.expected)
             }
             'create-id' { return (Test-ExecutionApplied -Destination ([string]$Intent.destination) -NewId ([string]$Intent.newId)) }
+            'connector' {
+                # External-connector verification (Epic 17): the ENGINE requires an
+                # independent provider read-back by exact id. It delegates the read
+                # to the registered connector verifier but owns the REQUIREMENT: no
+                # connector, no verifier, a throwing verifier, or a non-true verdict
+                # all FAIL CLOSED. An HTTP 200 without a verified provider read can
+                # never reach 'succeeded'. Works identically at runtime and recovery,
+                # because the intent carries the exact provider id (deterministic
+                # client id for creates; the event id for update/cancel).
+                $c = Get-ActionConnector -Type ([string]$Intent.connectorType)
+                if (-not $c -or -not $c.verify) { return $false }
+                try { return [bool](& $c.verify $Intent $Result) } catch { return $false }
+            }
             'title' {
                 # TITLE-MODE IS RETIRED (Epic 16A). No production create emits it; every
                 # owner create is now a create-id intent verified by exact identity. This
@@ -485,8 +516,16 @@ function New-IntendedActionItem {
 # edited proposal is a different execution identity.
 function Get-ProposalFingerprint {
     param([Parameter(Mandatory)] $Proposal)
+    # For connector actions the structured payload IS the content (calendarId,
+    # start, end, changes, ...), so a payload edit must change the fingerprint and
+    # invalidate a prior approval. Local actions carry no payload, so this term is
+    # empty for them and their fingerprints are unchanged.
+    $payloadMaterial = ''
+    if (($Proposal.PSObject.Properties.Name -contains 'payload') -and $Proposal.payload) {
+        try { $payloadMaterial = ($Proposal.payload | ConvertTo-Json -Depth 8 -Compress) } catch { $payloadMaterial = [string]$Proposal.payload }
+    }
     $material = (@([string]$Proposal.type, [string]$Proposal.title, [string]$Proposal.description,
-            [string]$Proposal.sourceId, [string]$Proposal.proposedDestination) -join "`n")
+            [string]$Proposal.sourceId, [string]$Proposal.proposedDestination, $payloadMaterial) -join "`n")
     $md5 = [System.Security.Cryptography.MD5]::Create()
     return (([System.BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material))) -replace '-', '').Substring(0, 16))
 }
@@ -548,6 +587,38 @@ function Register-ActionHandler {
     $script:ActionHandlers[$Type] = [pscustomobject]@{ execute = $Execute; verify = $Verify }
 }
 function Get-ActionHandler { param([string]$Type) if ($script:ActionHandlers.ContainsKey($Type)) { return $script:ActionHandlers[$Type] } return $null }
+
+# ---- external connector registry (Epic 17) -----------------------------
+# An EXTERNAL connector (Google Calendar, later others) plugs into this ONE
+# execution path - never a parallel one. A connector registers, per action type:
+#   BuildIntent($Proposal) -> { valid; reason; fields{...} }
+#       connector-specific validation + normalization, run BEFORE any side effect
+#       (so a malformed payload writes nothing). 'fields' becomes the immutable
+#       'connector'-mode intent; it MUST include everything recovery needs to
+#       re-verify by exact provider id WITHOUT re-running the write (e.g. a
+#       deterministic client-specified event id).
+#   Execute($Request)     -> { ok; destination; newId; message }   (sanitized)
+#       performs the approved external request; returns safe result metadata
+#       (put the provider id in newId). It may NOT change execution state.
+#   Verify($Intent,$Result) -> bool
+#       the AUTHORITATIVE read-back for 'connector' mode: an INDEPENDENT provider
+#       read by exact id that confirms the approved facts landed. The engine
+#       REQUIRES it - a missing connector/verifier, or a verifier that cannot
+#       confirm, fails closed (an HTTP 200 alone never grants success).
+# Google-specific knowledge lives entirely in the connector; the engine stays
+# deterministic and network-free - it only orchestrates.
+$script:ActionConnectors = @{}
+function Register-ActionConnector {
+    param(
+        [Parameter(Mandatory)][string[]]$Types,
+        [Parameter(Mandatory)][scriptblock]$BuildIntent,
+        [Parameter(Mandatory)][scriptblock]$Execute,
+        [Parameter(Mandatory)][scriptblock]$Verify
+    )
+    foreach ($t in $Types) { $script:ActionConnectors[$t] = [pscustomobject]@{ buildIntent = $BuildIntent; execute = $Execute; verify = $Verify } }
+}
+function Get-ActionConnector { param([string]$Type) if ($script:ActionConnectors.ContainsKey($Type)) { return $script:ActionConnectors[$Type] } return $null }
+function Test-ActionConnectorType { param([string]$Type) return ($script:ActionConnectors.ContainsKey($Type)) }
 
 # reminder: create the PRE-ALLOCATED action item carrying remindAt (from the intent).
 Register-ActionHandler -Type 'reminder' `
@@ -722,9 +793,10 @@ function Invoke-ProposalExecution {
         return [pscustomobject]@{ ok = $false; message = 'The execution intent could not be recorded; nothing was changed.'; executionId = $rec.id }
     }
     $handler = Get-ActionHandler -Type ([string]$rec.type)
+    $connector = Get-ActionConnector -Type ([string]$rec.type)
     # an owner-minted create-id routes through the owner's writer (Invoke-InboxRoute);
     # everything else create-id is an Action Item created internally by the engine.
-    $isOwnerRoute = (-not $handler -and [string]$rec.intent.mode -eq 'create-id' -and ($rec.intent.PSObject.Properties.Name -contains 'route') -and [bool]$rec.intent.route)
+    $isOwnerRoute = (-not $handler -and -not $connector -and [string]$rec.intent.mode -eq 'create-id' -and ($rec.intent.PSObject.Properties.Name -contains 'route') -and [bool]$rec.intent.route)
     if ((-not $handler) -and ($isOwnerRoute -or [string]$rec.intent.mode -eq 'result') -and -not (Get-Command Invoke-InboxRoute -ErrorAction SilentlyContinue)) {
         [void](Set-ExecutionState -Record $rec -State 'failed' -Detail 'no owner router available')
         return [pscustomobject]@{ ok = $false; message = 'The owning module is not available; left pending.'; executionId = $rec.id }
@@ -735,7 +807,8 @@ function Invoke-ProposalExecution {
     $result = $null
     try {
         $request = New-ActionRequest -Record $rec
-        $raw = if ($handler) { & $handler.execute $request }
+        $raw = if ($connector) { & $connector.execute $request }
+        elseif ($handler) { & $handler.execute $request }
         elseif ($isOwnerRoute) { Invoke-DefaultActionExecute -Record $rec }
         elseif ([string]$rec.intent.mode -eq 'create-id') { Invoke-IntentCreateExecute -Request $request }
         else { Invoke-DefaultActionExecute -Record $rec }

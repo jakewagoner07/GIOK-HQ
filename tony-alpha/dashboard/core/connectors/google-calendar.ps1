@@ -324,3 +324,194 @@ function Get-GCalSafeErrorClass {
         default { if ($code -ge 500) { return 'provider-unavailable' } return ('http-' + $code) }
     }
 }
+
+# =====================================================================
+# WRITE PATH - token seam + Google API seams + engine handlers (Epic 17)
+# ---------------------------------------------------------------------
+# Every Google Calendar HTTP call goes through ONE of the four seams below
+# (Insert/Get/Patch/Delete). Tests OVERRIDE these four (and the token seam) to
+# simulate provider state with no network - exactly how the execution harness
+# overrides Get-InboxPath. Real implementations use a bounded -TimeoutSec and
+# never log a token, body, or event content.
+# =====================================================================
+
+# Resolve a WRITE access token for the target (or default) account. Never logs
+# the token. Returns { ok; token; account; state; detail }.
+function Get-GCalWriteAccessToken {
+    param([string]$AccountId = '')
+    $oauth = Get-GCalWriteOAuthConfig
+    if (-not $oauth) { return [pscustomobject]@{ ok = $false; token = $null; account = $null; state = 'not-configured'; detail = 'Google Calendar write is not configured.' } }
+    $ids = @()
+    try { $ids = @(Get-GoogleAccountIds -Path $oauth.tokenPath) } catch { $ids = @() }
+    if (@($ids).Count -eq 0) { return [pscustomobject]@{ ok = $false; token = $null; account = $null; state = 'not-connected'; detail = 'Google Calendar write is not connected.' } }
+    $target = if ($AccountId) { $AccountId } else { $ids[0] }
+    $t = $null
+    try { $t = Get-GoogleAccountAccessToken -Config $oauth -Id $target } catch { $t = $null }
+    if (-not $t -or -not $t.ok) {
+        $detail = if ($t -and $t.detail) { [string]$t.detail } else { 'Authorization expired; reconnect Google Calendar write.' }
+        return [pscustomobject]@{ ok = $false; token = $null; account = $target; state = 'needs-attention'; detail = $detail }
+    }
+    return [pscustomobject]@{ ok = $true; token = [string]$t.token; account = $target; state = 'connected'; detail = 'ok' }
+}
+
+# ---- Google Calendar API seams (real impls; tests override) ------------------
+function Invoke-GCalHttp {
+    param([Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$Method, [Parameter(Mandatory)][string]$Url, $Body = $null)
+    $headers = @{ Authorization = ("Bearer {0}" -f $Token) }
+    $args = @{ Uri = $Url; Method = $Method; Headers = $headers; UseBasicParsing = $true; TimeoutSec = $script:GCalHttpTimeoutSec }
+    if ($null -ne $Body) { $args['Body'] = ($Body | ConvertTo-Json -Depth 8); $args['ContentType'] = 'application/json' }
+    $resp = Invoke-WebRequest @args
+    $raw = $resp.RawContentStream.ToArray()
+    if (-not $raw -or $raw.Length -eq 0) { return $null }
+    return ([System.Text.Encoding]::UTF8.GetString($raw) | ConvertFrom-Json)
+}
+function Invoke-GCalInsert {
+    param([Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$CalendarId, [Parameter(Mandatory)] $Body)
+    $url = ('{0}/calendars/{1}/events?sendUpdates=none' -f $script:GCalApiBase, [uri]::EscapeDataString($CalendarId))
+    return (Invoke-GCalHttp -Token $Token -Method 'POST' -Url $url -Body $Body)
+}
+function Invoke-GCalGet {
+    param([Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$CalendarId, [Parameter(Mandatory)][string]$EventId)
+    $url = ('{0}/calendars/{1}/events/{2}' -f $script:GCalApiBase, [uri]::EscapeDataString($CalendarId), [uri]::EscapeDataString($EventId))
+    return (Invoke-GCalHttp -Token $Token -Method 'GET' -Url $url)
+}
+function Invoke-GCalPatch {
+    param([Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$CalendarId, [Parameter(Mandatory)][string]$EventId, [Parameter(Mandatory)] $Body)
+    $url = ('{0}/calendars/{1}/events/{2}?sendUpdates=none' -f $script:GCalApiBase, [uri]::EscapeDataString($CalendarId), [uri]::EscapeDataString($EventId))
+    return (Invoke-GCalHttp -Token $Token -Method 'PATCH' -Url $url -Body $Body)
+}
+function Invoke-GCalDelete {
+    param([Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$CalendarId, [Parameter(Mandatory)][string]$EventId)
+    $url = ('{0}/calendars/{1}/events/{2}?sendUpdates=none' -f $script:GCalApiBase, [uri]::EscapeDataString($CalendarId), [uri]::EscapeDataString($EventId))
+    return (Invoke-GCalHttp -Token $Token -Method 'DELETE' -Url $url)
+}
+
+# ---- BuildIntent: connector validation + normalization -> intent fields ------
+# Runs BEFORE any side effect. Derives the DETERMINISTIC client event id from the
+# engine's execution idempotency key, so the same approved proposal always maps to
+# the same event id (idempotent create; safe recovery), and two distinct proposals
+# map to different ids. The fields become the immutable 'connector' intent.
+function New-GCalIntent {
+    param([Parameter(Mandatory)] $Proposal)
+    $type = [string]$Proposal.type
+    if (-not (Test-GCalActionType -Type $type)) { return [pscustomobject]@{ valid = $false; reason = ("not a calendar action type: {0}" -f $type); fields = $null } }
+    if (-not ($Proposal.PSObject.Properties.Name -contains 'payload') -or -not $Proposal.payload) { return [pscustomobject]@{ valid = $false; reason = 'calendar action requires a payload'; fields = $null } }
+    $v = Test-GCalPayload -ActionType $type -Payload $Proposal.payload
+    if (-not $v.valid) { return [pscustomobject]@{ valid = $false; reason = $v.reason; fields = $null } }
+    $p = $v.payload
+    $seed = Get-ExecutionIdempotencyKey -Proposal $Proposal
+    $fields = @{ connector = $script:GCalConnectorId; connectorAction = $p.action; calendarId = $p.calendarId; safeCalendarRef = (Get-GCalSafeCalendarRef -CalendarId $p.calendarId) }
+    if ($p.action -eq 'create') {
+        $fields['clientEventId'] = (Get-GCalClientEventId -Seed $seed)
+        $fields['title'] = $p.title; $fields['start'] = $p.start; $fields['end'] = $p.end; $fields['timezone'] = $p.timezone
+        $fields['description'] = $p.description; $fields['location'] = $p.location
+    }
+    elseif ($p.action -eq 'update') {
+        $fields['eventId'] = $p.eventId; $fields['expectedProviderVersion'] = $p.expectedProviderVersion; $fields['changes'] = $p.changes
+    }
+    elseif ($p.action -eq 'cancel') {
+        $fields['eventId'] = $p.eventId; $fields['expectedProviderVersion'] = $p.expectedProviderVersion
+    }
+    return [pscustomobject]@{ valid = $true; reason = ''; fields = $fields }
+}
+
+# ---- Execute: perform the approved request, return safe metadata -------------
+# newId carries the PROVIDER event id (the verification anchor). Never returns or
+# logs a token/body. A 409 on create means the deterministic id already exists ->
+# idempotent: read it back and treat as created (never a duplicate).
+function Invoke-GCalConnectorExecute {
+    param($Request)
+    $i = $Request.intent
+    $tok = Get-GCalWriteAccessToken
+    if (-not $tok.ok) { return [pscustomobject]@{ ok = $false; message = ("Google Calendar write is unavailable ({0})." -f $tok.state) } }
+    $action = [string]$i.connectorAction
+    try {
+        if ($action -eq 'create') {
+            $body = [pscustomobject]@{
+                id      = [string]$i.clientEventId
+                summary = [string]$i.title
+                start   = [pscustomobject]@{ dateTime = [string]$i.start; timeZone = [string]$i.timezone }
+                end     = [pscustomobject]@{ dateTime = [string]$i.end; timeZone = [string]$i.timezone }
+            }
+            if (-not [string]::IsNullOrWhiteSpace([string]$i.description)) { $body | Add-Member -NotePropertyName description -NotePropertyValue ([string]$i.description) }
+            if (-not [string]::IsNullOrWhiteSpace([string]$i.location)) { $body | Add-Member -NotePropertyName location -NotePropertyValue ([string]$i.location) }
+            $ev = $null
+            try { $ev = Invoke-GCalInsert -Token $tok.token -CalendarId ([string]$i.calendarId) -Body $body }
+            catch {
+                $cls = Get-GCalSafeErrorClass -ErrorRecord $_
+                if ($cls -eq 'already-exists') {
+                    # deterministic id already present (a prior attempt landed) -> read it back
+                    try { $ev = Invoke-GCalGet -Token $tok.token -CalendarId ([string]$i.calendarId) -EventId ([string]$i.clientEventId) } catch { $ev = $null }
+                } else {
+                    Write-GCalDiag -Level 'error' -Message ("insert failed: {0}" -f $cls)
+                    return [pscustomobject]@{ ok = $false; message = ("Calendar insert failed ({0})." -f $cls) }
+                }
+            }
+            if (-not $ev -or -not $ev.id) { return [pscustomobject]@{ ok = $false; message = 'Calendar insert returned no event id.' } }
+            Write-GCalDiag -Message ("event created ({0})." -f $i.safeCalendarRef)
+            return [pscustomobject]@{ ok = $true; destination = [string]$i.safeCalendarRef; newId = [string]$ev.id; message = ('Calendar event created (' + [string]$i.safeCalendarRef + ').') }
+        }
+        return [pscustomobject]@{ ok = $false; message = ("calendar action not enabled in this stage: {0}" -f $action) }
+    }
+    catch {
+        $cls = Get-GCalSafeErrorClass -ErrorRecord $_
+        Write-GCalDiag -Level 'error' -Message ("execute error: {0}" -f $cls)
+        return [pscustomobject]@{ ok = $false; message = ("Calendar request failed ({0})." -f $cls) }
+    }
+}
+
+# ---- Verify: INDEPENDENT read-back by exact provider id ----------------------
+# The engine's authoritative gate for 'connector' mode. Reads the event by its
+# exact id and confirms the approved facts landed. For a create the id is the
+# DETERMINISTIC client id in the intent, so this works even if the execute result
+# was never persisted (crash-after-insert) - the anchor is in the intent, not the
+# result. Never trusts the HTTP result alone.
+function Test-GCalConnectorVerify {
+    param($Intent, $Result)
+    if (-not $Intent) { return $false }
+    $tok = Get-GCalWriteAccessToken
+    if (-not $tok.ok) { return $false }   # cannot verify -> fail closed
+    $action = [string]$Intent.connectorAction
+    try {
+        if ($action -eq 'create') {
+            $ev = $null
+            try { $ev = Invoke-GCalGet -Token $tok.token -CalendarId ([string]$Intent.calendarId) -EventId ([string]$Intent.clientEventId) } catch { return $false }
+            if (-not $ev -or -not $ev.id) { return $false }
+            if ([string]$ev.id -ne [string]$Intent.clientEventId) { return $false }
+            if (($ev.PSObject.Properties.Name -contains 'status') -and ([string]$ev.status -eq 'cancelled')) { return $false }
+            # confirm the approved facts landed (start/end instants + title)
+            $evStart = if ($ev.start -and ($ev.start.PSObject.Properties.Name -contains 'dateTime')) { [string]$ev.start.dateTime } else { '' }
+            $evEnd   = if ($ev.end -and ($ev.end.PSObject.Properties.Name -contains 'dateTime')) { [string]$ev.end.dateTime } else { '' }
+            if (-not (Test-GCalInstantsEqual -A $evStart -B ([string]$Intent.start))) { return $false }
+            if (-not (Test-GCalInstantsEqual -A $evEnd -B ([string]$Intent.end))) { return $false }
+            if (($ev.PSObject.Properties.Name -contains 'summary') -and ([string]$ev.summary -ne [string]$Intent.title)) { return $false }
+            return $true
+        }
+        return $false
+    }
+    catch { return $false }
+}
+
+# Two RFC3339 instants are equal if they denote the same moment (offset-aware),
+# so a provider echoing a different but equivalent offset still verifies.
+function Test-GCalInstantsEqual {
+    param([string]$A, [string]$B)
+    if ([string]::IsNullOrWhiteSpace($A) -or [string]::IsNullOrWhiteSpace($B)) { return $false }
+    $da = [DateTimeOffset]::MinValue; $db = [DateTimeOffset]::MinValue
+    $st = [System.Globalization.DateTimeStyles]::RoundtripKind
+    if (-not [DateTimeOffset]::TryParse($A, [System.Globalization.CultureInfo]::InvariantCulture, $st, [ref]$da)) { return $false }
+    if (-not [DateTimeOffset]::TryParse($B, [System.Globalization.CultureInfo]::InvariantCulture, $st, [ref]$db)) { return $false }
+    return ($da.UtcDateTime -eq $db.UtcDateTime)
+}
+
+# ---- registration: plug the connector into the ONE execution path ------------
+# Registers ONLY the create types in this stage (Stage 2). Update/cancel types are
+# registered in Stage 3 once their execute/verify land.
+function Register-GCalConnector {
+    if (-not (Get-Command Register-ActionConnector -ErrorAction SilentlyContinue)) { return $false }
+    Register-ActionConnector -Types $script:GCalCreateTypes `
+        -BuildIntent { param($Proposal) New-GCalIntent -Proposal $Proposal } `
+        -Execute     { param($Request) Invoke-GCalConnectorExecute -Request $Request } `
+        -Verify      { param($Intent, $Result) Test-GCalConnectorVerify -Intent $Intent -Result $Result }
+    return $true
+}
