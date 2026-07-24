@@ -519,6 +519,23 @@ function New-InboxCard {
         if ($det) { $body.Children.Add((New-Text -Text ('- ' + $det) -Size 11.5 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 0, 0, 2)))) | Out-Null }
     }
 
+    # Calendar connector actions (Epic 17): show exactly what Jake is approving -
+    # the action, target calendar, title, when, timezone, what changes, and that no
+    # one is notified in V1. Rendered from the connector's safe approval summary.
+    $isConnector = (Get-Command Test-InboxConnectorType -ErrorAction SilentlyContinue) -and (Test-InboxConnectorType -Type $Item.type)
+    if ($isConnector -and (Get-Command Get-GCalApprovalSummary -ErrorAction SilentlyContinue)) {
+        $sumPanel = New-Object Windows.Controls.Border; $sumPanel.Background = New-Brush $script:Col.AccentSoft; $sumPanel.CornerRadius = New-Object Windows.CornerRadius 8; $sumPanel.Padding = New-Object Windows.Thickness (10, 8, 10, 8); $sumPanel.Margin = New-Object Windows.Thickness (0, 2, 0, 6)
+        $sumInner = New-Object Windows.Controls.StackPanel
+        foreach ($r in @(Get-GCalApprovalSummary -Proposal $Item)) {
+            $rowP = New-Object Windows.Controls.StackPanel; $rowP.Orientation = 'Horizontal'; $rowP.Margin = New-Object Windows.Thickness (0, 0, 0, 2)
+            $rowP.Children.Add((New-Text -Text ([string]$r.label + ':  ') -Size 11.5 -Weight 'Bold' -Color $script:Col.AccentInk)) | Out-Null
+            $rowP.Children.Add((New-Text -Text ([string]$r.value) -Size 11.5 -Color $script:Col.Ink -Wrap $true)) | Out-Null
+            $sumInner.Children.Add($rowP) | Out-Null
+        }
+        $sumPanel.Child = $sumInner
+        $body.Children.Add($sumPanel) | Out-Null
+    }
+
     $iid = $Item.id; $ititle = $Item.title; $itype = $Item.type; $isource = $Item.sourceId
     $actions = New-Object Windows.Controls.StackPanel; $actions.Orientation = 'Horizontal'; $actions.Margin = New-Object Windows.Thickness (0, 6, 0, 0)
     $actions.Children.Add((New-MiniButton -Text 'Approve' -Bg '#DEF7EC' -Fg '#03543F' -OnClick {
@@ -527,7 +544,10 @@ function New-InboxCard {
                 Set-InboxMsg $(if ($r.ok) { ("Approved: '{0}' -> {1}{2}." -f $ititle, $r.destination, $(if ($r.newId) { ' (' + $r.newId + ')' } else { '' })) } else { ("Could not approve '{0}': {1}" -f $ititle, $r.message) })
                 Show-LifeView { New-ExecutiveInboxView }
             }.GetNewClosure())) | Out-Null
-    $actions.Children.Add((New-MiniButton -Text 'Edit then Approve' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Set-InboxEditId $iid; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null
+    # The generic editor edits title/description/destination only; a calendar
+    # connector action carries a structured payload it cannot safely edit, so
+    # Edit-then-Approve is offered only for non-connector proposals.
+    if (-not $isConnector) { $actions.Children.Add((New-MiniButton -Text 'Edit then Approve' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e); Set-InboxEditId $iid; Show-LifeView { New-ExecutiveInboxView } }.GetNewClosure())) | Out-Null }
     $actions.Children.Add((New-MiniButton -Text 'Reject' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick {
                 param($s, $e)
                 # if a scan is mid-flight, remember this key so the scan can't re-add it

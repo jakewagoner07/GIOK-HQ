@@ -55,6 +55,7 @@ try {
 . (Join-Path $PSScriptRoot 'core\async-run.ps1')
 . (Join-Path $PSScriptRoot 'core\live-providers.ps1')
 . (Join-Path $PSScriptRoot 'core\google-oauth.ps1')
+. (Join-Path $PSScriptRoot 'core\connectors\google-calendar.ps1')
 . (Join-Path $PSScriptRoot 'core\email-intelligence.ps1')
 . (Join-Path $PSScriptRoot 'core\communications.ps1')
 . (Join-Path $PSScriptRoot 'core\crm-intelligence.ps1')
@@ -86,6 +87,10 @@ $script:HeadlessRender = [bool]$Screenshot
 if (Get-Command Set-AsyncDashboardRoot -ErrorAction SilentlyContinue) { Set-AsyncDashboardRoot $PSScriptRoot }
 # Where the bounded reasoning worker (Epic 13 Claude driver) loads its modules from.
 if (Get-Command Set-ReasoningDashboardRoot -ErrorAction SilentlyContinue) { Set-ReasoningDashboardRoot $PSScriptRoot }
+# External connectors (Epic 17): register the Google Calendar write connector on the
+# Action Engine's ONE execution path BEFORE recovery, so a non-terminal calendar
+# execution can be reconciled by its connector verifier at startup.
+if (Get-Command Register-GCalConnector -ErrorAction SilentlyContinue) { try { [void](Register-GCalConnector) } catch { } }
 # Executive Action Engine (Epic 15): recover any execution interrupted mid-flight by a
 # previous crash. Each non-terminal record is re-verified against its owner store and
 # resolved to succeeded/failed - never re-run blindly. Best-effort; never blocks launch.

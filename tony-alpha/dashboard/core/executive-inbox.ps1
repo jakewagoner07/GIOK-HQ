@@ -23,7 +23,14 @@ $ErrorActionPreference = 'Stop'
 # The last four are LOCAL ACTION verbs executed by the Executive Action Engine
 # (Epic 15) against the Action Items store: reminder (create), set-priority / defer
 # (modify an existing item by sourceId), archive (retire an existing item).
-$script:InboxTypes = @('goal', 'project', 'task', 'non-negotiable', 'family', 'health', 'financial', 'agency', 'learning', 'calendar', 'crm', 'communication', 'document', 'memory', 'reminder', 'set-priority', 'defer', 'archive')
+# The calendar.* types (Epic 17) are EXTERNAL connector actions executed by the
+# Google Calendar connector through the Action Engine - they carry a structured
+# 'payload' and are verified by provider read-back, never written as follow-up
+# Action Items like the read-only 'calendar' type.
+$script:InboxTypes = @('goal', 'project', 'task', 'non-negotiable', 'family', 'health', 'financial', 'agency', 'learning', 'calendar', 'crm', 'communication', 'document', 'memory', 'reminder', 'set-priority', 'defer', 'archive',
+    'calendar.create-event', 'calendar.create-focus-block', 'calendar.create-follow-up-block', 'calendar.protect-family-time', 'calendar.update-event', 'calendar.cancel-event')
+$script:InboxConnectorTypes = @('calendar.create-event', 'calendar.create-focus-block', 'calendar.create-follow-up-block', 'calendar.protect-family-time', 'calendar.update-event', 'calendar.cancel-event')
+function Test-InboxConnectorType { param([string]$Type) return ($script:InboxConnectorTypes -contains [string]$Type) }
 function Get-InboxTypes { return $script:InboxTypes }
 
 function Get-InboxPath { return (Join-Path $PSScriptRoot '..\..\executive_inbox.json') }
@@ -61,6 +68,9 @@ function ConvertTo-NormalizedInboxItem {
         created             = $(if ((& $has 'created') -and $It.created) { [string]$It.created } else { $now })
         source              = $(if (& $has 'source') { [string]$It.source } else { '' })
         sourceId            = $(if (& $has 'sourceId') { [string]$It.sourceId } else { '' })
+        # connector actions (Epic 17) carry a structured payload; preserved verbatim
+        # so approval hands the exact contract to the connector. $null for others.
+        payload             = $(if ((& $has 'payload') -and $It.payload) { $It.payload } else { $null })
     }
 }
 
@@ -85,10 +95,13 @@ function Add-InboxProposal {
         $Evidence = @(),
         [double]$Confidence = 0.6,
         [string]$Source = '',
-        [string]$SourceId = ''
+        [string]$SourceId = '',
+        $Payload = $null
     )
     if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
     if ($script:InboxTypes -notcontains $Type) { $Type = 'task' }
+    # A connector action is meaningless without its structured payload.
+    if ((Test-InboxConnectorType -Type $Type) -and -not $Payload) { return $null }
     if (-not $ProposedDestination) { $ProposedDestination = (Get-InboxDestinationLabel -Type $Type) }
     $data = Get-InboxData
     $max = 0; foreach ($x in @($data.items)) { if ($x.id -match '^INBOX-(\d+)$') { $n = [int]$Matches[1]; if ($n -gt $max) { $max = $n } } }
@@ -101,7 +114,7 @@ function Add-InboxProposal {
         id = ('INBOX-{0:000}' -f ($max + 1)); uid = ([guid]::NewGuid().ToString('N')); discoveredBy = $DiscoveredBy.Trim(); type = $Type; title = $Title.Trim()
         description = $Description.Trim(); proposedDestination = $ProposedDestination.Trim(); evidence = @($Evidence)
         confidence = [math]::Round([math]::Max(0.0, [math]::Min(1.0, $Confidence)), 2); status = 'pending'; created = $now
-        source = $Source.Trim(); sourceId = $SourceId.Trim()
+        source = $Source.Trim(); sourceId = $SourceId.Trim(); payload = $Payload
     }
     $data.items = @($data.items) + $new
     Save-InboxData $data
@@ -160,6 +173,12 @@ function Get-InboxDestinationLabel {
         'learning'       { 'Learning' }
         'memory'         { 'Tony Memory (permission-gated)' }
         'calendar'       { 'Action Items (calendar is read-only)' }
+        'calendar.create-event'         { 'Google Calendar (create event)' }
+        'calendar.create-focus-block'   { 'Google Calendar (focus block)' }
+        'calendar.create-follow-up-block' { 'Google Calendar (follow-up block)' }
+        'calendar.protect-family-time'  { 'Google Calendar (protect family time)' }
+        'calendar.update-event'         { 'Google Calendar (update event)' }
+        'calendar.cancel-event'         { 'Google Calendar (cancel event)' }
         'crm'            { 'Action Items (CRM is read-only)' }
         'document'       { 'Action Items (document follow-up)' }
         default          { 'Action Items' }
@@ -315,13 +334,14 @@ function Approve-InboxItem {
         return [pscustomobject]@{ ok = $false; destination = ''; newId = $null; message = 'The Action Engine is not available. Nothing was changed; the proposal is still pending.' }
     }
     # approval metadata is grounded in THIS user approval event - who, when, from
-    # where, and a fingerprint of the proposal exactly as approved. The engine
-    # rejects execution if the proposal no longer matches the fingerprint.
-    $approval = [pscustomobject]@{
-        approvedBy  = $ApprovedBy
-        approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-        source      = 'executive-inbox'
-        fingerprint = (Get-ProposalFingerprint -Proposal $item)
+    # where, a fingerprint of the proposal exactly as approved, AND the proposal
+    # INSTANCE binding (uid + id, Epic 17). The engine rejects execution if the
+    # proposal no longer matches the fingerprint or the approval was minted for a
+    # different instance.
+    $approval = if (Get-Command New-ProposalApproval -ErrorAction SilentlyContinue) {
+        New-ProposalApproval -Proposal $item -ApprovedBy $ApprovedBy -Source 'executive-inbox'
+    } else {
+        [pscustomobject]@{ approvedBy = $ApprovedBy; approvedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); source = 'executive-inbox'; fingerprint = (Get-ProposalFingerprint -Proposal $item) }
     }
     $exec = Invoke-ProposalExecution -Proposal $item -Approval $approval
     if ($exec.ok) {

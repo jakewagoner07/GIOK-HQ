@@ -48,6 +48,14 @@ tony-alpha/dashboard/providers/calendar.config.json
 !**/calendar.config.example.json
 tony-alpha/calendar.tokens.json
 **/calendar.tokens.json
+# Google Calendar WRITE connector tokens (Epic 17, scope calendar.events) — a
+# SEPARATE write consent/token store from the read-only tokens above. Same rule:
+# per-account access/refresh tokens, PRIVATE, local only, never committed.
+tony-alpha/calendar.write.tokens.json
+**/calendar.write.tokens.json
+# Local write preferences (default writable calendar) - no secrets, but local.
+tony-alpha/calendar.write.prefs.json
+**/calendar.write.prefs.json
 
 # Gmail OAuth client config + tokens — PRIVATE, local only, never committed.
 # Same rule as Calendar: only the safe example is tracked; tokens never on GitHub.

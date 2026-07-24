@@ -1898,6 +1898,73 @@ function New-GmailProviderCard {
     return $card
 }
 
+# ---- Google Calendar (WRITE) connector card (Epic 17) ----
+# The write connector is a SEPARATE consent from the read-only card above (scope
+# calendar.events). Never shows a token or a raw OAuth error - only calm states.
+$script:CalWriteDetail = $null; $script:CalWriteAcctPanel = $null; $script:CalWritePill = $null
+function Get-CalWriteStateColors {
+    param([string]$State)
+    switch ($State) {
+        'connected'      { @('#DEF7EC', '#03543F') }
+        'not-connected'  { @($script:Col.AccentSoft, $script:Col.AccentInk) }
+        'not-configured' { @('#FDF6B2', '#8E4B10') }
+        default          { @('#FDE2E1', '#9B1C1C') }
+    }
+}
+function Set-CalWriteStatusDisplay {
+    param($Model)
+    if ($script:CalWriteDetail) { $script:CalWriteDetail.Text = $Model.detail }
+    if ($script:CalWritePill) {
+        $cols = Get-CalWriteStateColors $Model.state
+        $script:CalWritePill.Background = New-Brush $cols[0]
+        $script:CalWritePill.Child = (New-Text -Text $Model.label -Size 10.5 -Weight 'Bold' -Color $cols[1])
+    }
+    if ($script:CalWriteAcctPanel) {
+        $script:CalWriteAcctPanel.Children.Clear()
+        $accts = @($Model.accounts)
+        if ($accts.Count -eq 0) { $script:CalWriteAcctPanel.Children.Add((New-Text -Text 'No account connected for writing yet.' -Size 12 -Color $script:Col.Muted)) | Out-Null }
+        else {
+            foreach ($a in $accts) {
+                $capturedEmail = [string]$a
+                $row = New-Object Windows.Controls.DockPanel; $row.Margin = New-Object Windows.Thickness (0, 0, 0, 6); $row.LastChildFill = $true
+                $btn = New-MiniButton -Text 'Disconnect' -Bg '#FDE2E1' -Fg '#9B1C1C' -OnClick ({ param($s, $e) if (Get-Command Disconnect-GCalWrite -ErrorAction SilentlyContinue) { Disconnect-GCalWrite -AccountId $capturedEmail | Out-Null }; Set-CalWriteStatusDisplay (Get-GCalWriteSettingsModel) }.GetNewClosure())
+                [Windows.Controls.DockPanel]::SetDock($btn, 'Right'); $row.Children.Add($btn) | Out-Null
+                $em = New-Text -Text $capturedEmail -Size 12.5 -Color $script:Col.Ink; $em.VerticalAlignment = 'Center'; $row.Children.Add($em) | Out-Null
+                $script:CalWriteAcctPanel.Children.Add($row) | Out-Null
+            }
+        }
+    }
+}
+function New-CalendarWriteCard {
+    $model = if (Get-Command Get-GCalWriteSettingsModel -ErrorAction SilentlyContinue) { Get-GCalWriteSettingsModel } else { [pscustomobject]@{ state = 'not-configured'; label = 'Not configured'; detail = 'Calendar write connector not loaded.'; accounts = @(); connected = $false; defaultCalendar = 'primary' } }
+    $body = New-Object Windows.Controls.StackPanel
+    $head = New-Object Windows.Controls.DockPanel; $head.LastChildFill = $true
+    $cols = Get-CalWriteStateColors $model.state
+    $pill = New-Object Windows.Controls.Border; $pill.CornerRadius = New-Object Windows.CornerRadius 8; $pill.Padding = New-Object Windows.Thickness (8, 3, 8, 3); $pill.VerticalAlignment = 'Center'; $pill.Background = New-Brush $cols[0]; $pill.Child = (New-Text -Text $model.label -Size 10.5 -Weight 'Bold' -Color $cols[1]); $script:CalWritePill = $pill
+    [Windows.Controls.DockPanel]::SetDock($pill, 'Right'); $head.Children.Add($pill) | Out-Null
+    $head.Children.Add((New-KeyValueRow -Key 'Connector' -Value 'Google Calendar (write)')) | Out-Null
+    $body.Children.Add($head) | Out-Null
+
+    $detail = New-Text -Text $model.detail -Size 12 -Color $script:Col.Ink -Wrap $true -Margin (New-Object Windows.Thickness (0, 8, 0, 0)); $script:CalWriteDetail = $detail; $body.Children.Add($detail) | Out-Null
+    $body.Children.Add((New-Text -Text 'Access: create, update, and cancel events (scope calendar.events) - a separate consent from the read-only connection. Every change is a pending Executive Inbox proposal you approve; Tony never writes your calendar on its own.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 4, 0, 6)))) | Out-Null
+    $body.Children.Add((New-KeyValueRow -Key 'Default calendar' -Value $model.defaultCalendar)) | Out-Null
+    $body.Children.Add((New-Text -Text 'CONNECTED WRITE ACCOUNT' -Size 9.5 -Weight 'Bold' -Color $script:Col.Muted -Margin (New-Object Windows.Thickness (0, 6, 0, 4)))) | Out-Null
+    $acctPanel = New-Object Windows.Controls.StackPanel; $script:CalWriteAcctPanel = $acctPanel; $body.Children.Add($acctPanel) | Out-Null
+
+    $btns = New-Object Windows.Controls.WrapPanel; $btns.Margin = New-Object Windows.Thickness (0, 12, 0, 0)
+    $btns.Children.Add((New-MiniButton -Text 'Connect Google Calendar (write)' -Bg $script:Col.Accent -Fg $script:Col.OnPrimary -OnClick { param($s, $e) if (Get-Command Connect-GCalWrite -ErrorAction SilentlyContinue) { Connect-GCalWrite | Out-Null; Set-CalWriteStatusDisplay (Get-GCalWriteSettingsModel) } })) | Out-Null
+    $btns.Children.Add((New-MiniButton -Text 'Test connection' -Bg $script:Col.AccentSoft -Fg $script:Col.AccentInk -OnClick { param($s, $e) if (Get-Command Get-GCalWriteSettingsModel -ErrorAction SilentlyContinue) { Set-CalWriteStatusDisplay (Get-GCalWriteSettingsModel) } })) | Out-Null
+    $body.Children.Add($btns) | Out-Null
+
+    $note = New-Text -Text 'Setup: reuse your Google Cloud Desktop-app client (providers\calendar.config.json) and grant the write scope when prompted; sign-in happens in your browser and Tony never sees your password. Write tokens are stored locally and gitignored, separate from the read-only tokens. Disconnect revokes the write authorization with Google.' -Size 11 -Color $script:Col.Muted -Wrap $true -Margin (New-Object Windows.Thickness (0, 12, 0, 0))
+    $body.Children.Add($note) | Out-Null
+
+    Set-CalWriteStatusDisplay $model
+    $card = New-Card -Title 'Google Calendar (write)' -Body $body
+    $card.HorizontalAlignment = 'Left'; $card.MaxWidth = 560; $card.Margin = New-Object Windows.Thickness (0, 14, 0, 0)
+    return $card
+}
+
 function New-SettingsView {
     $t = $script:Theme
     $outer = New-Object Windows.Controls.StackPanel; $outer.Margin = New-Object Windows.Thickness (4, 0, 4, 0)
@@ -1935,6 +2002,9 @@ function New-SettingsView {
 
     # Google Calendar (read-only) - Connect / Test / Disconnect
     $outer.Children.Add((New-CalendarProviderCard)) | Out-Null
+
+    # Google Calendar (WRITE, Epic 17) - separate consent; create/update/cancel
+    $outer.Children.Add((New-CalendarWriteCard)) | Out-Null
 
     # Gmail (read-only) - Connect / Test / Disconnect
     $outer.Children.Add((New-GmailProviderCard)) | Out-Null

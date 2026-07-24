@@ -305,6 +305,24 @@ recovery is retired.
 - ✅ durable per-proposal `uid` (inbox ids are reused) → distinct instances get distinct stable ids
 - ✅ recovery never infers success from titles; 7/7 mutation coverage
 
-**Connectors now unblocked (still gated on their own contract):** ⬜ **Calendar** first — idempotent
-and reversible, using a connector event-id + idempotency key (never title/delta). ⬜ **Gmail** after
-a send-specific intent/verify contract (provider message-id captured before send).
+**Connectors now unblocked (still gated on their own contract):** ✅ **Calendar** (Epic 17). ⬜
+**Gmail** after a send-specific intent/verify contract (provider message-id captured before send).
+
+## Epic 17 — Google Calendar Connector (first external write)
+
+The first external side-effecting connector. Create / update / cancel Google Calendar events,
+executed **only** through the Executive Action Engine — Calendar is the safer first write
+(idempotent-keyable, reversible) before irreversible Gmail sends.
+
+- ✅ write connector (`core/connectors/google-calendar.ps1`) on `Register-ActionConnector`; new
+  engine `connector` intent mode; scope `calendar.events`, separate consent + token store from read
+- ✅ provider-safe idempotency (deterministic client event id; 409 read-back = created, no duplicate)
+- ✅ engine-owned verification by **exact provider event-id read-back**; recovery reconciles A-E,
+  never re-sends
+- ✅ approval-instance binding (NB-1 closed); stale-version protection; IANA-tz + DST validation
+- ✅ Settings write card + Executive Inbox approval summary; audit redacts titles/tokens
+- ✅ 82 mocked tests + 7/7 mutation; ⬜ live test-calendar verification (explicit approval + real
+  credentials, dedicated test calendar — never the primary)
+- ⬜ later extensions: attendees/invitations, recurring edits, conference links, cross-calendar moves
+
+**Gmail stays blocked** until its send-specific idempotency/verify contract exists.

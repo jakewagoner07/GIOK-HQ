@@ -106,6 +106,11 @@ function Get-ExecHistoryStates { param([string]$Id) return @((Get-ExecutionById 
 # requires explicit approval whose fingerprint matches the proposal as-is).
 function New-TestApproval {
     param([Parameter(Mandatory)] $Proposal, [string]$By = 'test-owner')
+    # Instance-bound approval (Epic 17): carries uid + proposalId so it matches the
+    # engine's approval-instance binding, exactly like the real Approve-InboxItem.
+    if (Get-Command New-ProposalApproval -ErrorAction SilentlyContinue) {
+        return (New-ProposalApproval -Proposal $Proposal -ApprovedBy $By -Source 'test')
+    }
     return [pscustomobject]@{
         approvedBy  = $By
         approvedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
